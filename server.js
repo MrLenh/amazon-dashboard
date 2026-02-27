@@ -16,18 +16,31 @@ app.use(express.json({ limit: '10mb' }));
 /* ═══════════ DATABASE POOL ═══════════ */
 let pool = null;
 try {
-  pool = mysql.createPool({
+  const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
+    port: parseInt(process.env.DB_PORT) || 3306,
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'expeditee',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    connectTimeout: 10000,
-  });
-  console.log('✅ MySQL pool created');
+    connectTimeout: 15000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+  };
+  // Enable SSL for remote databases (common for cloud MySQL)
+  if (process.env.DB_SSL === 'true' || (process.env.DB_HOST && process.env.DB_HOST !== 'localhost' && process.env.DB_HOST !== '127.0.0.1')) {
+    dbConfig.ssl = { rejectUnauthorized: process.env.DB_SSL_REJECT !== 'false' };
+    console.log('🔒 SSL enabled for database connection');
+  }
+  if (process.env.DB_HOST && process.env.DB_HOST !== 'your-db-host.com') {
+    pool = mysql.createPool(dbConfig);
+    console.log(`✅ MySQL pool created → ${process.env.DB_HOST}:${dbConfig.port}/${process.env.DB_NAME}`);
+  } else {
+    console.log('⚠️ No database configured — running in demo mode');
+    console.log('   Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME in environment variables');
+  }
 } catch (e) {
   console.warn('⚠️ MySQL pool failed:', e.message);
 }
@@ -114,7 +127,10 @@ app.get('/api/health', async (req, res) => {
   try {
     if (pool) {
       await q('SELECT 1');
-      res.json({ status: 'ok', database: 'connected' });
+      const tables = await q("SHOW TABLES");
+      const tableNames = tables.map(t => Object.values(t)[0]);
+      const hasRequired = ['seller_board_sales', 'seller_board_day', 'seller_board_product'].every(t => tableNames.includes(t));
+      res.json({ status: 'ok', database: 'connected', tables: tableNames.length, hasRequired });
     } else {
       res.json({ status: 'ok', database: 'not configured' });
     }
