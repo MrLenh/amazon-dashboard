@@ -172,14 +172,20 @@ function Tip({text,t}){const[s,setS]=useState(false);return<span style={{positio
 function DateInput({label,value,onChange,t}){return<div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:10,color:t.textMuted,fontWeight:600}}>{label}:</span><input type="date" value={value} onChange={e=>onChange(e.target.value)} style={{background:t.card,color:t.text,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"5px 8px",fontSize:11,fontWeight:500,cursor:"pointer"}}/></div>}
 
 function PeriodBtns({onSelect,active,t}){
+  const td=new Date(),fmt=d=>d.toISOString().slice(0,10),now=fmt(td);
+  const dAgo=n=>{const d=new Date(td);d.setDate(d.getDate()-n);return fmt(d)};
+  const mS=(m=0)=>fmt(new Date(td.getFullYear(),td.getMonth()-m,1));
+  const mE=(m=0)=>fmt(new Date(td.getFullYear(),td.getMonth()-m+1,0));
   const P=[
-    ["Last 7D","2026-01-25","2026-01-31"],
-    ["Last 14D","2026-01-18","2026-01-31"],
-    ["Jan W1","2026-01-01","2026-01-07"],
-    ["Jan W2","2026-01-08","2026-01-14"],
-    ["Jan W3","2026-01-15","2026-01-21"],
-    ["Jan W4","2026-01-22","2026-01-31"],
-    ["Full Month","2026-01-01","2026-01-31"],
+    ["Today",now,now],
+    ["Yesterday",dAgo(1),dAgo(1)],
+    ["Last 7D",dAgo(6),now],
+    ["Last 14D",dAgo(13),now],
+    ["Last 30D",dAgo(29),now],
+    ["This Month",mS(0),now],
+    ["Last Month",mS(1),mE(1)],
+    ["Last 3M",mS(2),now],
+    ["YTD",td.getFullYear()+"-01-01",now],
   ];
   return<div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{P.map(([l,s,e])=><button key={l} onClick={()=>onSelect(s,e,l)} style={{padding:"4px 8px",borderRadius:6,border:"1px solid "+(active===l?t.primary:t.inputBorder),fontSize:10,cursor:"pointer",fontWeight:600,background:active===l?t.primaryLight:t.card,color:active===l?t.primary:t.textSec,whiteSpace:"nowrap"}}>{l}</button>)}</div>;
 }
@@ -242,13 +248,13 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg}){
         <KpiCard title="Sessions" value={N(Math.round(em.sessions||0))} change={ch("sessions")} icon="👁" t={t} tip={TIPS.sessions}/><KpiCard title="Ad Spend" value={$2(Math.abs(em.advCost||0))} change={ch("advCost")} icon="⚡" t={t} tip={TIPS.advCost}/>
       </div>
     </div>
-    <Sec title="Daily Trend" icon="📊" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={260}><ComposedChart data={fDaily}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="label" tick={{fill:t.textMuted,fontSize:10}} interval={Math.max(0,Math.floor(fDaily.length/8))}/><YAxis tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>$s(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Area type="monotone" dataKey="revenue" name="Revenue" fill={t.primaryLight} stroke={t.primary} strokeWidth={2}/><Line type="monotone" dataKey="netProfit" name="Net Profit" stroke={t.green} strokeWidth={2} dot={false}/></ComposedChart></ResponsiveContainer></Cd></Sec>
+    <Sec title="Daily Trend" icon="📊" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={260}><ComposedChart data={fDaily}><defs><linearGradient id="rvG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={0.15}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient><linearGradient id="npG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.green} stopOpacity={0.15}/><stop offset="100%" stopColor={t.green} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="label" tick={{fill:t.textMuted,fontSize:10}} interval={Math.max(0,Math.floor(fDaily.length/8))}/><YAxis tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>$s(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Area type="monotone" dataKey="revenue" name="Revenue" fill="url(#rvG)" stroke={t.primary} strokeWidth={2}/><Area type="monotone" dataKey="netProfit" name="Net Profit" fill="url(#npG)" stroke={t.green} strokeWidth={2}/></ComposedChart></ResponsiveContainer></Cd></Sec>
     <div style={{display:"grid",gridTemplateColumns:"1.4fr .6fr",gap:14,marginTop:16}}>
       <Sec title="Revenue & NP by Shop" icon="🏪" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={Math.max(200,fShop.length*35)}><BarChart data={fShop} layout="vertical" margin={{left:90}}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis type="number" tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>$s(v)}/><YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:10}} width={85}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="r" name="Revenue" fill={t.primary} radius={[0,4,4,0]}/><Bar dataKey="n" name="Net Profit" radius={[0,4,4,0]}>{fShop.map((e,i)=><Cell key={i} fill={e.n>=0?t.green:t.red}/>)}</Bar></BarChart></ResponsiveContainer></Cd></Sec>
       <Sec title="Revenue Share" icon="🍩" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={donut} innerRadius={55} outerRadius={80} dataKey="value" nameKey="name" cx="50%" cy="50%" paddingAngle={2} stroke="none">{donut.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie><Tooltip/></PieChart></ResponsiveContainer><div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center"}}>{donut.map((d,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:3,fontSize:9,color:t.textSec}}><div style={{width:7,height:7,borderRadius:2,background:d.fill}}/>{d.name}</div>)}</div></Cd></Sec>
     </div>
     <Sec title="ASIN Performance" icon="📋" t={t}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{["ASIN","Brand","Revenue","Net Profit","Margin%","Units","CR%","ACoS","ROAS"].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i>=2?"right":"left",color:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{fAsin.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:11,fontWeight:600,color:t.textSec,borderBottom:"1px solid "+t.divider}}>{r.a}</td><td style={{padding:"8px 12px",fontWeight:700,color:t.text,borderBottom:"1px solid "+t.divider}}>{r.b}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{$(r.r)}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.n>=0?t.green:t.red,borderBottom:"1px solid "+t.divider}}>{$(r.n)}</td><td style={{padding:"8px 12px",textAlign:"right",color:mC(r.m,t),borderBottom:"1px solid "+t.divider}}>{r.m.toFixed(1)}%</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{N(r.u)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{r.cr}%</td><td style={{padding:"8px 12px",textAlign:"right",color:r.ac<30?t.green:r.ac<50?t.orange:t.red,borderBottom:"1px solid "+t.divider}}>{r.ac}%</td><td style={{padding:"8px 12px",textAlign:"right",color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:"1px solid "+t.divider}}>{r.ro.toFixed(2)}</td></tr>)}</tbody></table></div></Sec>
-    <div style={{marginTop:14}}><Alerts t={t} alerts={genAlerts([...fAsin],t)}/></div>
+    <div style={{marginTop:14}}><Alerts t={t} alerts={[...genAlerts([...fAsin],t),{s:"i",t:`Showing ${fDaily.length} days of data (${fDaily[0]?.label||""} — ${fDaily[fDaily.length-1]?.label||""})`}]}/></div>
   </div>;
 }
 
