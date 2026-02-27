@@ -216,7 +216,7 @@ const ChartGrads=({t})=><defs><linearGradient id="gRv" x1="0" y1="0" x2="0" y2="
 function TrendChart({data,t,height=240,showNP=true}){return<Cd t={t}><ResponsiveContainer width="100%" height={height}><ComposedChart data={data}><ChartGrads t={t}/><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="label" tick={{fill:t.textMuted,fontSize:9}} interval={Math.max(0,Math.floor(data.length/10))}/><YAxis tick={{fill:t.textMuted,fontSize:9}} tickFormatter={v=>$s(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Area type="monotone" dataKey="revenue" name="Revenue" fill="url(#gRv)" stroke={t.primary} strokeWidth={2}/>{showNP&&<Area type="monotone" dataKey="netProfit" name="Net Profit" fill="url(#gNp)" stroke={t.green} strokeWidth={2}/>}</ComposedChart></ResponsiveContainer></Cd>}
 
 /* ═══════════ EXECUTIVE ═══════════ */
-function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg}){
+function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob}){
   const tR=fShop.reduce((s,x)=>s+x.r,0),tN=fShop.reduce((s,x)=>s+x.n,0);
   const colors=[t.primary,"#6B7FD7","#9BA8E0","#E8618C",t.green,t.orange];
   const donut=fShop.slice(0,6).map((s,i)=>({name:s.s,value:s.r,fill:colors[i%6]}));
@@ -236,20 +236,20 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg}){
         <div><div style={{fontSize:11,color:"#ffffffaa",fontWeight:600,letterSpacing:1}}>SELLERBOARD SUMMARY</div><div style={{fontSize:10,color:"#ffffff55",marginTop:2}}>{fmtD(sd)} — {fmtD(ed)}</div></div>
         {ch("sales")!=null&&<span style={{fontSize:10,fontWeight:600,color:ch("sales")>=0?"#8CFFC1":"#FF9A8A",background:"rgba(255,255,255,.12)",padding:"4px 12px",borderRadius:10}}>{ch("sales")>=0?"↑":"↓"} {Math.abs(ch("sales")).toFixed(1)}% vs prev period</span>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:8,marginTop:10}}>
+      <div style={{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(auto-fit,minmax(100px,1fr))",gap:8,marginTop:10}}>
         {smItems.map((m,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:9,color:"#ffffff55",textTransform:"uppercase",fontWeight:600}}>{m.l}</div><div style={{fontSize:15,fontWeight:700,color:"#fff",marginTop:2}}>{m.v}</div><ChgBadge v={m.c}/></div>)}
       </div>
     </Cd>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
       <Cd t={t} style={{padding:14}}><div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",marginBottom:10}}>📊 Detailed Metrics</div><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><tbody>{[["Sales",$2(em.sales),TIPS.sales],["Units",N(em.units),TIPS.units],["Refunds",N(em.refunds),TIPS.refunds],["Ad Cost",$2(em.advCost),TIPS.advCost],["Shipping",$2(em.shippingCost),TIPS.shippingCost],["Refund Cost",$2(em.refundCost),TIPS.refundCost],["Amazon Fees",$2(em.amazonFees),TIPS.amazonFees],["COGS",$2(em.cogs),TIPS.cogs],["Net Profit",$2(em.netProfit),TIPS.netProfit],["Payout",$2(em.estPayout),TIPS.estPayout],["ACOS",(em.realAcos||0).toFixed(2)+"%",TIPS.realAcos],["% Refunds",(em.pctRefunds||0).toFixed(2)+"%",TIPS.pctRefunds],["Margin",(em.margin||0).toFixed(2)+"%",TIPS.margin],["Sessions",N(Math.round(em.sessions||0)),TIPS.sessions]].map(([l,v,tip],i)=><tr key={i} style={{borderBottom:"1px solid "+t.divider}}><td style={{padding:"6px 8px",color:t.textSec,fontWeight:500}}>{l}<Tip text={tip} t={t}/></td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:t.text}}>{v}</td></tr>)}</tbody></table></Cd>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10}}>
         <KpiCard title="Revenue" value={$(em.sales)} change={ch("sales")} icon="💰" t={t} tip={TIPS.sales}/><KpiCard title="Net Profit" value={$(em.netProfit)} change={ch("netProfit")} icon="📈" t={t} tip={TIPS.netProfit}/>
         <KpiCard title="Margin" value={(em.margin||0).toFixed(2)+"%"} change={prevEm?em.margin-prevEm.margin:undefined} icon="🎯" t={t} tip={TIPS.margin}/><KpiCard title="Orders" value={N(em.orders)} change={ch("orders")} icon="🛒" t={t}/>
         <KpiCard title="Sessions" value={N(Math.round(em.sessions||0))} change={ch("sessions")} icon="👁" t={t} tip={TIPS.sessions}/><KpiCard title="Ad Spend" value={$2(Math.abs(em.advCost||0))} change={ch("advCost")} icon="⚡" t={t} tip={TIPS.advCost}/>
       </div>
     </div>
     <Sec title="Daily Trend" icon="📊" t={t}><TrendChart data={fDaily} t={t} height={260}/></Sec>
-    <div style={{display:"grid",gridTemplateColumns:"1.4fr .6fr",gap:14,marginTop:16}}>
+    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1.4fr .6fr",gap:14,marginTop:16}}>
       <Sec title="Revenue & NP by Shop" icon="🏪" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={Math.max(200,fShop.length*38)}><BarChart data={fShop} layout="vertical" margin={{left:90,right:10}}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid} horizontal={false}/><XAxis type="number" tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>$s(v)}/><YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:10}} width={85}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="r" name="Revenue" fill={t.primary} radius={[0,4,4,0]} barSize={14}/><Bar dataKey="n" name="Net Profit" radius={[0,4,4,0]} barSize={14}>{fShop.map((e,i)=><Cell key={i} fill={e.n>=0?t.green:t.red}/>)}</Bar></BarChart></ResponsiveContainer></Cd></Sec>
       <Sec title="Revenue Share" icon="🍩" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={200}><PieChart><Pie data={donut} innerRadius={55} outerRadius={80} dataKey="value" nameKey="name" cx="50%" cy="50%" paddingAngle={2} stroke="none">{donut.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Pie><Tooltip/></PieChart></ResponsiveContainer><div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center"}}>{donut.map((d,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:3,fontSize:9,color:t.textSec}}><div style={{width:7,height:7,borderRadius:2,background:d.fill}}/>{d.name}</div>)}</div></Cd></Sec>
     </div>
@@ -259,17 +259,17 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg}){
 }
 
 /* ═══════════ INVENTORY ═══════════ */
-function InvPage({t}){
+function InvPage({t,mob}){
   return<div>
     <Cd t={t} style={{padding:"10px 16px",marginBottom:14,borderLeft:"3px solid "+t.blue}}><div style={{fontSize:11,color:t.textSec}}>💡 Latest inventory snapshot. No time filter needed.</div></Cd>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:12,marginBottom:16}}>
       <KpiCard title="FBA Stock" value="393,890" icon="📦" t={t}/><KpiCard title="Total Inventory" value="436,100" icon="🗃" t={t}/><KpiCard title="Reserved" value="31,210" icon="🔒" t={t}/><KpiCard title="Critical SKUs" value="170" icon="🚨" t={t}/><KpiCard title="Inbound" value="31,000" icon="📥" t={t}/><KpiCard title="Avg Sell-Through" value="2.8%" icon="📈" t={t} tip={TIPS.sellThrough}/>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>
       <Sec title="FBA Stock Trend" icon="📈" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={240}><AreaChart data={invTrend}><defs><linearGradient id="ig" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={.2}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textMuted,fontSize:9}}/><YAxis tick={{fill:t.textMuted,fontSize:9}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Area type="monotone" dataKey="v" name="FBA Stock" stroke={t.primary} fill="url(#ig)" strokeWidth={2}/></AreaChart></ResponsiveContainer></Cd></Sec>
       <Sec title="Sell-Through & Days of Health" icon="📊" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={240}><ComposedChart data={invShop}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="s" tick={{fill:t.textMuted,fontSize:9}} interval={0} angle={-20} textAnchor="end" height={50}/><YAxis yAxisId="l" tick={{fill:t.textMuted,fontSize:9}} unit="%"/><YAxis yAxisId="r" orientation="right" tick={{fill:t.textMuted,fontSize:9}} unit="d"/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar yAxisId="l" dataKey="st" name="Sell-Through %" fill={t.green} radius={[4,4,0,0]} fillOpacity={.7}/><Line yAxisId="r" type="monotone" dataKey="doh" name="Days of Health" stroke={t.orange} strokeWidth={2} dot={{r:3}}/></ComposedChart></ResponsiveContainer></Cd></Sec>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
+    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
       <Sec title="Sales Velocity" icon="⚡" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={220}><ComposedChart data={salesVel}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textMuted,fontSize:9}}/><YAxis tick={{fill:t.textMuted,fontSize:9}}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="v" name="Units/Day" fill={t.orange} radius={[4,4,0,0]} fillOpacity={.7}/><Line type="monotone" dataKey="ma" name="7D MA" stroke={t.red} strokeWidth={2} dot={false}/></ComposedChart></ResponsiveContainer></Cd></Sec>
       <Sec title="FBA Stock by Shop" icon="📦" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={220}><BarChart data={invShop.sort((a,b)=>b.fba-a.fba)} layout="vertical" margin={{left:85}}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis type="number" tick={{fill:t.textMuted,fontSize:9}} tickFormatter={N}/><YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:9}} width={80}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="fba" name="FBA Stock" fill={t.primary} radius={[0,4,4,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
     </div>
@@ -366,6 +366,9 @@ const NAV=[{id:"exec",l:"Executive Overview",i:"🏠"},{id:"inv",l:"Inventory",i
 
 export default function App(){
   const[pg,setPg]=useState("exec");const[sb,setSb]=useState(true);const[isDark,setDark]=useState(false);
+  const[mob,setMob]=useState(window.innerWidth<768);const[tab,setTab]=useState(window.innerWidth>=768&&window.innerWidth<1024);
+  const[mobileFilters,setMobileFilters]=useState(false);
+  useEffect(()=>{const h=()=>{setMob(window.innerWidth<768);setTab(window.innerWidth>=768&&window.innerWidth<1024)};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[]);
   const t=isDark?TH.dark:TH.light;const cn=NAV.find(n=>n.id===pg);
 
   const[live,setLive]=useState(false);const[filterData,setFilterData]=useState(null);
@@ -488,42 +491,43 @@ export default function App(){
   const showAsin=["plan","prod"].includes(pg);
   const showPlanYear=pg==="plan";
 
-  return<div style={{display:"flex",height:"100vh",background:t.bg,fontFamily:"'DM Sans',system-ui,-apple-system,sans-serif",color:t.text,overflow:"hidden",transition:"background .3s"}}>
-    {/* SIDEBAR */}
-    <div style={{width:sb?220:56,background:t.sidebar,borderRight:"1px solid "+t.sidebarBorder,display:"flex",flexDirection:"column",transition:"width .2s",flexShrink:0,overflow:"hidden"}}>
+  return<div style={{display:"flex",flexDirection:mob?"column":"row",height:"100vh",background:t.bg,fontFamily:"'DM Sans',system-ui,-apple-system,sans-serif",color:t.text,overflow:"hidden",transition:"background .3s"}}>
+    {/* SIDEBAR — hidden on mobile */}
+    {!mob&&<div style={{width:(tab||!sb)?56:220,background:t.sidebar,borderRight:"1px solid "+t.sidebarBorder,display:"flex",flexDirection:"column",transition:"width .2s",flexShrink:0,overflow:"hidden"}}>
       <div style={{padding:"14px 14px 10px",display:"flex",alignItems:"center",gap:8,borderBottom:"1px solid "+t.sidebarBorder,minHeight:50}}>
         <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#3B4A8A,#6B7FD7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"#fff",flexShrink:0}}>A</div>
-        {sb&&<div><div style={{fontSize:14,fontWeight:800,color:t.text,lineHeight:1.1}}>Amazon</div><div style={{fontSize:8,color:t.textMuted,letterSpacing:1.5,fontWeight:700,textTransform:"uppercase"}}>Dashboard</div></div>}
+        {!tab&&sb&&<div><div style={{fontSize:14,fontWeight:800,color:t.text,lineHeight:1.1}}>Amazon</div><div style={{fontSize:8,color:t.textMuted,letterSpacing:1.5,fontWeight:700,textTransform:"uppercase"}}>Dashboard</div></div>}
       </div>
-      <div style={{flex:1,padding:6,overflowY:"auto"}}>{NAV.map(n=><button key={n.id} onClick={()=>setPg(n.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:sb?"10px 12px":"10px 0",borderRadius:8,border:"none",cursor:"pointer",marginBottom:2,background:pg===n.id?t.sidebarActive:"transparent",color:pg===n.id?t.primary:t.textSec,justifyContent:sb?"flex-start":"center",fontSize:12}}><span style={{fontSize:15,flexShrink:0}}>{n.i}</span>{sb&&<span style={{fontWeight:pg===n.id?700:500,whiteSpace:"nowrap"}}>{n.l}</span>}</button>)}</div>
-      <div style={{padding:6,borderTop:"1px solid "+t.sidebarBorder}}><button onClick={()=>setSb(!sb)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:t.textMuted,display:"flex",alignItems:"center",justifyContent:sb?"flex-start":"center",gap:6,fontSize:11,fontWeight:600}}><span>{sb?"◀":"▶"}</span>{sb&&<span>Collapse</span>}</button></div>
-    </div>
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{flex:1,padding:6,overflowY:"auto"}}>{NAV.map(n=><button key={n.id} onClick={()=>setPg(n.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:(!tab&&sb)?"10px 12px":"10px 0",borderRadius:8,border:"none",cursor:"pointer",marginBottom:2,background:pg===n.id?t.sidebarActive:"transparent",color:pg===n.id?t.primary:t.textSec,justifyContent:(!tab&&sb)?"flex-start":"center",fontSize:12}}><span style={{fontSize:15,flexShrink:0}}>{n.i}</span>{!tab&&sb&&<span style={{fontWeight:pg===n.id?700:500,whiteSpace:"nowrap"}}>{n.l}</span>}</button>)}</div>
+      {!tab&&<div style={{padding:6,borderTop:"1px solid "+t.sidebarBorder}}><button onClick={()=>setSb(!sb)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:t.textMuted,display:"flex",alignItems:"center",justifyContent:sb?"flex-start":"center",gap:6,fontSize:11,fontWeight:600}}><span>{sb?"◀":"▶"}</span>{sb&&<span>Collapse</span>}</button></div>}
+    </div>}
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:mob?56:0}}>
       {/* Topbar */}
-      <div style={{padding:"10px 20px",borderBottom:"1px solid "+t.sidebarBorder,display:"flex",alignItems:"center",justifyContent:"space-between",background:t.topbar,flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:16}}>{cn?.i}</span><h1 style={{fontSize:16,fontWeight:800,color:t.text,margin:0}}>{cn?.l}</h1></div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:8,background:live?t.greenBg:t.orangeBg,fontSize:10,fontWeight:600,color:live?t.green:t.orange}}><div style={{width:6,height:6,borderRadius:3,background:live?t.green:t.orange}}/>{live?"Live DB":"Demo"}</div>
-          <button onClick={()=>setDark(!isDark)} style={{background:t.inputBg,border:"1px solid "+t.inputBorder,borderRadius:8,padding:"6px 10px",cursor:"pointer",color:t.textSec,fontSize:11,fontWeight:600}}>{isDark?"☀️ Light":"🌙 Dark"}</button>
+      <div style={{padding:mob?"8px 12px":"10px 20px",borderBottom:"1px solid "+t.sidebarBorder,display:"flex",alignItems:"center",justifyContent:"space-between",background:t.topbar,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:mob?14:16}}>{cn?.i}</span><h1 style={{fontSize:mob?13:16,fontWeight:800,color:t.text,margin:0}}>{cn?.l}</h1></div>
+        <div style={{display:"flex",alignItems:"center",gap:mob?4:8}}>
+          {mob&&showDate&&<button onClick={()=>setMobileFilters(!mobileFilters)} style={{background:t.inputBg,border:"1px solid "+t.inputBorder,borderRadius:8,padding:"5px 8px",cursor:"pointer",color:t.textSec,fontSize:10,fontWeight:600}}>🔽 Filters</button>}
+          <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:8,background:live?t.greenBg:t.orangeBg,fontSize:10,fontWeight:600,color:live?t.green:t.orange}}><div style={{width:6,height:6,borderRadius:3,background:live?t.green:t.orange}}/>{mob?"":(live?"Live DB":"Demo")}</div>
+          <button onClick={()=>setDark(!isDark)} style={{background:t.inputBg,border:"1px solid "+t.inputBorder,borderRadius:8,padding:"6px 10px",cursor:"pointer",color:t.textSec,fontSize:11,fontWeight:600}}>{isDark?"☀️":"🌙"}{!mob&&(isDark?" Light":" Dark")}</button>
         </div>
       </div>
-      {/* Filter bar */}
-      <div style={{padding:"8px 20px",borderBottom:"1px solid "+t.sidebarBorder,background:t.topbar,flexShrink:0,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        {showDate&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><ClearBtn onClick={clearDates} t={t}/></>}
-        {showPeriod&&<PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t}/>}
+      {/* Filter bar — collapsible on mobile */}
+      {(!mob||mobileFilters)&&<div style={{padding:mob?"8px 12px":"8px 20px",borderBottom:"1px solid "+t.sidebarBorder,background:t.topbar,flexShrink:0,display:"flex",alignItems:mob?"stretch":"center",gap:8,flexWrap:"wrap",flexDirection:mob?"column":"row"}}>
+        {showDate&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><ClearBtn onClick={clearDates} t={t}/></div>}
+        {showPeriod&&<PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l);if(mob)setMobileFilters(false)}} active={activePeriod} t={t}/>}
         {showPlanYear&&<div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>Year:</span><select value={planYear} onChange={e=>setPlanYear(+e.target.value)} style={{background:t.card,color:t.text,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{[2024,2025,2026].map(y=><option key={y}>{y}</option>)}</select></div>}
         {pg==="inv"&&<div style={{fontSize:11,color:t.textMuted,fontWeight:600}}>📅 Latest snapshot</div>}
-        <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+        <div style={{marginLeft:mob?0:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
           {showStore&&<Sel value={store} onChange={setStore} options={opts.stores} label="All Stores" t={t}/>}
           {showSeller&&<Sel value={seller} onChange={setSeller} options={opts.sellers} label="All Sellers" t={t}/>}
           {showBrand&&<Sel value={brand} onChange={setBrand} options={opts.brands} label="All Brands" t={t}/>}
           {showAsin&&<Sel value={asinF} onChange={setAsinF} options={opts.asins} label="All ASINs" t={t}/>}
         </div>
-      </div>
+      </div>}
       {/* Content */}
-      <div style={{flex:1,overflow:"auto",padding:20}}>
-        {pg==="exec"&&<ExecPage t={t} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={em} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg}/>}
-        {pg==="inv"&&<InvPage t={t}/>}
+      <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
+        {pg==="exec"&&<ExecPage t={t} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={em} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg} mob={mob}/>}
+        {pg==="inv"&&<InvPage t={t} mob={mob}/>}
         {pg==="plan"&&<PlanPage t={t} fPlanBk={fPlanBk}/>}
         {pg==="prod"&&<ProdPage t={t} fAsin={fAsin} fDaily={fDaily}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
@@ -532,6 +536,10 @@ export default function App(){
         <div style={{height:30}}/>
       </div>
     </div>
+    {/* MOBILE BOTTOM NAV */}
+    {mob&&<div style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid "+t.sidebarBorder,display:"flex",justifyContent:"space-around",padding:"6px 0",zIndex:998}}>
+      {NAV.map(n=><button key={n.id} onClick={()=>{setPg(n.id);setMobileFilters(false)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"4px 6px",borderRadius:6,color:pg===n.id?t.primary:t.textMuted,fontSize:9,fontWeight:pg===n.id?700:500,minWidth:0}}><span style={{fontSize:16}}>{n.i}</span><span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:48}}>{n.l.split(" ")[0]}</span></button>)}
+    </div>}
     <AiInsight t={t} live={live} context={{em,fAsin:fAsin.slice(0,10)}}/>
   </div>;
 }
