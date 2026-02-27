@@ -470,12 +470,16 @@ app.get('/api/plan/data', async (req, res) => {
 app.get('/api/plan/actuals', async (req, res) => {
   try {
     const { year, month, brand, seller, asin: asinFilter } = req.query;
-    const yr = year || 2026;
+    const yr = year || new Date().getFullYear();
     let startDate, endDate;
     if (month && month !== 'All') {
-      const mi = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(month);
-      startDate = `${yr}-${String(mi + 1).padStart(2, '0')}-01`;
-      endDate = `${yr}-${String(mi + 1).padStart(2, '0')}-${new Date(yr, mi + 1, 0).getDate()}`;
+      // Accept both numeric (1-12) and name (Jan-Dec)
+      let mi = parseInt(month);
+      if (isNaN(mi)) {
+        mi = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(month) + 1;
+      }
+      startDate = `${yr}-${String(mi).padStart(2, '0')}-01`;
+      endDate = `${yr}-${String(mi).padStart(2, '0')}-${new Date(yr, mi, 0).getDate()}`;
     } else { startDate = `${yr}-01-01`; endDate = `${yr}-12-31`; }
     let where = 'WHERE p.date BETWEEN ? AND ?';
     const params = [startDate, endDate];
