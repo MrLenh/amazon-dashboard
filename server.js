@@ -66,9 +66,8 @@ async function getShopMap() {
    - Overlapping dates: seller_board_sales takes priority
    
    Column differences handled in the UNION:
-   - sales_old has: amazonFees, costOfGoods, googleAds, facebookAds
-   - sales has: individual fee columns, productCostSales (no single amazonFees)
-   - Both have: grossProfit, netProfit, margin, realACOS (pre-calculated)
+   - Both tables have: amazonFees (pre-calculated), productCostSales, grossProfit, netProfit, margin, realACOS
+   - seller_board_day/product have: costOfGoods (not productCostSales), googleAds, facebookAds
    ═══════════════════════════════════════════════════════════════ */
 
 // Build deduped UNION subquery for a given date range
@@ -76,14 +75,14 @@ async function getShopMap() {
 function salesUnion(dateAlias = 'date') {
   return `(
     SELECT accountId, date,
-      (salesOrganic + salesPPC) as sales,
-      (unitsOrganic + unitsPPC) as units,
+      (COALESCE(salesOrganic,0) + COALESCE(salesPPC,0)) as sales,
+      (COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0)) as units,
       COALESCE(orders,0) as orders,
       COALESCE(refunds,0) as refunds,
       (COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0)) as adSpend,
       COALESCE(shipping,0) as shipping,
       COALESCE(refundCost,0) as refundCost,
-      (COALESCE(commission,0) + COALESCE(FBAPerUnitFulfillmentFee,0) + COALESCE(FBAStorageFee,0) + COALESCE(FBALongTermStorageFee,0) + COALESCE(FBAInboundConvenienceFee,0) + COALESCE(FBAInboundDefectFee,0) + COALESCE(FBADisposalFee,0) + COALESCE(couponRedemptionFee,0) + COALESCE(lightningDealFee,0)) as amazonFees,
+      COALESCE(amazonFees,0) as amazonFees,
       COALESCE(productCostSales,0) as cogs,
       COALESCE(estimatedPayout,0) as estimatedPayout,
       COALESCE(grossProfit,0) as grossProfit,
@@ -98,15 +97,15 @@ function salesUnion(dateAlias = 'date') {
     UNION ALL
 
     SELECT accountId, date,
-      (salesOrganic + salesPPC) as sales,
-      (unitsOrganic + unitsPPC) as units,
+      (COALESCE(salesOrganic,0) + COALESCE(salesPPC,0)) as sales,
+      (COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0)) as units,
       COALESCE(orders,0) as orders,
       COALESCE(refunds,0) as refunds,
       (COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0)) as adSpend,
       COALESCE(shipping,0) as shipping,
       COALESCE(refundCost,0) as refundCost,
       COALESCE(amazonFees,0) as amazonFees,
-      COALESCE(costOfGoods,0) as cogs,
+      COALESCE(productCostSales,0) as cogs,
       COALESCE(estimatedPayout,0) as estimatedPayout,
       COALESCE(grossProfit,0) as grossProfit,
       COALESCE(netProfit,0) as netProfit,
@@ -265,7 +264,7 @@ app.get('/api/exec/daily', async (req, res) => {
         SUM(orders) as orders,
         SUM(refunds) as refunds,
         SUM(sessions) as sessions,
-        SUM(COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0)) as adSpend
+        SUM(COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0) + COALESCE(googleAds,0) + COALESCE(facebookAds,0)) as adSpend
       FROM seller_board_day
       WHERE date BETWEEN ? AND ?
       GROUP BY date ORDER BY date
@@ -460,7 +459,7 @@ app.get('/api/plan/actuals', async (req, res) => {
       SELECT p.asin, a.store as brand, a.seller, MONTH(p.date) as month_num,
         SUM(p.unitsOrganic + p.unitsPPC) as units,
         SUM(p.salesOrganic + p.salesPPC) as revenue,
-        SUM(COALESCE(p.sponsoredProducts,0) + COALESCE(p.sponsoredDisplay,0) + COALESCE(p.sponsoredBrands,0) + COALESCE(p.sponsoredBrandsVideo,0)) as ads,
+        SUM(COALESCE(p.sponsoredProducts,0) + COALESCE(p.sponsoredDisplay,0) + COALESCE(p.sponsoredBrands,0) + COALESCE(p.sponsoredBrandsVideo,0) + COALESCE(p.googleAds,0) + COALESCE(p.facebookAds,0)) as ads,
         SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.amazonFees,0)) as amzFee,
         SUM(COALESCE(p.grossProfit,0)) as grossProfit,
@@ -604,7 +603,7 @@ app.get('/api/ops/daily', async (req, res) => {
         SUM(netProfit) as netProfit,
         SUM(unitsOrganic + unitsPPC) as units,
         SUM(orders) as orders,
-        SUM(COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0)) as adSpend
+        SUM(COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0) + COALESCE(googleAds,0) + COALESCE(facebookAds,0)) as adSpend
       FROM seller_board_day
       WHERE date BETWEEN ? AND ?
       GROUP BY date ORDER BY date DESC LIMIT 30
