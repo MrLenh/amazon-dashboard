@@ -141,29 +141,43 @@ app.get('/api/health', async (req, res) => {
 /* ═══════════ DATE RANGE — auto-detect from DB ═══════════ */
 app.get('/api/date-range', async (req, res) => {
   try {
-    const rows = await q(`
+    // Check date ranges across all critical tables
+    const salesRange = await q(`
       SELECT MIN(d) as minDate, MAX(d) as maxDate FROM (
         SELECT MIN(date) as d FROM seller_board_sales
-        UNION ALL
-        SELECT MAX(date) as d FROM seller_board_sales
-        UNION ALL
-        SELECT MIN(date) as d FROM seller_board_sales_old
-        UNION ALL
-        SELECT MAX(date) as d FROM seller_board_sales_old
+        UNION ALL SELECT MAX(date) as d FROM seller_board_sales
+        UNION ALL SELECT MIN(date) as d FROM seller_board_sales_old
+        UNION ALL SELECT MAX(date) as d FROM seller_board_sales_old
       ) t
     `);
-    const r = rows[0] || {};
+    let dayMax = null, productMax = null;
+    try {
+      const dm = await q('SELECT MAX(date) as d FROM seller_board_day');
+      dayMax = dm[0]?.d ? new Date(dm[0].d).toISOString().slice(0,10) : null;
+    } catch(e) {}
+    try {
+      const pm = await q('SELECT MAX(date) as d FROM seller_board_product');
+      productMax = pm[0]?.d ? new Date(pm[0].d).toISOString().slice(0,10) : null;
+    } catch(e) {}
+
+    const r = salesRange[0] || {};
     const minD = r.minDate ? new Date(r.minDate).toISOString().slice(0,10) : null;
     const maxD = r.maxDate ? new Date(r.maxDate).toISOString().slice(0,10) : null;
-    // Default range: last 30 days of available data
-    let defaultStart = maxD, defaultEnd = maxD;
-    if (maxD) {
-      const ms = new Date(maxD);
+    
+    // Smart default: use the min of all max dates so all tables have data
+    const allMax = [maxD, dayMax, productMax].filter(Boolean);
+    const smartMax = allMax.length > 0 ? allMax.sort()[0] : maxD; // earliest max = all tables have data
+    
+    let defaultStart = smartMax, defaultEnd = smartMax;
+    if (smartMax) {
+      const ms = new Date(smartMax);
       ms.setDate(ms.getDate() - 29);
       defaultStart = ms.toISOString().slice(0,10);
       if (defaultStart < minD) defaultStart = minD;
     }
-    res.json({ minDate: minD, maxDate: maxD, defaultStart, defaultEnd });
+    res.json({ minDate: minD, maxDate: maxD, defaultStart, defaultEnd,
+      tableMaxDates: { sales: maxD, day: dayMax, product: productMax }
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -256,7 +270,8 @@ app.get('/api/exec/daily', async (req, res) => {
   try {
     const { start, end } = req.query;
     const s = start || '2026-01-01', e = end || '2026-01-31';
-    const rows = await q(`
+    // Try seller_board_day first (has googleAds, facebookAds)
+    let rows = await q(`
       SELECT date,
         SUM(salesOrganic + salesPPC) as revenue,
         SUM(netProfit) as netProfit,
@@ -269,6 +284,19 @@ app.get('/api/exec/daily', async (req, res) => {
       WHERE date BETWEEN ? AND ?
       GROUP BY date ORDER BY date
     `, [s, e]);
+    // Fallback to salesUnion if seller_board_day has no data for this period
+    if (!rows || rows.length === 0) {
+      rows = await q(`
+        SELECT d.date,
+          SUM(d.sales) as revenue, SUM(d.netProfit) as netProfit,
+          SUM(d.units) as units, SUM(d.orders) as orders,
+          SUM(d.refunds) as refunds, SUM(d.sessions) as sessions,
+          SUM(d.adSpend) as adSpend
+        FROM ${salesUnion()} d
+        WHERE d.date BETWEEN ? AND ?
+        GROUP BY d.date ORDER BY d.date
+      `, [s, e]);
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -348,13 +376,12 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       FROM fba_iventory_planning
       WHERE date = (SELECT MAX(date) FROM fba_iventory_planning)
     `);
-    // FBA Stock from seller_board_stock (matches DAX: Total FBA Stock, Stock Value)
+    // FBA Stock from seller_board_stock (NO date column - it's a snapshot table)
     let stock = {};
     try {
       const s = await q(`
         SELECT SUM(FBAStock) as fbaStock, SUM(COALESCE(stockValue,0)) as stockValue
         FROM seller_board_stock
-        WHERE date = (SELECT MAX(date) FROM seller_board_stock)
       `);
       stock = s[0] || {};
     } catch(e) {}
@@ -538,13 +565,12 @@ app.get('/api/shops', async (req, res) => {
       GROUP BY d.accountId ${having} ORDER BY revenue DESC
     `, [s, e]);
 
-    // FBA stock from seller_board_stock (matches DAX: Shop FBA Stock = SUM(seller_board_stock[FBAStock]))
+    // FBA stock from seller_board_stock (no date column - snapshot table)
     let stockMap = {};
     try {
       const stocks = await q(`
         SELECT accountId, SUM(FBAStock) as fbaStock, SUM(COALESCE(stockValue,0)) as stockValue
         FROM seller_board_stock
-        WHERE date = (SELECT MAX(date) FROM seller_board_stock)
         GROUP BY accountId
       `);
       stocks.forEach(ss => { stockMap[ss.accountId] = { fba: ss.fbaStock, sv: ss.stockValue }; });
@@ -597,7 +623,7 @@ app.get('/api/ops/daily', async (req, res) => {
   try {
     const { start, end } = req.query;
     const s = start || '2026-01-01', e = end || '2026-01-31';
-    const rows = await q(`
+    let rows = await q(`
       SELECT date,
         SUM(salesOrganic + salesPPC) as revenue,
         SUM(netProfit) as netProfit,
@@ -608,6 +634,18 @@ app.get('/api/ops/daily', async (req, res) => {
       WHERE date BETWEEN ? AND ?
       GROUP BY date ORDER BY date DESC LIMIT 30
     `, [s, e]);
+    // Fallback to salesUnion if seller_board_day has no data
+    if (!rows || rows.length === 0) {
+      rows = await q(`
+        SELECT d.date,
+          SUM(d.sales) as revenue, SUM(d.netProfit) as netProfit,
+          SUM(d.units) as units, SUM(d.orders) as orders,
+          SUM(d.adSpend) as adSpend
+        FROM ${salesUnion()} d
+        WHERE d.date BETWEEN ? AND ?
+        GROUP BY d.date ORDER BY d.date DESC LIMIT 30
+      `, [s, e]);
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
