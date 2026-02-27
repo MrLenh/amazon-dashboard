@@ -102,7 +102,7 @@ function salesUnion(dateAlias = 'date') {
       (unitsOrganic + unitsPPC) as units,
       COALESCE(orders,0) as orders,
       COALESCE(refunds,0) as refunds,
-      (COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0) + COALESCE(googleAds,0) + COALESCE(facebookAds,0)) as adSpend,
+      (COALESCE(sponsoredProducts,0) + COALESCE(sponsoredDisplay,0) + COALESCE(sponsoredBrands,0) + COALESCE(sponsoredBrandsVideo,0)) as adSpend,
       COALESCE(shipping,0) as shipping,
       COALESCE(refundCost,0) as refundCost,
       COALESCE(amazonFees,0) as amazonFees,
