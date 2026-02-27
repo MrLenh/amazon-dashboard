@@ -43,7 +43,6 @@ const ALL_SHOPS=["Oassie","Teezwonder","Flagwix","Wrapix","Gingerglow","AXIARA",
 const ALL_SELLERS=["AP","BT","DU","HM","KL","QH","QT","TN","TP"];
 const ALL_BRANDS=["Oassie","Teezwonder","Flagwix","Wrapix","Gingerglow","AXIARA","GAUDORA","ARVEXO","Geembi","Palorix"];
 
-// Shop → seller mapping
 const SHOP_SELLERS={"Oassie":["TN"],"Teezwonder":["AP"],"Flagwix":["BT"],"Wrapix":["DU"],"Gingerglow":["TP"],"AXIARA":["DU","QH"],"GAUDORA":["HM"],"ARVEXO":["KL"],"Geembi":["QH"],"Mondaystyle 2":["QT"],"Palorix":["QT"]};
 
 const shopData=[
@@ -60,7 +59,6 @@ const shopData=[
   {s:"Palorix",r:384499,n:-7505,m:-1.95,f:12475,o:20200,ss:273000},
 ];
 
-// Daily data with full dates for filtering
 const janDaily=Array.from({length:31},(_,i)=>{
   const d=String(i+1).padStart(2,"0");
   const rv=[18200,19500,17800,16900,15200,14100,12800,18900,20100,21500,19800,20400,21200,22100,20800,19600,21800,23200,22500,21100,22800,24100,23500,22200,24800,25500,23800,26100,27200,25900,28500];
@@ -149,11 +147,8 @@ const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec
 const TIPS={sales:"Total revenue from all sales",units:"Total units sold",refunds:"Refunded orders",advCost:"Total ad spend (PPC)",shippingCost:"FBA shipping fees",refundCost:"Cost of processing refunds",amazonFees:"Referral + FBA fees",cogs:"Cost of Goods Sold",netProfit:"Revenue − All Costs",estPayout:"Estimated Amazon payout",realAcos:"Ad Spend / Sales × 100%",pctRefunds:"Refunds / Orders × 100%",margin:"Net Profit / Revenue × 100%",sessions:"Product page views",gp:"SUM(grossProfit) from seller_board_sales",cr:"Orders / Sessions × 100%",ctr:"Clicks / Impressions × 100%",sellThrough:"Units Sold / (Sold + Ending Inventory)",doh:"Current Stock / Avg Daily Sales"};
 
 /* ═══════════ BIDIRECTIONAL FILTER HOOK ═══════════ */
-// Given selections for store/seller/brand/asin, compute available options for EACH filter
-// by looking at what remains when the OTHER filters are applied
 function useBidirectionalFilters(store, seller, brand, asinF, masterList) {
   return useMemo(() => {
-    // masterList = array of {a, b (brand), st (store), sl (seller)}
     const applyExcept = (excl) => {
       let d = masterList;
       if (excl !== 'store' && store !== 'All') d = d.filter(x => x.st === store);
@@ -176,16 +171,15 @@ function Tip({text,t}){const[s,setS]=useState(false);return<span style={{positio
 
 function DateInput({label,value,onChange,t}){return<div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:10,color:t.textMuted,fontWeight:600}}>{label}:</span><input type="date" value={value} onChange={e=>onChange(e.target.value)} style={{background:t.card,color:t.text,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"5px 8px",fontSize:11,fontWeight:500,cursor:"pointer"}}/></div>}
 
-function PeriodBtns({onSelect,t}){
-  const td=new Date();const fmt=d=>d.toISOString().slice(0,10);
-  const daysAgo=n=>{const d=new Date(td);d.setDate(d.getDate()-n);return fmt(d)};
-  const monthStart=(m=0)=>{const d=new Date(td.getFullYear(),td.getMonth()-m,1);return fmt(d)};
-  const monthEnd=(m=0)=>{const d=new Date(td.getFullYear(),td.getMonth()-m+1,0);return fmt(d)};
+function PeriodBtns({onSelect,active,t}){
   const P=[
-    ["Last 7D",daysAgo(7),fmt(td)],["Last 30D",daysAgo(30),fmt(td)],
-    ["This Month",monthStart(0),fmt(td)],["Last Month",monthStart(1),monthEnd(1)],
-    ["Last 3M",monthStart(3),fmt(td)],["Last 6M",monthStart(6),fmt(td)],
-    ["YTD",td.getFullYear()+"-01-01",fmt(td)],
+    ["Last 7D","2026-01-25","2026-01-31"],
+    ["Last 14D","2026-01-18","2026-01-31"],
+    ["Jan W1","2026-01-01","2026-01-07"],
+    ["Jan W2","2026-01-08","2026-01-14"],
+    ["Jan W3","2026-01-15","2026-01-21"],
+    ["Jan W4","2026-01-22","2026-01-31"],
+    ["Full Month","2026-01-01","2026-01-31"],
   ];
   return<div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{P.map(([l,s,e])=><button key={l} onClick={()=>onSelect(s,e,l)} style={{padding:"4px 8px",borderRadius:6,border:"1px solid "+(active===l?t.primary:t.inputBorder),fontSize:10,cursor:"pointer",fontWeight:600,background:active===l?t.primaryLight:t.card,color:active===l?t.primary:t.textSec,whiteSpace:"nowrap"}}>{l}</button>)}</div>;
 }
@@ -222,10 +216,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg}){
   const donut=fShop.slice(0,6).map((s,i)=>({name:s.s,value:s.r,fill:colors[i%6]}));
   if(fShop.length>6)donut.push({name:"Others",value:fShop.slice(6).reduce((s,x)=>s+x.r,0),fill:t.textMuted});
   const fmtD=d=>{try{return new Date(d+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch{return d}};
-  // Per-metric % change
   const ch=k=>prevEm?pctChg(em[k],prevEm[k]):undefined;
   const ChgBadge=({v})=>{if(v==null)return null;const c=v>=0?"#8CFFC1":"#FF9A8A";return<div style={{fontSize:8,fontWeight:600,color:c,marginTop:1}}>{v>=0?"↑":"↓"}{Math.abs(v).toFixed(1)}%</div>};
-  // Summary metrics with change
   const smItems=[
     {l:"Sales",v:$2(em.sales),c:ch("sales")},{l:"Orders",v:N(em.orders),c:ch("orders")},
     {l:"Units",v:N(em.units),c:ch("units")},{l:"Refunds",v:N(em.refunds)},
@@ -288,7 +280,6 @@ function PlanPage({t,fPlanBk}){
   const trendData=monthPlan.map(m=>({m:m.m,Actual:m[mK[trendMetric].a],Plan:m[mK[trendMetric].p]}));
   const isCur=["gp","rv","ad"].includes(trendMetric);const isPct=["cr","ct"].includes(trendMetric);
 
-  // KPI cards: filter by kpiMonth
   const kpiData=useMemo(()=>{
     if(kpiMonth==="All")return planDt;
     const mi=MS.indexOf(kpiMonth);const m=monthPlan[mi];if(!m)return planDt;
@@ -374,12 +365,12 @@ export default function App(){
   // Global filters — default end = today
   const today=new Date().toISOString().slice(0,10);
   const[sd,setSd]=useState("2026-01-01");const[ed,setEd]=useState(today);
+  const[activePeriod,setActivePeriod]=useState(null);
   const[store,setStore]=useState("All");const[seller,setSeller]=useState("All");
   const[brand,setBrand]=useState("All");const[asinF,setAsinF]=useState("All");
   const[planYear,setPlanYear]=useState(2026);
-  const[activePeriod,setActivePeriod]=useState(null);
 
-  const clearDates=()=>{setSd("2026-01-01");setEd(today)};
+  const clearDates=()=>{setSd("2026-01-01");setEd(new Date().toISOString().slice(0,10));setActivePeriod(null)};
 
   // Master ASIN list for bidirectional filters
   const masterList=useMemo(()=>{
@@ -397,10 +388,8 @@ export default function App(){
   useEffect(()=>{if(asinF!=="All"&&!opts.asins.includes(asinF))setAsinF("All")},[opts.asins]);
 
   // ═══════════ FILTERED DATA (demo mode) ═══════════
-  // Date-filtered daily data
   const fDaily=useMemo(()=>janDaily.filter(d=>d.date>=sd&&d.date<=ed),[sd,ed]);
 
-  // Filtered ASINs (all 4 filters apply)
   const fAsin=useMemo(()=>{
     let d=[...asinPerf];
     if(store!=="All")d=d.filter(a=>a.st===store);
@@ -410,7 +399,6 @@ export default function App(){
     return d;
   },[store,seller,brand,asinF]);
 
-  // Filtered shop data (store + seller both apply)
   const fShopData=useMemo(()=>{
     let d=[...shopData];
     if(store!=="All")d=d.filter(s=>s.s===store);
@@ -420,7 +408,6 @@ export default function App(){
 
   const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n})),[fShopData]);
 
-  // Filtered seller data
   const fSeller=useMemo(()=>{
     let d=[...sellerData];
     if(seller!=="All")d=d.filter(s=>s.sl===seller);
@@ -428,7 +415,6 @@ export default function App(){
     return d;
   },[seller,store]);
 
-  // Filtered plan breakdown
   const fPlanBk=useMemo(()=>{
     let d=[...asinPlanBk];
     if(seller!=="All")d=d.filter(a=>a.sl===seller);
@@ -437,14 +423,11 @@ export default function App(){
     return d;
   },[seller,brand,asinF]);
 
-  // ═══════════ COMPUTED EXEC METRICS (dynamic, reacts to date filter) ═══════════
-  // In demo: scale execMetrics proportionally based on selected date range
-  // In live: API will return actual numbers for the selected range
+  // ═══════════ COMPUTED EXEC METRICS ═══════════
   const em = useMemo(() => {
-    const totalDays = 31; // Jan has 31 days in base data
+    const totalDays = 31;
     const selectedDays = fDaily.length;
     const ratio = selectedDays / totalDays;
-    // Sum daily revenue/NP from fDaily for accurate totals
     const dailyRev = fDaily.reduce((s, d) => s + d.revenue, 0);
     const dailyNP = fDaily.reduce((s, d) => s + d.netProfit, 0);
     const dailyUnits = fDaily.reduce((s, d) => s + d.units, 0);
@@ -457,12 +440,11 @@ export default function App(){
       estPayout: execMetrics.estPayout * ratio, grossProfit: execMetrics.grossProfit * ratio,
       sessions: Math.round(execMetrics.sessions * ratio),
       realAcos: dailyRev > 0 ? (Math.abs(execMetrics.advCost * ratio) / dailyRev * 100) : 0,
-      pctRefunds: execMetrics.pctRefunds, // rate stays same
+      pctRefunds: execMetrics.pctRefunds,
       margin: dailyRev > 0 ? (dailyNP / dailyRev * 100) : 0,
     };
   }, [fDaily]);
 
-  // Previous period metrics (same length, immediately before current range)
   const prevEm = useMemo(() => {
     const days = Math.max(1, Math.round((new Date(ed) - new Date(sd)) / 86400000) + 1);
     const prevEnd = new Date(new Date(sd).getTime() - 86400000);
@@ -483,7 +465,6 @@ export default function App(){
     };
   }, [sd, ed]);
 
-  // % change helper
   const pctChg = useCallback((cur, prev) => {
     if (prev == null || prev === 0) return undefined;
     return ((cur - prev) / Math.abs(prev)) * 100;
@@ -519,7 +500,7 @@ export default function App(){
       </div>
       {/* Filter bar */}
       <div style={{padding:"8px 20px",borderBottom:"1px solid "+t.sidebarBorder,background:t.topbar,flexShrink:0,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        {showDate&&<><DateInput label="Start" value={sd} onChange={setSd} t={t}/><DateInput label="End" value={ed} onChange={setEd} t={t}/><ClearBtn onClick={clearDates} t={t}/></>}
+        {showDate&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><ClearBtn onClick={clearDates} t={t}/></>}
         {showPeriod&&<PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t}/>}
         {showPlanYear&&<div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>Year:</span><select value={planYear} onChange={e=>setPlanYear(+e.target.value)} style={{background:t.card,color:t.text,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{[2024,2025,2026].map(y=><option key={y}>{y}</option>)}</select></div>}
         {pg==="inv"&&<div style={{fontSize:11,color:t.textMuted,fontWeight:600}}>📅 Latest snapshot</div>}
