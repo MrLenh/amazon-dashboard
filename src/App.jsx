@@ -179,7 +179,7 @@ export default function App(){
   const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));const[planMonth,setPlanMonth]=useState("All");
   const planYearOpts=useMemo(()=>{const cur=new Date().getFullYear();return[String(cur-1),String(cur),String(cur+1)]},[]);
   const clearDates=()=>{if(dbRange){setSd(dbRange.defaultStart||dbRange.minDate);setEd(dbRange.defaultEnd||dbRange.maxDate)}else{setSd(defaultStart);setEd(today)}setActivePeriod(null)};
-  const masterList=useMemo(()=>{if(filterData?.asins)return filterData.asins.map(a=>({a:a.asin,b:a.brand,st:a.brand,sl:a.seller}));return []},[filterData]);
+  const masterList=useMemo(()=>{if(filterData?.asins)return filterData.asins.map(a=>({a:a.asin,b:a.brand,st:a.shop||a.brand,sl:a.seller}));return []},[filterData]);
   const opts=useBidirectionalFilters(store,seller,brand,asinF,masterList);
   useEffect(()=>{if(store!=="All"&&!opts.stores.includes(store))setStore("All")},[opts.stores]);
   useEffect(()=>{if(seller!=="All"&&!opts.sellers.includes(seller))setSeller("All")},[opts.sellers]);
@@ -188,8 +188,21 @@ export default function App(){
 
   // ═══════════ ALL DATA FROM API — NO HARDCODE ═══════════
   const[fDaily,setFDaily]=useState([]);const[em,setEm]=useState(emptyEm);const[fAsin,setFAsin]=useState([]);const[fShopData,setFShopData]=useState([]);const[fSeller,setFSeller]=useState([]);const[loading,setLoading]=useState(false);const[prevEm,setPrevEm]=useState(null);
-  useEffect(()=>{if(!live)return;setLoading(true);const p={start:sd,end:ed};const pA={...p,store:store!=="All"?store:undefined,seller:seller!=="All"?seller:undefined,brand:brand!=="All"?brand:undefined,asin:asinF!=="All"?asinF:undefined};Promise.all([api("exec/daily",p).catch(()=>[]),api("exec/summary",p).catch(()=>emptyEm),api("exec/top-asins",pA).catch(()=>[]),api("shops",{...p,store:store!=="All"?store:undefined}).catch(()=>[]),api("team",{...p,seller:seller!=="All"?seller:undefined}).catch(()=>[])]).then(([daily,exec,asins,shops,sellers])=>{if(Array.isArray(daily))setFDaily(daily.map(d=>({date:d.date?.slice(0,10),label:new Date(d.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}),revenue:parseFloat(d.revenue)||0,netProfit:parseFloat(d.netProfit)||0,units:parseInt(d.units)||0})));if(exec)setEm(exec);if(Array.isArray(asins))setFAsin(asins.map(a=>({a:a.asin,b:a.brand||"",st:a.brand||"",sl:a.seller||"",r:a.revenue||0,n:a.netProfit||0,m:a.margin||0,u:a.units||0,cr:a.cr||0,ac:a.acos||0,ro:a.acos>0?(100/a.acos):0})));if(Array.isArray(shops))setFShopData(shops.map(s=>({s:s.shop,r:s.revenue||0,n:s.netProfit||0,m:s.margin||0,f:s.fbaStock||0,o:s.orders||0,ss:0})));if(Array.isArray(sellers))setFSeller(sellers.map(s=>({sl:s.seller,r:s.revenue||0,n:s.netProfit||0,m:s.margin||0,u90:0,as:s.asinCount||0})));setLoading(false)})},[live,sd,ed,store,seller,brand,asinF]);
-  useEffect(()=>{if(!live)return;const days=Math.max(1,Math.round((new Date(ed)-new Date(sd))/86400000)+1);const prevEnd=new Date(new Date(sd).getTime()-86400000);const prevStart=new Date(prevEnd.getTime()-(days-1)*86400000);api("exec/summary",{start:prevStart.toISOString().slice(0,10),end:prevEnd.toISOString().slice(0,10)}).then(d=>{if(d)setPrevEm(d)}).catch(()=>setPrevEm(null))},[live,sd,ed]);
+  useEffect(()=>{if(!live)return;setLoading(true);
+    const p={start:sd,end:ed};
+    const stP=store!=="All"?store:undefined;
+    const slP=seller!=="All"?seller:undefined;
+    const brP=brand!=="All"?brand:undefined;
+    const asP=asinF!=="All"?asinF:undefined;
+    const pAll={...p,store:stP,seller:slP,brand:brP,asin:asP};
+    Promise.all([
+      api("exec/daily",pAll).catch(()=>[]),
+      api("exec/summary",pAll).catch(()=>emptyEm),
+      api("exec/top-asins",pAll).catch(()=>[]),
+      api("shops",{...p,store:stP,seller:slP}).catch(()=>[]),
+      api("team",{...p,seller:slP}).catch(()=>[])
+    ]).then(([daily,exec,asins,shops,sellers])=>{if(Array.isArray(daily))setFDaily(daily.map(d=>({date:d.date?.slice(0,10),label:new Date(d.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}),revenue:parseFloat(d.revenue)||0,netProfit:parseFloat(d.netProfit)||0,units:parseInt(d.units)||0})));if(exec)setEm(exec);if(Array.isArray(asins))setFAsin(asins.map(a=>({a:a.asin,b:a.brand||"",st:a.brand||"",sl:a.seller||"",r:a.revenue||0,n:a.netProfit||0,m:a.margin||0,u:a.units||0,cr:a.cr||0,ac:a.acos||0,ro:a.acos>0?(100/a.acos):0})));if(Array.isArray(shops))setFShopData(shops.map(s=>({s:s.shop,r:s.revenue||0,n:s.netProfit||0,m:s.margin||0,f:s.fbaStock||0,o:s.orders||0,ss:0})));if(Array.isArray(sellers))setFSeller(sellers.map(s=>({sl:s.seller,r:s.revenue||0,n:s.netProfit||0,m:s.margin||0,u90:0,as:s.asinCount||0})));setLoading(false)})},[live,sd,ed,store,seller,brand,asinF]);
+  useEffect(()=>{if(!live)return;const days=Math.max(1,Math.round((new Date(ed)-new Date(sd))/86400000)+1);const prevEnd=new Date(new Date(sd).getTime()-86400000);const prevStart=new Date(prevEnd.getTime()-(days-1)*86400000);const fp={start:prevStart.toISOString().slice(0,10),end:prevEnd.toISOString().slice(0,10),store:store!=="All"?store:undefined,seller:seller!=="All"?seller:undefined,brand:brand!=="All"?brand:undefined,asin:asinF!=="All"?asinF:undefined};api("exec/summary",fp).then(d=>{if(d)setPrevEm(d)}).catch(()=>setPrevEm(null))},[live,sd,ed,store,seller,brand,asinF]);
   const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n})),[fShopData]);
   const[fPlanBk,setFPlanBk]=useState([]);
   useEffect(()=>{if(!live)return;api("plan/actuals",{year:planYear!=="All"?planYear:undefined,month:planMonth!=="All"?planMonth:undefined,seller:seller!=="All"?seller:undefined,brand:brand!=="All"?brand:undefined,asin:asinF!=="All"?asinF:undefined}).then(d=>{if(d?.asinBreakdown)setFPlanBk(d.asinBreakdown)}).catch(()=>setFPlanBk([]))},[live,planYear,planMonth,seller,brand,asinF]);
