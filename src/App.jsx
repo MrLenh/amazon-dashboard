@@ -231,13 +231,13 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob}){
     {l:"Net Profit",v:$2(em.netProfit),c:ch("netProfit")},
   ];
   return<div>
-    <Cd t={t} style={{background:`linear-gradient(135deg,${t.primary},#5A6BC5)`,border:"none",marginBottom:16}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><div style={{fontSize:11,color:"#ffffffaa",fontWeight:600,letterSpacing:1}}>SELLERBOARD SUMMARY</div><div style={{fontSize:10,color:"#ffffff55",marginTop:2}}>{fmtD(sd)} — {fmtD(ed)}</div></div>
-        {ch("sales")!=null&&<span style={{fontSize:10,fontWeight:600,color:ch("sales")>=0?"#8CFFC1":"#FF9A8A",background:"rgba(255,255,255,.12)",padding:"4px 12px",borderRadius:10}}>{ch("sales")>=0?"↑":"↓"} {Math.abs(ch("sales")).toFixed(1)}% vs prev period</span>}
+    <Cd t={t} style={{background:t.card,border:"1px solid "+t.cardBorder,marginBottom:16,padding:0,overflow:"hidden"}}>
+      <div style={{padding:"12px 18px",background:t.primary,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:12,color:"#fff",fontWeight:700,letterSpacing:.8}}>SELLERBOARD SUMMARY</div><div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{fmtD(sd)} — {fmtD(ed)}</div></div>
+        {ch("sales")!=null&&<span style={{fontSize:10,fontWeight:600,color:ch("sales")>=0?"#8CFFC1":"#FF9A8A",background:"rgba(255,255,255,.15)",padding:"4px 12px",borderRadius:10}}>{ch("sales")>=0?"↑":"↓"} {Math.abs(ch("sales")).toFixed(1)}% vs prev period</span>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(auto-fit,minmax(100px,1fr))",gap:8,marginTop:10}}>
-        {smItems.map((m,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:9,color:"#ffffff55",textTransform:"uppercase",fontWeight:600}}>{m.l}</div><div style={{fontSize:15,fontWeight:700,color:"#fff",marginTop:2}}>{m.v}</div><ChgBadge v={m.c}/></div>)}
+      <div style={{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(auto-fit,minmax(110px,1fr))",gap:0}}>
+        {smItems.map((m,i)=><div key={i} style={{textAlign:"center",padding:"14px 8px",borderRight:i<smItems.length-1?"1px solid "+t.divider:"none",borderBottom:mob&&i<smItems.length-3?"1px solid "+t.divider:"none"}}><div style={{fontSize:9,color:t.textMuted,textTransform:"uppercase",fontWeight:700,letterSpacing:.5}}>{m.l}</div><div style={{fontSize:16,fontWeight:800,color:t.text,marginTop:4}}>{m.v}</div>{m.c!=null&&<div style={{fontSize:10,fontWeight:600,color:m.c>=0?t.green:t.red,marginTop:3}}>{m.c>=0?"↑":"↓"}{Math.abs(m.c).toFixed(1)}%</div>}</div>)}
       </div>
     </Cd>
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
