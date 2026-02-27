@@ -377,6 +377,7 @@ export default function App(){
   const[store,setStore]=useState("All");const[seller,setSeller]=useState("All");
   const[brand,setBrand]=useState("All");const[asinF,setAsinF]=useState("All");
   const[planYear,setPlanYear]=useState(2026);
+  const[activePeriod,setActivePeriod]=useState(null);
 
   const clearDates=()=>{setSd("2026-01-01");setEd(today)};
 
