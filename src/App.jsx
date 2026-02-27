@@ -519,7 +519,7 @@ export default function App(){
       {/* Filter bar */}
       <div style={{padding:"8px 20px",borderBottom:"1px solid "+t.sidebarBorder,background:t.topbar,flexShrink:0,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         {showDate&&<><DateInput label="Start" value={sd} onChange={setSd} t={t}/><DateInput label="End" value={ed} onChange={setEd} t={t}/><ClearBtn onClick={clearDates} t={t}/></>}
-        {showPeriod&&<PeriodBtns onSelect={(s,e)=>{setSd(s);setEd(e)}} t={t}/>}
+        {showPeriod&&<PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t}/>}
         {showPlanYear&&<div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>Year:</span><select value={planYear} onChange={e=>setPlanYear(+e.target.value)} style={{background:t.card,color:t.text,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{[2024,2025,2026].map(y=><option key={y}>{y}</option>)}</select></div>}
         {pg==="inv"&&<div style={{fontSize:11,color:t.textMuted,fontWeight:600}}>📅 Latest snapshot</div>}
         <div style={{marginLeft:"auto",display:"flex",gap:6}}>
