@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { checkBackend, api, apiPost, isLive } from "./api.js";
+import { checkBackend, api, apiPost } from "./api.js";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Cell, ScatterChart, Scatter,
@@ -12,109 +12,8 @@ const TH={
   dark:{bg:"#0F1117",card:"#1A1D2B",cardBorder:"#252837",sidebar:"#141620",sidebarBorder:"#1E2030",sidebarActive:"#1E2245",topbar:"#141620",text:"#E8EAF0",textSec:"#8B90A5",textMuted:"#555A70",primary:"#7B8FE0",primaryLight:"#1E2245",primaryGhost:"#161933",green:"#3DD68C",greenBg:"#0E2A1E",red:"#FF6B5A",redBg:"#2A1414",orange:"#FFB547",orangeBg:"#2A2010",blue:"#60A5FA",purple:"#A78BFA",chartGrid:"#252837",inputBg:"#1E2030",inputBorder:"#2A2D3E",tableBg:"#161828",tableHover:"#1E2245",divider:"#1E2030",kpiIcon:"#1E2245",shadow:"rgba(0,0,0,0.4)"},
 };
 
-/* ═══════════ DEMO DATA (Jan 1 → Feb 27) ═══════════ */
-const ALL_SHOPS=["Oassie","Teezwonder","Flagwix","Wrapix","Gingerglow","AXIARA","GAUDORA","ARVEXO","Geembi","Mondaystyle 2","Palorix"];
-const ALL_SELLERS=["AP","BT","DU","HM","KL","QH","QT","TN","TP"];
-const SHOP_SELLERS={"Oassie":["TN"],"Teezwonder":["AP"],"Flagwix":["BT"],"Wrapix":["DU"],"Gingerglow":["TP"],"AXIARA":["DU","QH"],"GAUDORA":["HM"],"ARVEXO":["KL"],"Geembi":["QH"],"Mondaystyle 2":["QT"],"Palorix":["QT"]};
-
-const shopData=[
-  {s:"Oassie",r:5964692,n:450722,m:7.56,f:119059,o:312000,ss:4200000},
-  {s:"Teezwonder",r:6826201,n:947412,m:13.88,f:50391,o:358000,ss:4800000},
-  {s:"Flagwix",r:3869687,n:754103,m:19.49,f:74695,o:198000,ss:2700000},
-  {s:"Wrapix",r:2040374,n:295347,m:14.48,f:19531,o:108000,ss:1450000},
-  {s:"Gingerglow",r:173649,n:51508,m:29.66,f:0,o:9200,ss:124000},
-  {s:"AXIARA",r:1947688,n:-4726,m:-0.24,f:31798,o:102000,ss:1380000},
-  {s:"GAUDORA",r:1482466,n:6952,m:0.47,f:27737,o:78000,ss:1050000},
-  {s:"ARVEXO",r:1073955,n:28040,m:2.61,f:28265,o:56000,ss:760000},
-  {s:"Geembi",r:1520894,n:4204,m:0.28,f:28891,o:80000,ss:1080000},
-  {s:"Mondaystyle 2",r:165342,n:-9853,m:-5.96,f:48,o:8700,ss:117000},
-  {s:"Palorix",r:384499,n:-7505,m:-1.95,f:12475,o:20200,ss:273000},
-];
-
-// Generate 58 days: Jan 1 → Feb 27
-const genDaily=()=>{
-  const out=[];
-  const baseRv=[18200,19500,17800,16900,15200,14100,12800,18900,20100,21500,19800,20400,21200,22100,20800,19600,21800,23200,22500,21100,22800,24100,23500,22200,24800,25500,23800,26100,27200,25900,28500];
-  const baseNp=[-1200,-800,-1500,-2100,-3400,-38000,-5200,-1800,400,1200,-200,600,900,1500,300,-500,1100,2000,1600,800,1800,2500,2100,1400,2900,3200,2200,3600,4100,3400,4800];
-  const baseU=[980,1050,920,870,780,710,650,990,1080,1150,1060,1090,1130,1180,1110,1050,1170,1250,1210,1130,1220,1290,1260,1190,1330,1370,1280,1400,1460,1390,1530];
-  // Jan
-  for(let i=0;i<31;i++){const d=String(i+1).padStart(2,"0");out.push({date:`2026-01-${d}`,label:`Jan ${i+1}`,revenue:baseRv[i],netProfit:baseNp[i],units:baseU[i]});}
-  // Feb (scale up ~5-8% from late Jan pattern)
-  const febRv=[29200,27800,26500,28100,29800,27200,25900,30100,31500,28900,32200,30800,29500,33100,34200,31800,35500,33900,32100,36200,37800,35100,33800,38500,36900,34200,39100];
-  const febNp=[5200,4500,3800,5100,5800,4200,3500,6100,6800,5000,7200,6500,5500,7800,8200,6800,9100,7900,6700,9500,10200,8500,7600,10800,9800,8200,11500];
-  const febU=[1580,1520,1450,1540,1620,1490,1420,1650,1720,1580,1760,1680,1610,1810,1870,1740,1940,1850,1750,1980,2060,1920,1840,2100,2020,1870,2140];
-  for(let i=0;i<27;i++){const d=String(i+1).padStart(2,"0");out.push({date:`2026-02-${d}`,label:`Feb ${i+1}`,revenue:febRv[i],netProfit:febNp[i],units:febU[i]});}
-  return out;
-};
-const demoDaily=genDaily();
-
-const execMetrics={sales:637352.46,units:34005,refunds:4430,advCost:-190983.80,shippingCost:-10520.51,refundCost:-52216.08,amazonFees:-296985.45,cogs:-92299.29,netProfit:-10675.20,estPayout:75498.88,realAcos:29.97,pctRefunds:13.03,margin:-1.67,sessions:475132,orders:31098,grossProfit:-10675.20};
-
-const asinPerf=[
-  {a:"B0BPX45TD9",b:"Oassie",st:"Oassie",r:412130,n:49456,m:12,u:28400,cr:8.66,ac:28,ro:3.57,sl:"TN"},
-  {a:"B0CX91P7NP",b:"Teezwonder",st:"Teezwonder",r:185000,n:103090,m:55.7,u:12800,cr:8.65,ac:22,ro:4.55,sl:"AP"},
-  {a:"B0CX949TNB",b:"Teezwonder",st:"Teezwonder",r:142000,n:68420,m:48.2,u:9800,cr:8.67,ac:25,ro:4.00,sl:"AP"},
-  {a:"B0BVKF2N6Z",b:"Flagwix",st:"Flagwix",r:128000,n:56050,m:43.8,u:8900,cr:8.64,ac:30,ro:3.33,sl:"BT"},
-  {a:"B0F9KVTPDS",b:"Flagwix",st:"Flagwix",r:115000,n:53210,m:46.3,u:7900,cr:8.68,ac:24,ro:4.17,sl:"BT"},
-  {a:"B09HKLK7SS",b:"Wrapix",st:"Wrapix",r:108000,n:51650,m:47.8,u:7400,cr:8.60,ac:26,ro:3.85,sl:"DU"},
-  {a:"B0DBH62KKY",b:"Oassie",st:"Oassie",r:102000,n:51570,m:50.6,u:7000,cr:8.64,ac:21,ro:4.76,sl:"TN"},
-  {a:"B0CXSSNL34",b:"GAUDORA",st:"GAUDORA",r:95000,n:45090,m:47.5,u:6500,cr:8.67,ac:27,ro:3.70,sl:"HM"},
-  {a:"B0BPY9VGTK",b:"Oassie",st:"Oassie",r:89000,n:41430,m:46.5,u:6100,cr:8.59,ac:29,ro:3.45,sl:"TN"},
-  {a:"B0CGXRX3RT",b:"Geembi",st:"Geembi",r:82000,n:38710,m:47.2,u:5600,cr:8.62,ac:23,ro:4.35,sl:"QH"},
-  {a:"B0DBPRD6D3",b:"ARVEXO",st:"ARVEXO",r:72000,n:33300,m:46.3,u:4900,cr:8.60,ac:25,ro:4.00,sl:"KL"},
-  {a:"B0DWMHPG2F",b:"Wrapix",st:"Wrapix",r:68000,n:32860,m:48.3,u:4700,cr:8.70,ac:22,ro:4.55,sl:"DU"},
-  {a:"B0F9KVV1GG",b:"AXIARA",st:"AXIARA",r:45000,n:-5573,m:-12.4,u:3100,cr:8.61,ac:65,ro:1.54,sl:"DU"},
-  {a:"B0FNVJHP4X",b:"AXIARA",st:"AXIARA",r:38000,n:-3947,m:-10.4,u:2600,cr:8.67,ac:58,ro:1.72,sl:"QH"},
-  {a:"B0FCRZTKP1",b:"Palorix",st:"Palorix",r:32000,n:-3221,m:-10.1,u:2200,cr:8.80,ac:62,ro:1.61,sl:"QT"},
-];
-
-const sellerData=[
-  {sl:"TN",r:5363388,n:798665,m:14.89,u90:0,as:42},{sl:"AP",r:4215626,n:539428,m:12.80,u90:2301,as:38},
-  {sl:"TP",r:2890088,n:201572,m:6.97,u90:494,as:31},{sl:"DU",r:2313128,n:41610,m:1.80,u90:8660,as:35},
-  {sl:"HM",r:2153948,n:196961,m:9.14,u90:0,as:28},{sl:"BT",r:1858205,n:305739,m:16.45,u90:1841,as:24},
-  {sl:"QH",r:1679986,n:159658,m:9.50,u90:8969,as:29},{sl:"QT",r:867926,n:35752,m:4.12,u90:3791,as:18},
-  {sl:"KL",r:640085,n:37048,m:5.79,u90:0,as:15},
-];
-
-const planDt={gp:{a:-10675,p:17637},rv:{a:637352,p:541859},ad:{a:190684,p:151631},un:{a:34005,p:31069},se:{a:475132,p:338020},im:{a:32614099,p:28919687},cr:{a:7.16,p:9.19},ct:{a:1.21,p:1.17}};
-const monthPlan=[
-  {m:"Jan",gpa:-10675,gpp:17637,ra:637352,rp:541859,aa:190684,ap:151631,ua:34005,up:31069,sa:475132,sp:338020,ia:32614099,ip:28919687,cra:7.16,crp:9.19,cta:1.21,ctp:1.17},
-  {m:"Feb",gpa:185000,gpp:19000,ra:880000,rp:620000,aa:175000,ap:160000,ua:49000,up:33000,sa:510000,sp:360000,ia:31000000,ip:30000000,cra:7.45,crp:9.17,cta:1.22,ctp:1.20},
-  {m:"Mar",gpa:null,gpp:22000,ra:null,rp:680000,aa:null,ap:175000,ua:null,up:36000,sa:null,sp:380000,ia:null,ip:32000000,cra:null,crp:9.47,cta:null,ctp:1.22},
-  {m:"Apr",gpa:null,gpp:24000,ra:null,rp:720000,aa:null,ap:185000,ua:null,up:38000,sa:null,sp:400000,ia:null,ip:34000000,cra:null,crp:9.50,cta:null,ctp:1.25},
-  {m:"May",gpa:null,gpp:28000,ra:null,rp:780000,aa:null,ap:200000,ua:null,up:41000,sa:null,sp:430000,ia:null,ip:36000000,cra:null,crp:9.55,cta:null,ctp:1.28},
-  {m:"Jun",gpa:null,gpp:35000,ra:null,rp:850000,aa:null,ap:220000,ua:null,up:45000,sa:null,sp:470000,ia:null,ip:39000000,cra:null,crp:9.60,cta:null,ctp:1.30},
-  {m:"Jul",gpa:null,gpp:38000,ra:null,rp:900000,aa:null,ap:235000,ua:null,up:48000,sa:null,sp:500000,ia:null,ip:41000000,cra:null,crp:9.65,cta:null,ctp:1.32},
-  {m:"Aug",gpa:null,gpp:42000,ra:null,rp:950000,aa:null,ap:250000,ua:null,up:51000,sa:null,sp:530000,ia:null,ip:43000000,cra:null,crp:9.70,cta:null,ctp:1.35},
-  {m:"Sep",gpa:null,gpp:45000,ra:null,rp:980000,aa:null,ap:260000,ua:null,up:53000,sa:null,sp:550000,ia:null,ip:45000000,cra:null,crp:9.75,cta:null,ctp:1.37},
-  {m:"Oct",gpa:null,gpp:55000,ra:null,rp:1100000,aa:null,ap:290000,ua:null,up:59000,sa:null,sp:600000,ia:null,ip:49000000,cra:null,crp:9.80,cta:null,ctp:1.40},
-  {m:"Nov",gpa:null,gpp:72000,ra:null,rp:1350000,aa:null,ap:350000,ua:null,up:72000,sa:null,sp:720000,ia:null,ip:55000000,cra:null,crp:10.00,cta:null,ctp:1.45},
-  {m:"Dec",gpa:null,gpp:80000,ra:null,rp:1450000,aa:null,ap:380000,ua:null,up:78000,sa:null,sp:780000,ia:null,ip:60000000,cra:null,crp:10.00,cta:null,ctp:1.48},
-];
-
-const asinPlanBk=[
-  {a:"B0BPX45TD9",br:"Oassie",sl:"TN",ga:15200,gp:10000,ra:150000,rp:120000,aa:42000,ap:35000,ua:8200,up:7000,sa:58000,sp:50000,ia:4200000,ip:3800000,cra:8.66,crp:9.20,cta:1.25,ctp:1.20},
-  {a:"B0CX91P7NP",br:"Teezwonder",sl:"AP",ga:12800,gp:8500,ra:98000,rp:85000,aa:28000,ap:24000,ua:5500,up:5000,sa:40000,sp:36000,ia:3100000,ip:2900000,cra:8.65,crp:9.10,cta:1.22,ctp:1.18},
-  {a:"B0CX949TNB",br:"Teezwonder",sl:"AP",ga:9500,gp:7200,ra:72000,rp:65000,aa:21000,ap:18500,ua:4200,up:3800,sa:32000,sp:28000,ia:2400000,ip:2200000,cra:8.67,crp:9.15,cta:1.20,ctp:1.17},
-  {a:"B0BVKF2N6Z",br:"Flagwix",sl:"BT",ga:7700,gp:10000,ra:58000,rp:68000,aa:18000,ap:19000,ua:3400,up:4000,sa:25000,sp:29000,ia:1900000,ip:2100000,cra:7.20,crp:9.00,cta:1.10,ctp:1.15},
-  {a:"B0F9KVTPDS",br:"Flagwix",sl:"BT",ga:6200,gp:5800,ra:48000,rp:45000,aa:14000,ap:13000,ua:2800,up:2600,sa:21000,sp:19000,ia:1600000,ip:1500000,cra:8.68,crp:9.20,cta:1.23,ctp:1.19},
-  {a:"B09HKLK7SS",br:"Wrapix",sl:"DU",ga:5100,gp:4500,ra:38000,rp:35000,aa:11000,ap:10000,ua:2200,up:2000,sa:17000,sp:15000,ia:1300000,ip:1200000,cra:8.60,crp:9.00,cta:1.18,ctp:1.15},
-  {a:"B0DBH62KKY",br:"Oassie",sl:"TN",ga:4800,gp:3200,ra:32000,rp:28000,aa:8500,ap:8000,ua:1900,up:1600,sa:14000,sp:12000,ia:1100000,ip:950000,cra:8.64,crp:9.10,cta:1.21,ctp:1.16},
-  {a:"B0CXSSNL34",br:"GAUDORA",sl:"HM",ga:-2300,gp:2800,ra:22000,rp:25000,aa:9500,ap:7000,ua:1300,up:1500,sa:10000,sp:11000,ia:780000,ip:850000,cra:6.80,crp:9.00,cta:1.05,ctp:1.14},
-  {a:"B0F9KVV1GG",br:"AXIARA",sl:"DU",ga:-5573,gp:-500,ra:12000,rp:8000,aa:9800,ap:4000,ua:700,up:500,sa:5500,sp:3800,ia:420000,ip:300000,cra:4.20,crp:7.50,cta:0.85,ctp:1.00},
-  {a:"B0FNVJHP4X",br:"AXIARA",sl:"QH",ga:-3947,gp:800,ra:9000,rp:12000,aa:7200,ap:4500,ua:520,up:700,sa:4200,sp:5200,ia:320000,ip:400000,cra:5.10,crp:8.50,cta:0.92,ctp:1.05},
-  {a:"B0FCRZTKP1",br:"Palorix",sl:"QT",ga:-3221,gp:600,ra:8500,rp:11000,aa:6800,ap:4200,ua:490,up:650,sa:3900,sp:4800,ia:300000,ip:380000,cra:5.40,crp:8.80,cta:0.95,ctp:1.08},
-];
-
-const invShop=[
-  {s:"Oassie",fba:119059,inb:8000,res:9500,crit:45,st:3.2,doh:38},{s:"Teezwonder",fba:50391,inb:5000,res:4200,crit:22,st:4.1,doh:28},
-  {s:"Flagwix",fba:74695,inb:6000,res:5800,crit:30,st:2.8,doh:42},{s:"Wrapix",fba:19531,inb:3000,res:1800,crit:15,st:3.5,doh:35},
-  {s:"AXIARA",fba:31798,inb:2500,res:2600,crit:18,st:1.9,doh:55},{s:"GAUDORA",fba:27737,inb:2000,res:2100,crit:12,st:2.1,doh:48},
-  {s:"ARVEXO",fba:28265,inb:1500,res:2200,crit:10,st:2.4,doh:44},{s:"Geembi",fba:28891,inb:1800,res:2400,crit:11,st:1.8,doh:52},
-  {s:"Palorix",fba:12475,inb:1200,res:590,crit:7,st:2.6,doh:40},
-];
-const invTrend=[{d:"Jan 18",v:287700},{d:"Jan 20",v:309100},{d:"Jan 23",v:305600},{d:"Jan 26",v:296200},{d:"Jan 28",v:301900},{d:"Feb 01",v:304100},{d:"Feb 05",v:302000},{d:"Feb 10",v:305200},{d:"Feb 15",v:295900},{d:"Feb 22",v:292400}];
-const salesVel=[{d:"Jan 18",v:1049,ma:980},{d:"Jan 20",v:3834,ma:1350},{d:"Jan 23",v:663,ma:1100},{d:"Jan 27",v:1483,ma:1100},{d:"Feb 01",v:945,ma:1180},{d:"Feb 05",v:2108,ma:1350},{d:"Feb 08",v:821,ma:1200},{d:"Feb 12",v:1650,ma:1280},{d:"Feb 16",v:2340,ma:1400},{d:"Feb 20",v:1890,ma:1380},{d:"Feb 24",v:2560,ma:1450}];
+/* ═══════════ EMPTY DEFAULTS ═══════════ */
+const EMPTY_EM={sales:0,units:0,orders:0,refunds:0,advCost:0,shippingCost:0,refundCost:0,amazonFees:0,cogs:0,netProfit:0,estPayout:0,grossProfit:0,sessions:0,realAcos:0,pctRefunds:0,margin:0};
 
 /* ═══════════ UTILS ═══════════ */
 const $=n=>{if(n==null)return"—";return n<0?"-$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0}):"$"+n.toLocaleString("en-US",{maximumFractionDigits:0})};
@@ -196,7 +95,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob}){
   const fmtD=d=>{try{return new Date(d+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch{return d}};
   const ch=k=>prevEm?pctChg(em[k],prevEm[k]):undefined;
   const ChgBadge=({v})=>{if(v==null)return null;const c=v>=0?"#8CFFC1":"#FF9A8A";return<div style={{fontSize:8,fontWeight:600,color:c,marginTop:1}}>{v>=0?"↑":"↓"}{Math.abs(v).toFixed(1)}%</div>};
-  const smItems=[{l:"Sales",v:$2(em.sales),c:ch("sales")},{l:"Orders",v:N(em.orders),c:ch("orders")},{l:"Units",v:N(em.units),c:ch("units")},{l:"Refunds",v:N(em.refunds)},{l:"Adv. Cost",v:$2(em.advCost),c:ch("advCost")},{l:"Est. Payout",v:$2(em.estPayout)},{l:"Net Profit",v:$2(em.netProfit),c:ch("netProfit")}];
+  const smItems=[{l:"Sales",v:$2(em.sales),c:ch("sales")},{l:"Orders",v:N(em.orders),c:ch("orders")},{l:"Units",v:N(em.units),c:ch("units")},{l:"Refunds",v:N(em.refunds),c:ch("refunds")},{l:"Adv. Cost",v:$2(em.advCost),c:ch("advCost")},{l:"Est. Payout",v:$2(em.estPayout),c:ch("estPayout")},{l:"Net Profit",v:$2(em.netProfit),c:ch("netProfit")}];
   return<div>
     <Cd t={t} style={{borderLeft:"4px solid "+t.primary,marginBottom:16,padding:"14px 18px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -226,18 +125,19 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob}){
 }
 
 /* ═══════════ INVENTORY ═══════════ */
-function InvPage({t,mob}){
+function InvPage({t,mob,invData,invShop,invTrend}){
+  const d=invData||{};
   return<div>
     <Cd t={t} style={{padding:"10px 16px",marginBottom:14,borderLeft:"3px solid "+t.blue}}><div style={{fontSize:11,color:t.textSec}}>💡 Latest inventory snapshot. No time filter needed.</div></Cd>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:12,marginBottom:16}}>
-      <KpiCard title="FBA Stock" value="393,890" icon="📦" t={t}/><KpiCard title="Total Inventory" value="436,100" icon="🗃" t={t}/><KpiCard title="Reserved" value="31,210" icon="🔒" t={t}/><KpiCard title="Critical SKUs" value="170" icon="🚨" t={t}/><KpiCard title="Inbound" value="31,000" icon="📥" t={t}/><KpiCard title="Avg Sell-Through" value="2.8%" icon="📈" t={t} tip={TIPS.sellThrough}/>
+      <KpiCard title="FBA Stock" value={N(d.fbaStock||0)} icon="📦" t={t}/><KpiCard title="Available" value={N(d.availableInv||0)} icon="🗃" t={t}/><KpiCard title="Reserved" value={N(d.reserved||0)} icon="🔒" t={t}/><KpiCard title="Critical SKUs" value={N(d.criticalSkus||0)} icon="🚨" t={t}/><KpiCard title="Inbound" value={N(d.inbound||0)} icon="📥" t={t}/><KpiCard title="Avg Days Supply" value={Math.round(d.avgDaysOfSupply||0)} icon="📈" t={t} tip={TIPS.doh}/>
     </div>
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>
       <Sec title="FBA Stock Trend" icon="📈" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={240}><AreaChart data={invTrend}><defs><linearGradient id="ig" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={.2}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textMuted,fontSize:9}}/><YAxis tick={{fill:t.textMuted,fontSize:9}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Area type="monotone" dataKey="v" name="FBA Stock" stroke={t.primary} fill="url(#ig)" strokeWidth={2}/></AreaChart></ResponsiveContainer></Cd></Sec>
       <Sec title="Sell-Through & Days of Health" icon="📊" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={240}><ComposedChart data={invShop}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="s" tick={{fill:t.textMuted,fontSize:9}} interval={0} angle={-20} textAnchor="end" height={50}/><YAxis yAxisId="l" tick={{fill:t.textMuted,fontSize:9}} unit="%"/><YAxis yAxisId="r" orientation="right" tick={{fill:t.textMuted,fontSize:9}} unit="d"/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar yAxisId="l" dataKey="st" name="Sell-Through %" fill={t.green} radius={[4,4,0,0]} fillOpacity={.7}/><Line yAxisId="r" type="monotone" dataKey="doh" name="Days of Health" stroke={t.orange} strokeWidth={2} dot={{r:3}}/></ComposedChart></ResponsiveContainer></Cd></Sec>
     </div>
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
-      <Sec title="Sales Velocity" icon="⚡" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={220}><ComposedChart data={salesVel}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textMuted,fontSize:9}}/><YAxis tick={{fill:t.textMuted,fontSize:9}}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="v" name="Units/Day" fill={t.orange} radius={[4,4,0,0]} fillOpacity={.7}/><Line type="monotone" dataKey="ma" name="7D MA" stroke={t.red} strokeWidth={2} dot={false}/></ComposedChart></ResponsiveContainer></Cd></Sec>
+      <Sec title="Inventory Aging" icon="📊" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={220}><BarChart data={[{name:"0-90d",v:d.age0_90||0},{name:"91-180d",v:d.age91_180||0},{name:"181-270d",v:d.age181_270||0},{name:"271-365d",v:d.age271_365||0},{name:"365d+",v:d.age365plus||0}]}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="name" tick={{fill:t.textMuted,fontSize:9}}/><YAxis tick={{fill:t.textMuted,fontSize:9}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="v" name="Units" fill={t.orange} radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
       <Sec title="FBA Stock by Shop" icon="📦" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={220}><BarChart data={[...invShop].sort((a,b)=>b.fba-a.fba)} layout="vertical" margin={{left:85}}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis type="number" tick={{fill:t.textMuted,fontSize:9}} tickFormatter={N}/><YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:9}} width={80}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="fba" name="FBA Stock" fill={t.primary} radius={[0,4,4,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
     </div>
     <div style={{marginTop:14}}><Alerts t={t} alerts={genInvAlerts(invShop)}/></div>
@@ -245,24 +145,23 @@ function InvPage({t,mob}){
 }
 
 /* ═══════════ ASIN PLAN ═══════════ */
-function PlanPage({t,fPlanBk,planRatio=1}){
-  const pr=planRatio;const isF=pr<1;
+function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,brand,asinF}){
+  const fPlanBk=asinPlanBkData||[];
+  const isF=(seller&&seller!=="All")||(brand&&brand!=="All")||(asinF&&asinF!=="All");
   const[trendMetric,setTrendMetric]=useState("gp");
   const[kpiMonth,setKpiMonth]=useState("All");
   const[tblMonth,setTblMonth]=useState("All");
   const metrics=[{k:"gp",l:"Gross Profit"},{k:"rv",l:"Revenue"},{k:"ad",l:"Ads Spend"},{k:"un",l:"Units"},{k:"se",l:"Sessions"},{k:"im",l:"Impressions"},{k:"cr",l:"Conv. Rate"},{k:"ct",l:"Click-Through Rate"}];
   const mK={gp:{a:"gpa",p:"gpp"},rv:{a:"ra",p:"rp"},ad:{a:"aa",p:"ap"},un:{a:"ua",p:"up"},se:{a:"sa",p:"sp"},im:{a:"ia",p:"ip"},cr:{a:"cra",p:"crp"},ct:{a:"cta",p:"ctp"}};
-  const scN=(v,isPct)=>v==null?null:(isPct?v:Math.round(v*pr));
-  const trendData=monthPlan.map(m=>{const ak=mK[trendMetric].a,pk=mK[trendMetric].p;const isPct=["cr","ct"].includes(trendMetric);return{m:m.m,Actual:scN(m[ak],isPct),Plan:scN(m[pk],isPct)}});
+  
+  const mpd=monthPlanData||[];const trendData=mpd.map(m=>{const ak=mK[trendMetric].a,pk=mK[trendMetric].p;return{m:m.m,Actual:m[ak],Plan:m[pk]}});
   const isCur=["gp","rv","ad"].includes(trendMetric);const isPct=["cr","ct"].includes(trendMetric);
   const kpiData=useMemo(()=>{
-    const src=kpiMonth==="All"?planDt:(()=>{const mi=MS.indexOf(kpiMonth);const m=monthPlan[mi];if(!m)return planDt;return{gp:{a:m.gpa,p:m.gpp},rv:{a:m.ra,p:m.rp},ad:{a:m.aa,p:m.ap},un:{a:m.ua,p:m.up},se:{a:m.sa,p:m.sp},im:{a:m.ia,p:m.ip},cr:{a:m.cra,p:m.crp},ct:{a:m.cta,p:m.ctp}}})();
-    if(pr>=1)return src;
-    const s=(v)=>v==null?null:Math.round(v*pr);
-    return{gp:{a:s(src.gp.a),p:s(src.gp.p)},rv:{a:s(src.rv.a),p:s(src.rv.p)},ad:{a:s(src.ad.a),p:s(src.ad.p)},un:{a:s(src.un.a),p:s(src.un.p)},se:{a:s(src.se.a),p:s(src.se.p)},im:{a:s(src.im.a),p:s(src.im.p)},cr:{a:src.cr.a,p:src.cr.p},ct:{a:src.ct.a,p:src.ct.p}};
-  },[kpiMonth,pr]);
+    const pk=planKpi||{gp:{a:0,p:0},rv:{a:0,p:0},ad:{a:0,p:0},un:{a:0,p:0},se:{a:0,p:0},im:{a:0,p:0},cr:{a:0,p:0},ct:{a:0,p:0}};const src=kpiMonth==="All"?pk:(()=>{const mi=MS.indexOf(kpiMonth);const m=mpd[mi];if(!m)return pk;return{gp:{a:m.gpa,p:m.gpp},rv:{a:m.ra,p:m.rp},ad:{a:m.aa,p:m.ap},un:{a:m.ua,p:m.up},se:{a:m.sa,p:m.sp},im:{a:m.ia,p:m.ip},cr:{a:m.cra,p:m.crp},ct:{a:m.cta,p:m.ctp}}})();
+    return src;
+  },[kpiMonth,pk,mpd]);
   // Scale monthly breakdown
-  const fMonthPlan=useMemo(()=>{if(pr>=1)return monthPlan;return monthPlan.map(r=>({...r,gpa:scN(r.gpa,false),gpp:Math.round(r.gpp*pr),ra:scN(r.ra,false),rp:Math.round(r.rp*pr),aa:scN(r.aa,false),ap:Math.round(r.ap*pr),ua:scN(r.ua,false),up:Math.round(r.up*pr),sa:scN(r.sa,false),sp:Math.round(r.sp*pr),ia:scN(r.ia,false),ip:Math.round(r.ip*pr)}));},[pr]);
+  const fMonthPlan=mpd;
   const THD=["Month","⭐ GP","REVENUE","ADS","UNITS","SESSIONS","IMP","CR","CTR"];
   const AHDL=["ASIN","Brand","⭐ GP","REVENUE","ADS","UNITS","SESSIONS","IMP","CR","CTR"];
   return<div>
@@ -270,7 +169,7 @@ function PlanPage({t,fPlanBk,planRatio=1}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:12}}><PlanKpi title="Gross Profit" actual={kpiData.gp.a} plan={kpiData.gp.p} t={t} highlight tip={TIPS.gp}/><PlanKpi title="Revenue" actual={kpiData.rv.a} plan={kpiData.rv.p} t={t}/><PlanKpi title="Ads Spend" actual={kpiData.ad.a} plan={kpiData.ad.p} t={t}/><PlanKpi title="Units" actual={kpiData.un.a} plan={kpiData.un.p} t={t}/></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}><PlanKpi title="Sessions" actual={kpiData.se.a} plan={kpiData.se.p} t={t}/><PlanKpi title="Impressions" actual={kpiData.im.a} plan={kpiData.im.p} t={t}/><PlanKpi title="Conv. Rate" actual={kpiData.cr.a!=null?kpiData.cr.a+"%":null} plan={kpiData.cr.p+"%"} t={t}/><PlanKpi title="CTR" actual={kpiData.ct.a!=null?kpiData.ct.a+"%":null} plan={kpiData.ct.p+"%"} t={t}/></div>
     <Sec title="Trend — Actual vs Plan" icon="📊" t={t} action={<select value={trendMetric} onChange={e=>setTrendMetric(e.target.value)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:600,color:t.primary,cursor:"pointer"}}>{metrics.map(m=><option key={m.k} value={m.k}>{m.l}</option>)}</select>}><Cd t={t}><ResponsiveContainer width="100%" height={260}><ComposedChart data={trendData}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="m" tick={{fill:t.textSec,fontSize:10}}/><YAxis tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>isCur?$s(v):isPct?v+"%":N(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="Actual" fill={t.primary} radius={[4,4,0,0]}/><Line type="monotone" dataKey="Plan" stroke={t.orange} strokeWidth={2} strokeDasharray="5 3" dot={{r:3,fill:t.orange}}/></ComposedChart></ResponsiveContainer></Cd></Sec>
-    <Sec title="Monthly Breakdown — All Metrics (A / P / Gap)" icon="📋" t={t} action={isF&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⚠️ Filtered by entity</span>}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{THD.map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i===0?"left":"right",color:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?60:100}}>{h}</th>)}</tr></thead><tbody>{fMonthPlan.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"10px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.m}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gpa} plan={r.gpp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.sa} plan={r.sp} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ia} plan={r.ip} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cra} plan={r.crp} t={t} isMoney={false} suffix="%"/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cta} plan={r.ctp} t={t} isMoney={false} suffix="%"/></td></tr>)}</tbody></table><div style={{padding:"8px 14px",fontSize:10,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / <span>Plan</span> / <span style={{color:t.green}}>Gap</span></div></div></Sec>
+    <Sec title="Monthly Breakdown — All Metrics (A / P / Gap)" icon="📋" t={t} action={isF&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⚠️ Filtered by entity</span>}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{THD.map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i===0?"left":"right",color:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?60:100}}>{h}</th>)}</tr></thead><tbody>{mpd.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"10px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.m}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gpa} plan={r.gpp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.sa} plan={r.sp} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ia} plan={r.ip} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cra} plan={r.crp} t={t} isMoney={false} suffix="%"/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cta} plan={r.ctp} t={t} isMoney={false} suffix="%"/></td></tr>)}</tbody></table><div style={{padding:"8px 14px",fontSize:10,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / <span>Plan</span> / <span style={{color:t.green}}>Gap</span></div></div></Sec>
     <Sec title="⭐ ASIN Breakdown" icon="📋" t={t} action={<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:10,color:t.textMuted}}>Month:</span><Sel value={tblMonth} onChange={setTblMonth} options={MS} label="All Months" t={t}/></div>}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{AHDL.map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i<=1?"left":"right",color:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i<=1?70:100}}>{h}</th>)}</tr></thead><tbody>{fPlanBk.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"10px 12px",fontFamily:"monospace",fontSize:10,borderBottom:"1px solid "+t.divider,color:t.textSec}}>{r.a}</td><td style={{padding:"10px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.br}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.sa} plan={r.sp} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ia} plan={r.ip} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cra} plan={r.crp} t={t} isMoney={false} suffix="%"/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cta} plan={r.ctp} t={t} isMoney={false} suffix="%"/></td></tr>)}</tbody></table><div style={{padding:"8px 14px",fontSize:10,color:t.textMuted,borderTop:"1px solid "+t.divider}}>{fPlanBk.length} ASINs · Ads: lower = better (reversed color)</div></div></Sec>
   </div>;
 }
@@ -301,7 +200,7 @@ function TeamPage({t,fSeller,fDaily}){
   return<div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:16}}><KpiCard title="Total Revenue" value={$(fSeller.reduce((s,x)=>s+x.r,0))} icon="💰" t={t}/><KpiCard title="Total NP" value={$(fSeller.reduce((s,x)=>s+x.n,0))} icon="📈" t={t}/><KpiCard title="Avg Margin" value={(fSeller.length?(fSeller.reduce((s,x)=>s+x.m,0)/fSeller.length).toFixed(2):0)+"%"} icon="🎯" t={t}/></div>
     <Sec title="Revenue Trend" icon="📈" t={t}><TrendChart data={fDaily} t={t} keys={[{dk:"revenue",n:"Revenue",c:t.primary,g:"url(#gRv)"}]}/></Sec>
-    <Sec title="Seller Table" icon="👥" t={t}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{["Seller","Revenue","Net Profit","Margin%","Units >90d","ASINs"].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{fSeller.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.sl}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{$(r.r)}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.n>=0?t.green:t.red,borderBottom:"1px solid "+t.divider}}>{$(r.n)}</td><td style={{padding:"8px 12px",textAlign:"right",color:mC(r.m,t),borderBottom:"1px solid "+t.divider}}>{r.m.toFixed(2)}%</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{N(r.u90)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{r.as}</td></tr>)}</tbody></table></div></Sec>
+    <Sec title="Seller Table" icon="👥" t={t}><div style={{overflowX:"auto",borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{["Seller","Revenue","Net Profit","Margin%","Units","ASINs"].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{fSeller.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.sl}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{$(r.r)}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.n>=0?t.green:t.red,borderBottom:"1px solid "+t.divider}}>{$(r.n)}</td><td style={{padding:"8px 12px",textAlign:"right",color:mC(r.m,t),borderBottom:"1px solid "+t.divider}}>{r.m.toFixed(2)}%</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{N(r.u)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{r.as}</td></tr>)}</tbody></table></div></Sec>
     <div style={{marginTop:14}}><Alerts t={t} alerts={genSellerAlerts(fSeller,t)}/></div>
   </div>;
 }
@@ -320,8 +219,8 @@ function OpsPage({t,fDaily,fShopData}){
 function AiInsight({t,live,context}){
   const[open,setOpen]=useState(false);const[loading,setLoading]=useState(false);const[insight,setInsight]=useState("");const[question,setQuestion]=useState("");
   const run=async()=>{setLoading(true);setInsight("");
-    if(live){try{const data=await apiPost("ai/insight",{context,question:question||undefined});setInsight(data.insight||"No insight")}catch(e){setInsight("Error: "+e.message)}}
-    else{await new Promise(r=>setTimeout(r,800));const{em,fAsin}=context;const top=fAsin?.[0];const negCount=fAsin?.filter(a=>a.n<0).length||0;let txt=`📊 Executive Summary\n\nRevenue: ${$(em?.sales)} | Net Profit: ${$(em?.netProfit)} | Margin: ${(em?.margin||0).toFixed(1)}%\n\n`;if(top)txt+=`🏆 Top ASIN: ${top.a} (${top.b}) — ${$(top.r)} revenue, ${$(top.n)} NP\n\n`;if(negCount)txt+=`⚠️ ${negCount} ASINs with negative profit need attention.\n\n`;txt+=`💡 Recommendations:\n• Focus ad spend on high-ROAS ASINs\n• Review pricing on negative-margin products\n• Monitor ACoS trends weekly`;if(question)txt+=`\n\nRe: "${question}" — This analysis is based on current demo data. Connect to live DB for real-time insights.`;setInsight(txt);}
+    try{const data=await apiPost("ai/insight",{context,question:question||undefined});setInsight(data.insight||"No insight available")}catch(e){
+      const{em,fAsin}=context;const top=fAsin?.[0];const negCount=fAsin?.filter(a=>a.n<0).length||0;let txt=`📊 Executive Summary\n\nRevenue: ${$(em?.sales)} | Net Profit: ${$(em?.netProfit)} | Margin: ${(em?.margin||0).toFixed(1)}%\n\n`;if(top)txt+=`🏆 Top ASIN: ${top.a} (${top.b}) — ${$(top.r)} revenue, ${$(top.n)} NP\n\n`;if(negCount)txt+=`⚠️ ${negCount} ASINs with negative profit need attention.`;setInsight(txt);}
     setLoading(false);};
   if(!open)return<button onClick={()=>setOpen(true)} style={{position:"fixed",bottom:20,right:20,zIndex:999,background:"linear-gradient(135deg,#3B4A8A,#6B7FD7)",color:"#fff",border:"none",borderRadius:14,padding:"12px 18px",cursor:"pointer",boxShadow:"0 4px 20px rgba(59,74,138,.3)",fontSize:13,fontWeight:700}}>🤖 AI Insight</button>;
   return<div style={{position:"fixed",bottom:20,right:20,zIndex:999,width:420,maxHeight:"70vh",background:t.card,borderRadius:14,border:"1px solid "+t.cardBorder,boxShadow:"0 12px 40px "+t.shadow,display:"flex",flexDirection:"column",overflow:"hidden"}}><div style={{padding:"12px 16px",borderBottom:"1px solid "+t.divider,display:"flex",justifyContent:"space-between",background:`linear-gradient(135deg,${t.primary},#5A6BC5)`}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>🤖 AI Insight</span><button onClick={()=>setOpen(false)} style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"4px 8px",fontSize:12}}>✕</button></div><div style={{padding:12,borderBottom:"1px solid "+t.divider}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask a question or leave blank..." style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid "+t.inputBorder,background:t.inputBg,color:t.text,fontSize:12,boxSizing:"border-box"}}/><button onClick={run} disabled={loading} style={{marginTop:8,width:"100%",padding:"8px",borderRadius:8,border:"none",background:loading?t.textMuted:t.primary,color:"#fff",cursor:loading?"wait":"pointer",fontSize:12,fontWeight:700}}>{loading?"⏳ Analyzing...":"Analyze"}</button></div><div style={{flex:1,overflow:"auto",padding:14}}>{insight?<div style={{fontSize:12,color:t.textSec,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{insight}</div>:<div style={{fontSize:11,color:t.textMuted,textAlign:"center",padding:20}}>Click Analyze for AI insights.</div>}</div></div>;
@@ -338,118 +237,109 @@ export default function App(){
   const[pg,setPg]=useState("exec");const[sb,setSb]=useState(true);const[isDark,setDark]=useState(false);
   const t=isDark?TH.dark:TH.light;const cn=NAV.find(n=>n.id===pg);
 
-  const[live,setLive]=useState(false);const[filterData,setFilterData]=useState(null);
+  const[live,setLive]=useState(false);
   const[dbRange,setDbRange]=useState(null);const[dbConnecting,setDbConnecting]=useState(true);
-  useEffect(()=>{checkBackend().then(ok=>{setLive(ok);setDbConnecting(false);if(ok){api("filters").then(d=>setFilterData(d)).catch(()=>{});api("date-range").then(d=>{if(d){setDbRange(d);if(d.defaultStart)setSd(d.defaultStart);if(d.defaultEnd)setEd(d.defaultEnd)}}).catch(()=>{});}}).catch(()=>setDbConnecting(false))},[]);
   const[mobileFilters,setMobileFilters]=useState(false);
-
-  // Dates — default full demo range
-  const defaultStart="2026-01-01";const defaultEnd=new Date().toISOString().slice(0,10);
-  const[sd,setSd]=useState(defaultStart);const[ed,setEd]=useState(defaultEnd);
+  const[sd,setSd]=useState("2025-01-01");const[ed,setEd]=useState("2025-01-31");
   const[activePeriod,setActivePeriod]=useState(null);
   const[store,setStore]=useState("All");const[seller,setSeller]=useState("All");
   const[brand,setBrand]=useState("All");const[asinF,setAsinF]=useState("All");
   const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));
   const[planMonth,setPlanMonth]=useState("All");
   const planYearOpts=useMemo(()=>{const c=new Date().getFullYear();return[String(c-1),String(c),String(c+1)]},[]);
+  const clearDates=()=>{if(dbRange){setSd(dbRange.defaultStart||dbRange.minDate);setEd(dbRange.defaultEnd||dbRange.maxDate)}setActivePeriod(null)};
 
-  const clearDates=()=>{if(dbRange){setSd(dbRange.defaultStart||dbRange.minDate);setEd(dbRange.defaultEnd||dbRange.maxDate)}else{setSd(defaultStart);setEd(defaultEnd)}setActivePeriod(null)};
+  // ═══════════ LIVE DATA STATE ═══════════
+  const[em,setEm]=useState(EMPTY_EM);
+  const[prevEm,setPrevEm]=useState(null);
+  const[fDaily,setFDaily]=useState([]);
+  const[fAsin,setFAsin]=useState([]);
+  const[fShopData,setFShopData]=useState([]);
+  const[fSeller,setFSeller]=useState([]);
+  const[invData,setInvData]=useState({});
+  const[invShop,setInvShop]=useState([]);
+  const[invTrend,setInvTrend]=useState([]);
+  const[planKpiState,setPlanKpiState]=useState({gp:{a:0,p:0},rv:{a:0,p:0},ad:{a:0,p:0},un:{a:0,p:0},se:{a:0,p:0},im:{a:0,p:0},cr:{a:0,p:0},ct:{a:0,p:0}});
+  const[monthPlanState,setMonthPlanState]=useState([]);
+  const[asinPlanBkState,setAsinPlanBkState]=useState([]);
+  const[masterList,setMasterList]=useState([]);
+  const[loading,setLoading]=useState(false);
 
-  // Master ASIN list for bidirectional filters
-  const masterList=useMemo(()=>{
-    if(filterData?.asins)return filterData.asins.map(a=>({a:a.asin,b:a.brand,st:a.shop||a.brand,sl:a.seller}));
-    return asinPerf;
-  },[filterData]);
   const opts=useBidirectionalFilters(store,seller,brand,asinF,masterList);
+  useEffect(()=>{if(store!=="All"&&opts.stores.length&&!opts.stores.includes(store))setStore("All")},[opts.stores]);
+  useEffect(()=>{if(seller!=="All"&&opts.sellers.length&&!opts.sellers.includes(seller))setSeller("All")},[opts.sellers]);
+  useEffect(()=>{if(brand!=="All"&&opts.brands.length&&!opts.brands.includes(brand))setBrand("All")},[opts.brands]);
+  useEffect(()=>{if(asinF!=="All"&&opts.asins.length&&!opts.asins.includes(asinF))setAsinF("All")},[opts.asins]);
 
-  // Auto-reset invalid filter selections
-  useEffect(()=>{if(store!=="All"&&!opts.stores.includes(store))setStore("All")},[opts.stores]);
-  useEffect(()=>{if(seller!=="All"&&!opts.sellers.includes(seller))setSeller("All")},[opts.sellers]);
-  useEffect(()=>{if(brand!=="All"&&!opts.brands.includes(brand))setBrand("All")},[opts.brands]);
-  useEffect(()=>{if(asinF!=="All"&&!opts.asins.includes(asinF))setAsinF("All")},[opts.asins]);
+  // ═══════════ INIT: Connect to backend ═══════════
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const ok=await checkBackend();setLive(ok);
+        if(ok){
+          const f=await api("filters").catch(()=>null);
+          if(f?.asins)setMasterList(f.asins.map(a=>({a:a.asin,b:a.brand,st:a.shop||a.brand,sl:a.seller})));
+          const dr=await api("date-range").catch(()=>null);
+          if(dr){setDbRange(dr);if(dr.defaultStart)setSd(dr.defaultStart);if(dr.defaultEnd)setEd(dr.defaultEnd);}
+          api("inventory/snapshot").then(d=>setInvData(d||{})).catch(()=>{});
+          api("inventory/by-shop").then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
+          api("inventory/stock-trend").then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.fbaStock)||0}}))).catch(()=>{});
+        }
+      }catch{}
+      setDbConnecting(false);
+    })();
+  },[]);
 
-  // ═══════════ FILTERED DATA (demo mode — dateRatio scales everything) ═══════════
-  const fDaily=useMemo(()=>demoDaily.filter(d=>d.date>=sd&&d.date<=ed),[sd,ed]);
-  const totalDemoRev=useMemo(()=>demoDaily.reduce((s,d)=>s+d.revenue,0),[]);
-  const selectedRev=useMemo(()=>fDaily.reduce((s,d)=>s+d.revenue,0),[fDaily]);
-  const dateRatio=totalDemoRev>0?selectedRev/totalDemoRev:1;
+  // ═══════════ FETCH DATA when filters/dates change ═══════════
+  useEffect(()=>{
+    if(!live||dbConnecting)return;
+    let cancelled=false;
+    const p={start:sd,end:ed,store,seller,brand,asin:asinF};
+    setLoading(true);
+    (async()=>{
+      try{
+        const summary=await api("exec/summary",p).catch(()=>EMPTY_EM);
+        if(!cancelled)setEm(summary);
+        // Previous period
+        const days=Math.max(1,Math.round((new Date(ed)-new Date(sd))/86400000)+1);
+        const pe=new Date(new Date(sd+"T00:00:00").getTime()-86400000);
+        const ps=new Date(pe.getTime()-(days-1)*86400000);
+        const prev=await api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null);
+        if(!cancelled)setPrevEm(prev&&prev.sales?prev:null);
+        // Daily
+        const daily=await api("exec/daily",p).catch(()=>[]);
+        if(!cancelled)setFDaily((daily||[]).map(r=>{const dt=new Date(r.date);return{date:r.date,label:MS[dt.getMonth()]+" "+dt.getDate(),revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0}}));
+        // ASINs
+        const asins=await api("product/asins",{start:sd,end:ed,store,seller}).catch(()=>[]);
+        if(!cancelled)setFAsin((asins||[]).map(r=>({a:r.asin,b:r.brand||"",st:r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:parseFloat(r.cr)||0,ac:parseFloat(r.acos)||0,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0})));
+        // Shops
+        const shops=await api("shops",{start:sd,end:ed,store,seller}).catch(()=>[]);
+        if(!cancelled)setFShopData((shops||[]).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0})));
+        // Team
+        const team=await api("team",{start:sd,end:ed,seller}).catch(()=>[]);
+        if(!cancelled)setFSeller((team||[]).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
+      }catch(e){console.error("Fetch error:",e)}
+      if(!cancelled)setLoading(false);
+    })();
+    return()=>{cancelled=true};
+  },[live,dbConnecting,sd,ed,store,seller,brand,asinF]);
 
-  const fAsin=useMemo(()=>{
-    let d=[...asinPerf];
-    if(store!=="All")d=d.filter(a=>a.st===store);
-    if(seller!=="All")d=d.filter(a=>a.sl===seller);
-    if(brand!=="All")d=d.filter(a=>a.b===brand);
-    if(asinF!=="All")d=d.filter(a=>a.a===asinF);
-    return d.map(a=>({...a,r:Math.round(a.r*dateRatio),n:Math.round(a.n*dateRatio),u:Math.round(a.u*dateRatio)}));
-  },[store,seller,brand,asinF,dateRatio]);
-
-  const fShopData=useMemo(()=>{
-    let d=[...shopData];
-    if(store!=="All")d=d.filter(s=>s.s===store);
-    if(seller!=="All"){const shops=Object.entries(SHOP_SELLERS).filter(([k,v])=>v.includes(seller)).map(([k])=>k);d=d.filter(s=>shops.includes(s.s));}
-    return d.map(s=>({...s,r:Math.round(s.r*dateRatio),n:Math.round(s.n*dateRatio),o:Math.round(s.o*dateRatio)}));
-  },[store,seller,dateRatio]);
+  // ═══════════ FETCH PLAN DATA ═══════════
+  useEffect(()=>{
+    if(!live||dbConnecting)return;
+    let cancelled=false;
+    (async()=>{
+      try{
+        const kpi=await api("plan/data",{year:planYear,month:planMonth!=="All"?String(MS.indexOf(planMonth)+1):undefined,brand,seller,asin:asinF}).catch(()=>null);
+        if(!cancelled&&kpi)setPlanKpiState(kpi);
+        const actuals=await api("plan/actuals",{year:planYear,brand,seller,asin:asinF}).catch(()=>null);
+        if(!cancelled&&actuals){setMonthPlanState(actuals.monthly||[]);setAsinPlanBkState((actuals.asinBreakdown||[]).map(r=>({...r,sl:r.sl||""})));}
+      }catch(e){console.error("Plan fetch error:",e)}
+    })();
+    return()=>{cancelled=true};
+  },[live,dbConnecting,planYear,planMonth,brand,seller,asinF]);
 
   const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n})),[fShopData]);
-
-  const fSeller=useMemo(()=>{
-    let d=[...sellerData];
-    if(seller!=="All")d=d.filter(s=>s.sl===seller);
-    if(store!=="All"){const sls=SHOP_SELLERS[store]||[];d=d.filter(s=>sls.includes(s.sl));}
-    return d.map(s=>({...s,r:Math.round(s.r*dateRatio),n:Math.round(s.n*dateRatio)}));
-  },[seller,store,dateRatio]);
-
-  const fPlanBk=useMemo(()=>{
-    let d=[...asinPlanBk];
-    if(seller!=="All")d=d.filter(a=>a.sl===seller);
-    if(brand!=="All")d=d.filter(a=>a.br===brand);
-    if(asinF!=="All")d=d.filter(a=>a.a===asinF);
-    return d;
-  },[seller,brand,asinF]);
-
-  // Plan ratio: proportion of filtered ASINs vs all ASINs (for scaling KPIs/trend/monthly)
-  const planRatio=useMemo(()=>{
-    if(seller==="All"&&brand==="All"&&asinF==="All")return 1;
-    const tR=asinPlanBk.reduce((s,a)=>s+a.ra,0);if(tR===0)return 1;
-    return fPlanBk.reduce((s,a)=>s+a.ra,0)/tR;
-  },[fPlanBk,seller,brand,asinF]);
-
-  const entityRatio=useMemo(()=>{
-    if(store==="All"&&seller==="All"&&brand==="All"&&asinF==="All")return 1;
-    const tot=asinPerf.reduce((s,a)=>s+a.r,0);if(tot===0)return 1;
-    let d=[...asinPerf];
-    if(store!=="All")d=d.filter(a=>a.st===store);if(seller!=="All")d=d.filter(a=>a.sl===seller);
-    if(brand!=="All")d=d.filter(a=>a.b===brand);if(asinF!=="All")d=d.filter(a=>a.a===asinF);
-    return d.reduce((s,a)=>s+a.r,0)/tot;
-  },[store,seller,brand,asinF]);
-
-  // Entity-scaled daily: for pages with entity filters, scale trend proportionally
-  const fDailyE=useMemo(()=>{
-    if(entityRatio>=1)return fDaily;
-    return fDaily.map(d=>({...d,revenue:Math.round(d.revenue*entityRatio),netProfit:Math.round(d.netProfit*entityRatio),units:Math.round(d.units*entityRatio)}));
-  },[fDaily,entityRatio]);
-
-  // ═══════════ EXEC METRICS (date × entity scaling) ═══════════
-  const em=useMemo(()=>{
-    const r=dateRatio*entityRatio;
-    const dailyRev=fDaily.reduce((s,d)=>s+d.revenue,0)*entityRatio;
-    const dailyNP=fDaily.reduce((s,d)=>s+d.netProfit,0)*entityRatio;
-    const dailyUnits=Math.round(fDaily.reduce((s,d)=>s+d.units,0)*entityRatio);
-    return{sales:dailyRev,units:dailyUnits,orders:Math.round(execMetrics.orders*r),refunds:Math.round(execMetrics.refunds*r),advCost:execMetrics.advCost*r,shippingCost:execMetrics.shippingCost*r,refundCost:execMetrics.refundCost*r,amazonFees:execMetrics.amazonFees*r,cogs:execMetrics.cogs*r,netProfit:dailyNP,estPayout:execMetrics.estPayout*r,grossProfit:execMetrics.grossProfit*r,sessions:Math.round(execMetrics.sessions*r),realAcos:dailyRev>0?(Math.abs(execMetrics.advCost*r)/dailyRev*100):0,pctRefunds:execMetrics.pctRefunds,margin:dailyRev>0?(dailyNP/dailyRev*100):0};
-  },[fDaily,dateRatio,entityRatio]);
-
-  // Previous period
-  const prevEm=useMemo(()=>{
-    const days=Math.max(1,Math.round((new Date(ed)-new Date(sd))/86400000)+1);
-    const prevEnd=new Date(new Date(sd).getTime()-86400000);
-    const prevStart=new Date(prevEnd.getTime()-(days-1)*86400000);
-    const pSD=prevStart.toISOString().slice(0,10),pED=prevEnd.toISOString().slice(0,10);
-    const prevDaily=demoDaily.filter(d=>d.date>=pSD&&d.date<=pED);
-    if(!prevDaily.length)return null;
-    const pRev=prevDaily.reduce((s,d)=>s+d.revenue,0)*entityRatio;const pNP=prevDaily.reduce((s,d)=>s+d.netProfit,0)*entityRatio;
-    const pRatio=(totalDemoRev>0?prevDaily.reduce((s,d)=>s+d.revenue,0)/totalDemoRev:0)*entityRatio;
-    return{sales:pRev,netProfit:pNP,units:Math.round(prevDaily.reduce((s,d)=>s+d.units,0)*entityRatio),orders:Math.round(execMetrics.orders*pRatio),advCost:execMetrics.advCost*pRatio,sessions:Math.round(execMetrics.sessions*pRatio),margin:pRev>0?(pNP/pRev*100):0};
-  },[sd,ed,totalDemoRev,entityRatio]);
 
   const pctChg=useCallback((cur,prev)=>{if(prev==null||prev===0)return undefined;return((cur-prev)/Math.abs(prev))*100},[]);
 
@@ -475,7 +365,8 @@ export default function App(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>{mob&&<button onClick={()=>setMobileFilters(!mobileFilters)} style={{background:t.primaryLight,border:"1px solid "+t.primary+"33",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:12,color:t.primary,fontWeight:700}}>☰</button>}<span style={{fontSize:mob?14:16,fontWeight:800,color:t.text}}>{cn?.i} {cn?.l}</span></div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <span style={{fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"🟢 Live DB":"🟡 Demo"}</span>
+            {loading&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⏳</span>}
+            <span style={{fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"🟢 Live DB":"🟡 No DB"}</span>
             <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:12,color:t.textSec}}>{isDark?"☀":"🌙"}</button>
           </div>
         </div>
@@ -493,13 +384,13 @@ export default function App(){
 
       {/* CONTENT */}
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
-        {pg==="exec"&&<ExecPage t={t} fAsin={fAsin} fShop={fShopRev} fDaily={fDailyE} em={em} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg} mob={mob}/>}
-        {pg==="inv"&&<InvPage t={t} mob={mob}/>}
-        {pg==="plan"&&<PlanPage t={t} fPlanBk={fPlanBk} planRatio={planRatio}/>}
-        {pg==="prod"&&<ProdPage t={t} fAsin={fAsin} fDaily={fDailyE}/>}
-        {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDailyE}/>}
-        {pg==="team"&&<TeamPage t={t} fSeller={fSeller} fDaily={fDailyE}/>}
-        {pg==="daily"&&<OpsPage t={t} fDaily={fDailyE} fShopData={fShopData}/>}
+        {pg==="exec"&&<ExecPage t={t} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={em} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg} mob={mob}/>}
+        {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend}/>}
+        {pg==="plan"&&<PlanPage t={t} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} brand={brand} asinF={asinF}/>}
+        {pg==="prod"&&<ProdPage t={t} fAsin={fAsin} fDaily={fDaily}/>}
+        {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
+        {pg==="team"&&<TeamPage t={t} fSeller={fSeller} fDaily={fDaily}/>}
+        {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
         <div style={{height:30}}/>
       </div>
     </div>
