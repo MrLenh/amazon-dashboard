@@ -452,6 +452,7 @@ app.get('/api/inventory/snapshot', async (req, res) => {
         SUM(COALESCE(totalReservedQuantity,0)) as reserved,
         SUM(COALESCE(inboundQuantity,0)) as inbound,
         SUM(CASE WHEN daysOfSupply <= 7 AND CAST(available AS SIGNED) > 0 THEN 1 ELSE 0 END) as criticalSkus,
+        AVG(COALESCE(daysOfSupply,0)) as avgDaysOfSupply,
         SUM(COALESCE(invAge91To180Days,0)) as age91_180,
         SUM(COALESCE(invAge181To270Days,0)) as age181_270,
         SUM(COALESCE(invAge271To365Days,0)) as age271_365,
@@ -461,7 +462,26 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       FROM fba_iventory_planning
       WHERE date = (SELECT MAX(date) FROM fba_iventory_planning)
     `);
-    res.json(rows[0] || {});
+    const r = rows[0] || {};
+    const fba = parseInt(r.fbaStock) || 0;
+    const a91 = parseInt(r.age91_180) || 0;
+    const a181 = parseInt(r.age181_270) || 0;
+    const a271 = parseInt(r.age271_365) || 0;
+    const a365 = parseInt(r.age365plus) || 0;
+    const age0_90 = Math.max(0, fba - a91 - a181 - a271 - a365);
+    res.json({
+      fbaStock: fba,
+      availableInv: fba,
+      totalInventory: parseInt(r.totalInventory) || 0,
+      reserved: parseInt(r.reserved) || 0,
+      inbound: parseInt(r.inbound) || 0,
+      criticalSkus: parseInt(r.criticalSkus) || 0,
+      avgDaysOfSupply: Math.round(parseFloat(r.avgDaysOfSupply) || 0),
+      age0_90,
+      age91_180: a91, age181_270: a181, age271_365: a271, age365plus: a365,
+      storageFee: parseFloat(r.storageFee) || 0,
+      avgSellThrough: parseFloat(r.avgSellThrough) || 0,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -484,7 +504,8 @@ app.get('/api/inventory/stock-trend', async (req, res) => {
 app.get('/api/inventory/by-shop', async (req, res) => {
   try {
     const shopMap = await getShopMap();
-    const rows = await q(`
+    // Try fba_iventory_planning first (most detailed)
+    const invRows = await q(`
       SELECT f.accountId,
         SUM(CAST(f.available AS SIGNED)) as fbaStock,
         SUM(COALESCE(f.inboundQuantity,0)) as inbound,
@@ -495,15 +516,41 @@ app.get('/api/inventory/by-shop', async (req, res) => {
       FROM fba_iventory_planning f
       WHERE f.date = (SELECT MAX(date) FROM fba_iventory_planning)
       GROUP BY f.accountId
-      ORDER BY fbaStock DESC
-    `);
-    res.json(rows.map(r => ({
+    `).catch(() => []);
+    
+    // Also get stock data from seller_board_stock_daily for shops not in fba_iventory_planning
+    const invAccountIds = new Set(invRows.map(r => r.accountId));
+    let stockRows = [];
+    try {
+      stockRows = await q(`
+        SELECT accountId, SUM(FBAStock) as fbaStock
+        FROM seller_board_stock_daily
+        WHERE date = (SELECT MAX(date) FROM seller_board_stock_daily)
+        GROUP BY accountId
+      `);
+    } catch(e) { /* table might not exist */ }
+
+    const combined = [...invRows.map(r => ({
       shop: shopMap[r.accountId] || `Account ${r.accountId}`,
       fbaStock: parseInt(r.fbaStock) || 0, inbound: parseInt(r.inbound) || 0, reserved: parseInt(r.reserved) || 0,
       criticalSkus: parseInt(r.criticalSkus) || 0,
       sellThrough: parseFloat(r.sellThrough) || 0,
       daysOfSupply: parseFloat(r.daysOfSupply) || 0,
-    })));
+    }))];
+    
+    // Add shops from stock_daily that aren't already in the list
+    stockRows.forEach(r => {
+      if (!invAccountIds.has(r.accountId)) {
+        combined.push({
+          shop: shopMap[r.accountId] || `Account ${r.accountId}`,
+          fbaStock: parseInt(r.fbaStock) || 0, inbound: 0, reserved: 0,
+          criticalSkus: 0, sellThrough: 0, daysOfSupply: 0,
+        });
+      }
+    });
+
+    combined.sort((a, b) => b.fbaStock - a.fbaStock);
+    res.json(combined);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
