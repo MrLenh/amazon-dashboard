@@ -338,7 +338,7 @@ export default function App(){
     if(!live||dbConnecting)return;
     let cancelled=false;
     const p={start:sd,end:ed,store,seller,brand,asin:asinF};
-    setLoading(true);
+    setLoading(true);setFilterError(null);
     (async()=>{
       try{
         console.log("=== DATA FETCH START ===");
@@ -365,8 +365,8 @@ export default function App(){
         console.log("shops:",Array.isArray(shops)?shops.length+" rows":"NOT ARRAY");
         if(!cancelled)setFShopData((shops||[]).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0})));
         // Team
-        const team=await api("team",{start:sd,end:ed,seller,store}).catch(e=>{console.error("team ERROR:",e.message);return[];});
-        console.log("team:",Array.isArray(team)?team.length+" rows":"NOT ARRAY");
+        const team=await api("team",{start:sd,end:ed,seller,store}).catch(e=>{console.error("team ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];});
+        console.log("team:",Array.isArray(team)?team.length+" rows":"NOT ARRAY",JSON.stringify(team).slice(0,200));
         if(!cancelled)setFSeller((team||[]).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
         console.log("=== DATA FETCH DONE ===");
       }catch(e){console.error("Fetch error:",e)}
@@ -382,9 +382,11 @@ export default function App(){
     (async()=>{
       try{
         const[planRes,actualsRes]=await Promise.all([
-          api("plan/data",{year:planYear,brand,seller,asin:asinF}).catch(()=>null),
-          api("plan/actuals",{year:planYear,brand,seller,asin:asinF}).catch(()=>null)
+          api("plan/data",{year:planYear,brand,seller,asin:asinF}).catch(e=>{console.error("plan/data ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Plan: '+e.message);return null;}),
+          api("plan/actuals",{year:planYear,brand,seller,asin:asinF}).catch(e=>{console.error("plan/actuals ERROR:",e.message);return null;})
         ]);
+        console.log("plan/data:",JSON.stringify(planRes).slice(0,300));
+        console.log("plan/actuals monthly:",actualsRes?.monthly?.length,"rows");
         if(cancelled)return;
         const plan=planRes||{};const actuals=actualsRes||{};
         const monthlyPlan=plan.monthlyPlan||{};const asinPlan=plan.asinPlan||{};
