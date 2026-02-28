@@ -750,11 +750,15 @@ app.get('/api/inventory/by-shop', async (req, res) => {
 /* ═══════════ ASIN PLAN ═══════════ */
 const MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const METRICS_MAP = {
+  // Exact matches from DB
+  Rev: 'rv', Unit: 'un', Ads: 'ad', GP: 'gp', NP: 'gp',
+  rev: 'rv', unit: 'un', ads: 'ad', gp: 'gp', np: 'gp',
+  // Standard names
   revenue: 'rv', Revenue: 'rv', REVENUE: 'rv',
   grossProfit: 'gp', gross_profit: 'gp', GrossProfit: 'gp', 'Gross Profit': 'gp', grossprofit: 'gp',
-  adSpend: 'ad', ad_spend: 'ad', AdSpend: 'ad', 'Ad Spend': 'ad', adspend: 'ad', ads: 'ad', Ads: 'ad',
+  adSpend: 'ad', ad_spend: 'ad', AdSpend: 'ad', 'Ad Spend': 'ad', adspend: 'ad', Ads: 'ad',
   units: 'un', Units: 'un', UNITS: 'un',
-  sessions: 'se', Sessions: 'se', SESSIONS: 'se',
+  sessions: 'se', Sessions: 'se', SESSIONS: 'se', Session: 'se', session: 'se',
   impressions: 'im', Impressions: 'im', IMPRESSIONS: 'im',
   cr: 'cr', CR: 'cr', conversion_rate: 'cr', conversionRate: 'cr', 'Conversion Rate': 'cr',
   ctr: 'ct', CTR: 'ct', click_through_rate: 'ct', clickThroughRate: 'ct', 'Click Through Rate': 'ct',
@@ -801,9 +805,9 @@ app.get('/api/plan/data', async (req, res) => {
       if (mapped) return mapped;
       // Auto-detect by keyword
       const lm = m.toLowerCase().trim();
-      if (lm.includes('revenue') || lm.includes('sales') || lm === 'rv') return 'rv';
-      if (lm.includes('gross') && lm.includes('profit') || lm === 'gp') return 'gp';
-      if (lm.includes('ad') && (lm.includes('spend') || lm.includes('cost')) || lm === 'ads') return 'ad';
+      if (lm.includes('revenue') || lm.includes('sales') || lm === 'rv' || lm === 'rev') return 'rv';
+      if (lm.includes('gross') && lm.includes('profit') || lm === 'gp' || lm === 'np') return 'gp';
+      if (lm.includes('ad') || lm === 'ads') return 'ad';
       if (lm.includes('unit') || lm === 'un') return 'un';
       if (lm.includes('session') || lm === 'se') return 'se';
       if (lm.includes('impression') || lm === 'im') return 'im';
