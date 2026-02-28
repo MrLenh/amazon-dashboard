@@ -151,6 +151,7 @@ app.get('/api/debug/data', async (req, res) => {
     // Get date range first
     const dr = await q('SELECT MIN(date) as mi, MAX(date) as mx FROM seller_board_day');
     const minD = dr[0]?.mi, maxD = dr[0]?.mx;
+    if (!maxD) { res.json({ version: SERVER_VERSION, error: 'No data in seller_board_day' }); return; }
     const start = new Date(maxD); start.setDate(start.getDate() - 29);
     const sd = start.toISOString().slice(0, 10);
     const ed = new Date(maxD).toISOString().slice(0, 10);
@@ -212,8 +213,6 @@ app.get('/api/debug/data', async (req, res) => {
       const cols = await q('SHOW COLUMNS FROM seller_board_day');
       results.tests.sellerBoardDayCols = { ok: true, columns: cols.map(c => c.Field) };
     } catch(e) { results.tests.sellerBoardDayCols = { ok: false, error: e.message }; }
-      results.tests.execSummaryQuery = { ok: true, data: r[0] };
-    } catch(e) { results.tests.execSummaryQuery = { ok: false, error: e.message }; }
 
     // Test shops query
     try {
