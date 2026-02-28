@@ -251,7 +251,7 @@ export default function App(){
   const[brand,setBrand]=useState("All");const[asinF,setAsinF]=useState("All");
   const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));
   const planYearOpts=useMemo(()=>{const c=new Date().getFullYear();return[String(c-1),String(c),String(c+1)]},[]);
-  const clearDates=()=>{if(dbRange){setSd(dbRange.defaultStart||dbRange.minDate);setEd(dbRange.defaultEnd||dbRange.maxDate)}else{setSd(defaultStart);setEd(defaultEnd)}setActivePeriod(null)};
+  const clearDates=()=>{setSd(defaultStart);setEd(defaultEnd);setActivePeriod(null)};
 
   // ═══════════ LIVE DATA STATE ═══════════
   const[em,setEm]=useState(EMPTY_EM);
@@ -285,7 +285,7 @@ export default function App(){
           if(f){
             // Build masterList for bidirectional filtering
             const ml=[];
-            const shopNames=(f.shops||[]).map(s=>s.name).filter(Boolean);
+            const shopNames=(f.shops||[]).map(s=>s.shop||s.name).filter(Boolean);
             if(f.asins){
               f.asins.forEach(a=>{
                 // If server provides shop mapping for this ASIN, use it
@@ -299,7 +299,7 @@ export default function App(){
             console.log("Filters loaded:",{shops:shopNames.length,sellers:(f.sellers||[]).length,brands:(f.brands||[]).length,asins:(f.asins||[]).length,masterList:ml.length});
           }
           const dr=await api("date-range").catch(()=>null);
-          if(dr){setDbRange(dr);if(dr.defaultEnd)setEd(dr.defaultEnd);if(dr.defaultStart)setSd(dr.defaultStart);}
+          if(dr){setDbRange(dr);/* end date stays as today (defaultEnd), start is 30d ago from today */}
           api("inventory/snapshot").then(d=>setInvData(d||{})).catch(()=>{});
           api("inventory/by-shop").then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
           api("inventory/stock-trend").then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.fbaStock)||0}}))).catch(()=>{});
@@ -423,9 +423,9 @@ export default function App(){
         </div>
         {/* FILTER BAR */}
         {pg!=="inv"&&(!mob||mobileFilters)&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {pg==="exec"&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={dbRange?.maxDate||defaultEnd}/><ClearBtn onClick={clearDates} t={t}/></>}
+          {pg==="exec"&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={defaultEnd}/><ClearBtn onClick={clearDates} t={t}/></>}
           {pg==="plan"&&<><Sel value={planYear} onChange={setPlanYear} options={planYearOpts} label="All Years" t={t}/></>}
-          {["prod","shops","team","daily"].includes(pg)&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={dbRange?.maxDate||defaultEnd}/><ClearBtn onClick={clearDates} t={t}/></>}
+          {["prod","shops","team","daily"].includes(pg)&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={defaultEnd}/><ClearBtn onClick={clearDates} t={t}/></>}
           {showStore&&<Sel value={store} onChange={setStore} options={opts.stores} label="All Shops" t={t}/>}
           {showSeller&&<Sel value={seller} onChange={setSeller} options={opts.sellers} label="All Sellers" t={t}/>}
           {showBrand&&<Sel value={brand} onChange={setBrand} options={opts.brands} label="All Brands" t={t}/>}
