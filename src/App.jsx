@@ -149,6 +149,7 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,brand,asinF}){
   const fPlanBk=asinPlanBkData||[];
   const isF=(seller&&seller!=="All")||(brand&&brand!=="All")||(asinF&&asinF!=="All");
   const[trendMetric,setTrendMetric]=useState("gp");
+  const[kpiMonth,setKpiMonth]=useState("All");
   const[tblMonth,setTblMonth]=useState("All");
   const metrics=[{k:"gp",l:"Gross Profit"},{k:"rv",l:"Revenue"},{k:"ad",l:"Ads Spend"},{k:"un",l:"Units"},{k:"se",l:"Sessions"},{k:"im",l:"Impressions"},{k:"cr",l:"Conv. Rate"},{k:"ct",l:"Click-Through Rate"}];
   const mK={gp:{a:"gpa",p:"gpp"},rv:{a:"ra",p:"rp"},ad:{a:"aa",p:"ap"},un:{a:"ua",p:"up"},se:{a:"sa",p:"sp"},im:{a:"ia",p:"ip"},cr:{a:"cra",p:"crp"},ct:{a:"cta",p:"ctp"}};
@@ -157,12 +158,17 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,brand,asinF}){
   const hasData=mpd.some(m=>(m.gpa||0)+(m.gpp||0)+(m.ra||0)+(m.rp||0)>0)||fPlanBk.length>0;
   const trendData=mpd.map(m=>{const ak=mK[trendMetric].a,pk2=mK[trendMetric].p;return{m:m.m,Actual:m[ak],Plan:m[pk2]}});
   const isCur=["gp","rv","ad"].includes(trendMetric);const isPct=["cr","ct"].includes(trendMetric);
-  const kpiData=planKpi||{gp:{a:0,p:0},rv:{a:0,p:0},ad:{a:0,p:0},un:{a:0,p:0},se:{a:0,p:0},im:{a:0,p:0},cr:{a:0,p:0},ct:{a:0,p:0}};
-  const fMonthPlan=mpd;
+  const kpiData=useMemo(()=>{
+    const pk=planKpi||{gp:{a:0,p:0},rv:{a:0,p:0},ad:{a:0,p:0},un:{a:0,p:0},se:{a:0,p:0},im:{a:0,p:0},cr:{a:0,p:0},ct:{a:0,p:0}};
+    if(kpiMonth==="All")return pk;
+    const mi=MS.indexOf(kpiMonth);const m=mpd[mi];if(!m)return pk;
+    return{gp:{a:m.gpa,p:m.gpp},rv:{a:m.ra,p:m.rp},ad:{a:m.aa,p:m.ap},un:{a:m.ua,p:m.up},se:{a:m.sa,p:m.sp},im:{a:m.ia,p:m.ip},cr:{a:m.cra,p:m.crp},ct:{a:m.cta,p:m.ctp}};
+  },[kpiMonth,planKpi,mpd]);
   const THD=["Month","⭐ GP","REVENUE","ADS","UNITS","SESSIONS","IMP","CR","CTR"];
   const AHDL=["ASIN","Brand","⭐ GP","REVENUE","ADS","UNITS","SESSIONS","IMP","CR","CTR"];
   return<div>
     {!hasData&&<div style={{padding:24,textAlign:"center",color:t.textMuted,fontSize:13,background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,marginBottom:16}}>📋 No plan data found for this year/filter combination. Try selecting a different year or adjusting filters.</div>}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>KPI Month:</span><Sel value={kpiMonth} onChange={setKpiMonth} options={MS} label="All Months" t={t}/></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:12}}><PlanKpi title="Gross Profit" actual={kpiData.gp.a} plan={kpiData.gp.p} t={t} highlight tip={TIPS.gp}/><PlanKpi title="Revenue" actual={kpiData.rv.a} plan={kpiData.rv.p} t={t}/><PlanKpi title="Ads Spend" actual={kpiData.ad.a} plan={kpiData.ad.p} t={t}/><PlanKpi title="Units" actual={kpiData.un.a} plan={kpiData.un.p} t={t}/></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}><PlanKpi title="Sessions" actual={kpiData.se.a} plan={kpiData.se.p} t={t}/><PlanKpi title="Impressions" actual={kpiData.im.a} plan={kpiData.im.p} t={t}/><PlanKpi title="Conv. Rate" actual={kpiData.cr.a!=null?kpiData.cr.a+"%":null} plan={kpiData.cr.p+"%"} t={t}/><PlanKpi title="CTR" actual={kpiData.ct.a!=null?kpiData.ct.a+"%":null} plan={kpiData.ct.p+"%"} t={t}/></div>
     <Sec title="Trend — Actual vs Plan" icon="📊" t={t} action={<select value={trendMetric} onChange={e=>setTrendMetric(e.target.value)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:600,color:t.primary,cursor:"pointer"}}>{metrics.map(m=><option key={m.k} value={m.k}>{m.l}</option>)}</select>}><Cd t={t}><ResponsiveContainer width="100%" height={260}><ComposedChart data={trendData}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="m" tick={{fill:t.textSec,fontSize:10}}/><YAxis tick={{fill:t.textMuted,fontSize:10}} tickFormatter={v=>isCur?$s(v):isPct?v+"%":N(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar dataKey="Actual" fill={t.primary} radius={[4,4,0,0]}/><Line type="monotone" dataKey="Plan" stroke={t.orange} strokeWidth={2} strokeDasharray="5 3" dot={{r:3,fill:t.orange}}/></ComposedChart></ResponsiveContainer></Cd></Sec>
@@ -244,7 +250,6 @@ export default function App(){
   const[store,setStore]=useState("All");const[seller,setSeller]=useState("All");
   const[brand,setBrand]=useState("All");const[asinF,setAsinF]=useState("All");
   const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));
-  const[planMonth,setPlanMonth]=useState("All");
   const planYearOpts=useMemo(()=>{const c=new Date().getFullYear();return[String(c-1),String(c),String(c+1)]},[]);
   const clearDates=()=>{if(dbRange){setSd(dbRange.defaultStart||dbRange.minDate);setEd(dbRange.defaultEnd||dbRange.maxDate)}else{setSd(defaultStart);setEd(defaultEnd)}setActivePeriod(null)};
 
@@ -277,14 +282,21 @@ export default function App(){
         const ok=await checkBackend();setLive(ok);
         if(ok){
           const f=await api("filters").catch(()=>null);
-          if(f?.asins){
-            // Create masterList with shop mapping — one entry per ASIN×shop
+          if(f){
+            // Build masterList for bidirectional filtering
             const ml=[];
-            f.asins.forEach(a=>{
-              const shops=a.shops&&a.shops.length?a.shops:[a.brand||"Unknown"];
-              shops.forEach(sh=>ml.push({a:a.asin,b:a.brand||"",st:sh,sl:a.seller||""}));
-            });
+            const shopNames=(f.shops||[]).map(s=>s.name).filter(Boolean);
+            if(f.asins){
+              f.asins.forEach(a=>{
+                // If server provides shop mapping for this ASIN, use it
+                const shops=a.shops&&a.shops.length?a.shops:shopNames.length?[shopNames[0]]:["Unknown"];
+                shops.forEach(sh=>ml.push({a:a.asin||"",b:a.brand||a.store||"",st:sh,sl:a.seller||""}));
+              });
+            }
+            // Also ensure all shops appear even if no ASIN maps to them yet
+            shopNames.forEach(sh=>{if(!ml.some(x=>x.st===sh))ml.push({a:"",b:"",st:sh,sl:""});});
             setMasterList(ml);
+            console.log("Filters loaded:",{shops:shopNames.length,sellers:(f.sellers||[]).length,brands:(f.brands||[]).length,asins:(f.asins||[]).length,masterList:ml.length});
           }
           const dr=await api("date-range").catch(()=>null);
           if(dr){setDbRange(dr);if(dr.defaultEnd)setEd(dr.defaultEnd);if(dr.defaultStart)setSd(dr.defaultStart);}
