@@ -276,35 +276,43 @@ export default function App(){
   useEffect(()=>{if(asinF!=="All"&&opts.asins.length&&!opts.asins.includes(asinF))setAsinF("All")},[opts.asins]);
 
   // ═══════════ INIT: Connect to backend ═══════════
+  const[filterError,setFilterError]=useState(null);
   useEffect(()=>{
     (async()=>{
       try{
         const ok=await checkBackend();setLive(ok);
         if(ok){
-          const f=await api("filters").catch(()=>null);
-          if(f){
-            // Build masterList for bidirectional filtering
-            const ml=[];
-            const shopNames=(f.shops||[]).map(s=>s.shop||s.name).filter(Boolean);
-            if(f.asins){
-              f.asins.forEach(a=>{
-                // If server provides shop mapping for this ASIN, use it
-                const shops=a.shops&&a.shops.length?a.shops:shopNames.length?[shopNames[0]]:["Unknown"];
-                shops.forEach(sh=>ml.push({a:a.asin||"",b:a.brand||a.store||"",st:sh,sl:a.seller||""}));
-              });
+          try{
+            const f=await api("filters");
+            console.log("RAW filters response:",JSON.stringify(f).slice(0,500));
+            if(f){
+              const ml=[];
+              const shopNames=(f.shops||[]).map(s=>s.shop||s.name).filter(Boolean);
+              console.log("Shop names from API:",shopNames);
+              if(f.asins){
+                f.asins.forEach(a=>{
+                  const shops=a.shops&&a.shops.length?a.shops:shopNames.length?[shopNames[0]]:["Unknown"];
+                  shops.forEach(sh=>ml.push({a:a.asin||"",b:a.brand||a.store||"",st:sh,sl:a.seller||""}));
+                });
+              }
+              shopNames.forEach(sh=>{if(!ml.some(x=>x.st===sh))ml.push({a:"",b:"",st:sh,sl:""});});
+              setMasterList(ml);
+              console.log("masterList built:",ml.length,"entries. Sample:",ml.slice(0,3));
+              if(ml.length===0)setFilterError("Filters API returned data but masterList is empty");
+            }else{
+              setFilterError("Filters API returned null/empty");
             }
-            // Also ensure all shops appear even if no ASIN maps to them yet
-            shopNames.forEach(sh=>{if(!ml.some(x=>x.st===sh))ml.push({a:"",b:"",st:sh,sl:""});});
-            setMasterList(ml);
-            console.log("Filters loaded:",{shops:shopNames.length,sellers:(f.sellers||[]).length,brands:(f.brands||[]).length,asins:(f.asins||[]).length,masterList:ml.length});
+          }catch(filterErr){
+            console.error("FILTER API ERROR:",filterErr);
+            setFilterError("Filter API error: "+filterErr.message);
           }
           const dr=await api("date-range").catch(()=>null);
-          if(dr){setDbRange(dr);/* end date stays as today (defaultEnd), start is 30d ago from today */}
+          if(dr){setDbRange(dr);}
           api("inventory/snapshot").then(d=>setInvData(d||{})).catch(()=>{});
           api("inventory/by-shop").then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
           api("inventory/stock-trend").then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.fbaStock)||0}}))).catch(()=>{});
         }
-      }catch{}
+      }catch(e){console.error("INIT ERROR:",e)}
       setDbConnecting(false);
     })();
   },[]);
@@ -417,7 +425,7 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:8}}>{mob&&<button onClick={()=>setMobileFilters(!mobileFilters)} style={{background:t.primaryLight,border:"1px solid "+t.primary+"33",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:12,color:t.primary,fontWeight:700}}>☰</button>}<span style={{fontSize:mob?14:16,fontWeight:800,color:t.text}}>{cn?.i} {cn?.l}</span></div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             {loading&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⏳</span>}
-            <span style={{fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"🟢 Live DB":"🟡 No DB"}</span>
+            <span style={{fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"🟢 Live DB":"🟡 No DB"}</span><span style={{fontSize:8,color:t.textMuted,marginLeft:4}}>v3.5</span>
             <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:12,color:t.textSec}}>{isDark?"☀":"🌙"}</button>
           </div>
         </div>
@@ -435,6 +443,7 @@ export default function App(){
 
       {/* CONTENT */}
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
+        {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>⚠️ Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
         {pg==="exec"&&<ExecPage t={t} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={em} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg} mob={mob}/>}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend}/>}
         {pg==="plan"&&<PlanPage t={t} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} brand={brand} asinF={asinF}/>}
