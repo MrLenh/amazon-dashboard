@@ -94,8 +94,8 @@ app.get('/api/debug/filters', async (req, res) => {
     
     // Step 2: asin table
     try {
-      const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND seller != "" LIMIT 5');
-      const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND store != "" LIMIT 5');
+      const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 LIMIT 5');
+      const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND LENGTH(store) > 0 LIMIT 5');
       results.steps.sellers = { ok: true, count: sellers.length, sample: sellers.slice(0, 3) };
       results.steps.brands = { ok: true, count: brands.length, sample: brands.slice(0, 3) };
     } catch (e) { results.steps.asin = { ok: false, error: e.message }; }
@@ -109,8 +109,8 @@ app.get('/api/debug/filters', async (req, res) => {
     // Step 4: full filters API result
     try {
       const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
-      const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND seller != "" ORDER BY seller');
-      const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND store != "" ORDER BY store');
+      const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
+      const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND LENGTH(store) > 0 ORDER BY store');
       const asins = await q('SELECT DISTINCT a.asin, a.seller, a.store FROM asin a ORDER BY a.store, a.asin LIMIT 10');
       results.steps.filterResponse = {
         shops: shops.length,
@@ -126,8 +126,10 @@ app.get('/api/debug/filters', async (req, res) => {
 
     // Step 5: asin_plan check
     try {
-      const plans = await q('SELECT DISTINCT year, metrics FROM asin_plan LIMIT 20');
-      results.steps.asinPlan = { ok: true, sample: plans };
+      const cols = await q('SHOW COLUMNS FROM asin_plan');
+      const colNames = cols.map(c => c.Field);
+      const sample = await q('SELECT * FROM asin_plan LIMIT 3');
+      results.steps.asinPlan = { ok: true, columns: colNames, sampleRows: sample };
     } catch (e) { results.steps.asinPlan = { ok: false, error: e.message }; }
 
     // Step 6: critical SKUs check
@@ -169,8 +171,8 @@ app.get('/api/date-range', async (req, res) => {
 app.get('/api/filters', async (req, res) => {
   try {
     const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
-    const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND seller != "" ORDER BY seller');
-    const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND store != "" ORDER BY store');
+    const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
+    const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND LENGTH(store) > 0 ORDER BY store');
     
     // Get ASIN → shop mapping from seller_board_product (which shop sells which ASIN)
     const asinShops = await q(`
@@ -636,8 +638,19 @@ app.get('/api/plan/data', async (req, res) => {
   try {
     const { year, month, brand, seller, asin: af } = req.query;
     const yr = year || new Date().getFullYear();
-    let where = 'WHERE ap.year = ?';
-    const params = [yr];
+    
+    // Try to detect year column - could be 'year' or might not exist
+    let where, params;
+    try {
+      // First try with backtick-escaped year column
+      await q('SELECT `year` FROM asin_plan LIMIT 1');
+      where = 'WHERE ap.`year` = ?';
+      params = [yr];
+    } catch {
+      // No year column - query all plan data
+      where = 'WHERE 1=1';
+      params = [];
+    }
     if (month && month !== 'All') {
       const mn = parseInt(month);
       if (mn >= 1 && mn <= 12) { where += ' AND ap.month_num = ?'; params.push(mn); }
