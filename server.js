@@ -36,11 +36,8 @@ async function q(sql, params = [], timeoutMs = 30000) {
   return Promise.race([pool.execute(sql, params).then(([rows]) => rows), timeout]);
 }
 
-/* ═══════════ COMBINED SALES TABLE ═══════════
-   PBI does: seller_board_sales APPEND seller_board_sales_old then remove duplicates
-   In SQL: all from seller_board_sales + rows from seller_board_sales_old before sales min date */
-const SALES_COMBINED = `(SELECT * FROM seller_board_sales UNION ALL SELECT * FROM seller_board_sales_old WHERE date < (SELECT MIN(date) FROM seller_board_sales))`;
-function salesFrom(alias = 'sc') { return `${SALES_COMBINED} AS ${alias}`; }
+/* ═══════════ SALES TABLE ═══════════ */
+function salesFrom(alias = 'sc') { return `seller_board_sales ${alias}`; }
 
 /* ═══════════ HELPERS ═══════════ */
 async function getShopMap() {
@@ -104,11 +101,8 @@ app.get('/api/debug/filters', async (req, res) => {
     R.steps.tables = tables;
     try {
       const dr = await q(`SELECT MIN(sc.date) as mi, MAX(sc.date) as mx FROM ${salesFrom()}`);
-      R.steps.combinedSalesRange = { min: dr[0]?.mi, max: dr[0]?.mx };
-      const minS = await q('SELECT MIN(date) as d FROM seller_board_sales');
-      const maxO = await q('SELECT MAX(date) as d FROM seller_board_sales_old');
-      R.steps.salesOverlap = { salesMin: minS[0]?.d, oldMax: maxO[0]?.d };
-    } catch(e) { R.steps.combinedSalesRange = e.message; }
+      R.steps.salesRange = { min: dr[0]?.mi, max: dr[0]?.mx };
+    } catch(e) { R.steps.salesRange = e.message; }
     R.steps.planMetrics = (await q('SELECT DISTINCT metrics FROM asin_plan LIMIT 20').catch(()=>[])).map(m=>`${m.metrics}→${mapMetric(m.metrics)}`);
     try { R.steps.analyticsCols = (await q('SHOW COLUMNS FROM analytics_search_catalog_performance')).map(c=>c.Field); } catch(e) { R.steps.analyticsCols = e.message; }
   } catch (e) { R.globalError = e.message; }
@@ -277,7 +271,7 @@ app.get('/api/team', async (req, res) => {
       SUM(COALESCE(salesOrganic,0)+COALESCE(salesPPC,0)) as revenue,
       SUM(COALESCE(netProfit,0)) as netProfit,
       SUM(COALESCE(unitsOrganic,0)+COALESCE(unitsPPC,0)) as units
-      FROM seller_board_product ${w} GROUP BY asin`, params);
+      FROM seller_board_product ${w} GROUP BY asin`, params, 45000);
     const agg = {};
     rows.forEach(r => {
       const sl = sellerMap[r.asin] || 'Unassigned';
