@@ -153,7 +153,7 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(COALESCE(p.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w}`, f.p);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w}`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
@@ -162,7 +162,7 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(sc.amazonFees,0)) as amazonFees,
         SUM(COALESCE(sc.netProfit,0)) as netProfit, SUM(COALESCE(sc.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(sc.sessions,0)) as sessions, SUM(COALESCE(sc.grossProfit,0)) as grossProfit
-        FROM ${salesFrom()} ${f.w}`, f.p);
+        FROM ${salesFrom()} ${f.w}`, f.p, 45000);
       // COGS from seller_board_product (not in sales tables)
       try {
         let cw = 'WHERE p.date BETWEEN ? AND ?'; const cp = [s, e];
@@ -196,13 +196,14 @@ app.get('/api/exec/daily', async (req, res) => {
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(${P_UNITS}) as units
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit, SUM(${SC_UNITS}) as units
-        FROM ${salesFrom()} ${f.w} GROUP BY sc.date ORDER BY sc.date`, f.p);
+        FROM ${salesFrom()} ${f.w} GROUP BY sc.date ORDER BY sc.date`, f.p, 45000);
     }
-    res.json(rows);
+    console.log('exec/daily:', rows?.length||0, 'rows');
+    res.json(rows || []);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -219,11 +220,12 @@ app.get('/api/product/asins', async (req, res) => {
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(COALESCE(p.sessions,0)) as sessions, AVG(COALESCE(p.unitSessionPercentage,0)) as cr
       FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin
-      ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC LIMIT 500`, f.p);
+      ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC LIMIT 500`, f.p, 45000);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
+      const acos=Math.round((parseFloat(r.acos)||0)*100)/100, cr=Math.round((parseFloat(r.cr)||0)*100)/100;
       return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'', revenue: rev, netProfit: np, units: parseInt(r.units)||0,
-        margin: rev>0?(np/rev*100):0, acos: parseFloat(r.acos)||0, roas: parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0, cr: parseFloat(r.cr)||0 };
+        margin: rev>0?Math.round(np/rev*1000)/10:0, acos, roas: acos>0?Math.round(100/acos*100)/100:0, cr };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -245,7 +247,7 @@ app.get('/api/shops', async (req, res) => {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
         SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders
-        FROM ${salesFrom()} ${f.w} GROUP BY sc.accountId ORDER BY revenue DESC`, f.p);
+        FROM ${salesFrom()} ${f.w} GROUP BY sc.accountId ORDER BY revenue DESC`, f.p, 45000);
     }
     let stockMap = {};
     try { (await q('SELECT accountId, SUM(CAST(available AS SIGNED)) as fba FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning) GROUP BY accountId')).forEach(s=>{stockMap[s.accountId]=s.fba;}); } catch(e){}
@@ -288,13 +290,6 @@ app.get('/api/inventory/snapshot', async (req, res) => {
     const accId = await storeToAccId(req.query.store);
     let extra = ''; const params = [];
     if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
-    let totalFbaStock = 0;
-    try {
-      let sw = ''; const sp = [];
-      if (accId) { sw = ' AND accountId = ?'; sp.push(accId); }
-      const sr = await q(`SELECT SUM(COALESCE(FBAStock,0)) as fba FROM seller_board_stock_daily WHERE date=(SELECT MAX(date) FROM seller_board_stock_daily)${sw}`, sp);
-      totalFbaStock = parseInt(sr[0]?.fba) || 0;
-    } catch(e) {}
     const rows = await q(`SELECT
       SUM(CAST(available AS SIGNED)) as availableInv,
       SUM(COALESCE(totalReservedQuantity,0)) as reserved, SUM(COALESCE(inboundQuantity,0)) as inbound,
@@ -308,10 +303,14 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning)${extra}`, params);
     const r = rows[0]||{};
     const avail=parseInt(r.availableInv)||0;
+    const reserved=parseInt(r.reserved)||0;
+    const inbound=parseInt(r.inbound)||0;
+    // FBA Stock = Available + Reserved (same source: fba_iventory_planning)
+    const fbaStock = avail + reserved;
     res.json({
-      fbaStock: totalFbaStock||avail, availableInv: avail,
-      totalInventory: avail+(parseInt(r.reserved)||0)+(parseInt(r.inbound)||0),
-      reserved: parseInt(r.reserved)||0, inbound: parseInt(r.inbound)||0,
+      fbaStock, availableInv: avail,
+      totalInventory: avail+reserved+inbound,
+      reserved, inbound,
       criticalSkus: parseInt(r.criticalSkus)||0, avgDaysOfSupply: Math.round(parseFloat(r.avgDaysOfSupply)||0),
       age0_90: parseInt(r.a0)||0, age91_180: parseInt(r.a91)||0, age181_270: parseInt(r.a181)||0,
       age271_365: parseInt(r.a271)||0, age365plus: parseInt(r.a365)||0,
@@ -339,6 +338,21 @@ app.get('/api/inventory/by-shop', async (req, res) => {
 });
 
 /* ═══════════ PLAN DEBUG ═══════════ */
+/* ═══════════ DEBUG ENDPOINTS ═══════════ */
+app.get('/api/debug/all', async (req, res) => {
+  const R = { ts: new Date().toISOString(), tests: {} };
+  const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
+  await test('sales_count', () => q('SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM seller_board_sales'));
+  await test('sales_daily_sample', () => q(`SELECT date, SUM(COALESCE(salesOrganic,0)+COALESCE(salesPPC,0)) as rev FROM seller_board_sales WHERE date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) GROUP BY date ORDER BY date LIMIT 5`));
+  await test('product_count', () => q('SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM seller_board_product'));
+  await test('plan_count', () => q('SELECT COUNT(*) as cnt FROM asin_plan'));
+  await test('plan_years', () => q('SELECT DISTINCT `year`, COUNT(*) as cnt FROM asin_plan GROUP BY `year`').catch(()=>'no year col'));
+  await test('inventory', () => q('SELECT COUNT(*) as cnt, MAX(date) as maxD FROM fba_iventory_planning'));
+  await test('analytics', () => q('SELECT COUNT(*) as cnt, MIN(startDate) as minD, MAX(startDate) as maxD FROM analytics_search_catalog_performance'));
+  await test('accounts', () => q('SELECT id, shop FROM accounts'));
+  res.json(R);
+});
+
 app.get('/api/debug/plan', async (req, res) => {
   const yr = req.query.year || new Date().getFullYear();
   const R = { year: yr, steps: {} };
@@ -385,7 +399,7 @@ function mapMetric(m) {
 app.get('/api/plan/data', async (req, res) => {
   try {
     const { year, month, store, seller, asin: af } = req.query;
-    const yr = year || new Date().getFullYear();
+    const yr = parseInt(year) || new Date().getFullYear();
     let cols;
     try { cols = (await q('SHOW COLUMNS FROM asin_plan')).map(c=>c.Field); }
     catch { return res.json({kpi:{},monthlyPlan:{},asinPlan:{}}); }
@@ -457,7 +471,7 @@ app.get('/api/plan/data', async (req, res) => {
 app.get('/api/plan/actuals', async (req, res) => {
   try {
     const { year, store, seller, asin: af } = req.query;
-    const yr = year || new Date().getFullYear();
+    const yr = parseInt(year) || new Date().getFullYear();
     const accId = await storeToAccId(store);
 
     // Source 1: Revenue, GP, Units, Sessions from seller_board_sales
