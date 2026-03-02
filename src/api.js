@@ -11,7 +11,7 @@ export async function checkBackend() {
 export async function api(path, params = {}) {
   const qs = Object.entries(params).filter(([,v]) => v != null && v !== '' && v !== 'All').map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${BASE}/api/${path}${qs ? '?' + qs : ''}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
