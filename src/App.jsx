@@ -349,56 +349,63 @@ export default function App(){
   },[]);
 
   // ═══════════ FETCH DATA when filters/dates change ═══════════
+  // Debounced fetch: wait 400ms after last filter change before fetching
+  const [fetchTrigger,setFetchTrigger]=useState(0);
+  const fetchParamsRef=useRef({sd,ed,store,seller,asinF});
+  fetchParamsRef.current={sd,ed,store,seller,asinF};
   useEffect(()=>{
     if(!live||dbConnecting)return;
+    const timer=setTimeout(()=>setFetchTrigger(t=>t+1),400);
+    return()=>clearTimeout(timer);
+  },[sd,ed,store,seller,asinF,live,dbConnecting]);
+  useEffect(()=>{
+    if(!live||dbConnecting||fetchTrigger===0)return;
     let cancelled=false;
-    const p={start:sd,end:ed,store,seller,asin:asinF};
+    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
+    const p={start:_sd,end:_ed,store:_st,seller:_sl,asin:_af};
     setLoading(true);setFilterError(null);
-    (async()=>{
-      try{
-        console.log("=== DATA FETCH START ===");
-        console.log("Params:",JSON.stringify(p));
-        const summary=await api("exec/summary",p).catch(e=>{console.error("exec/summary ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Exec: '+e.message);return EMPTY_EM;});
-        console.log("exec/summary:",typeof summary,summary?.sales!==undefined?"sales="+summary.sales:"NO SALES FIELD",JSON.stringify(summary).slice(0,300));
-        if(!cancelled)setEm(summary);
-        // Previous period
-        const days=Math.max(1,Math.round((new Date(ed)-new Date(sd))/86400000)+1);
-        const pe=new Date(new Date(sd+"T00:00:00").getTime()-86400000);
-        const ps=new Date(pe.getTime()-(days-1)*86400000);
-        const prev=await api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null);
-        if(!cancelled)setPrevEm(prev&&prev.sales?prev:null);
-        // Daily
-        const daily=await api("exec/daily",p).catch(e=>{console.error("exec/daily ERROR:",e.message);return[];});
-        console.log("exec/daily:",Array.isArray(daily)?daily.length+" rows":"NOT ARRAY",JSON.stringify(daily).slice(0,200));
-        if(!cancelled)setFDaily((daily||[]).map(r=>{const dt=new Date(r.date);return{date:r.date,label:MS[dt.getMonth()]+" "+dt.getDate(),revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0}}));
-        // ASINs
-        const asins=await api("product/asins",{start:sd,end:ed,store,seller,asin:asinF}).catch(e=>{console.error("product/asins ERROR:",e.message);return[];});
-        console.log("product/asins:",Array.isArray(asins)?asins.length+" rows":"NOT ARRAY");
-        if(!cancelled)setFAsin((asins||[]).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:parseFloat(r.cr)||0,ac:parseFloat(r.acos)||0,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0})));
-        // Shops
-        const shops=await api("shops",{start:sd,end:ed,store,seller,asin:asinF}).catch(e=>{console.error("shops ERROR:",e.message);return[];});
-        console.log("shops:",Array.isArray(shops)?shops.length+" rows":"NOT ARRAY");
-        if(!cancelled)setFShopData((shops||[]).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0})));
-        // Team
-        const team=await api("team",{start:sd,end:ed,seller,store,asin:asinF}).catch(e=>{console.error("team ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];});
-        console.log("team:",Array.isArray(team)?team.length+" rows":"NOT ARRAY",JSON.stringify(team).slice(0,200));
-        if(!cancelled)setFSeller((team||[]).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
-        console.log("=== DATA FETCH DONE ===");
-      }catch(e){console.error("Fetch error:",e)}
-      if(!cancelled)setLoading(false);
-    })();
+    const days=Math.max(1,Math.round((new Date(_ed)-new Date(_sd))/86400000)+1);
+    const pe=new Date(new Date(_sd+"T00:00:00").getTime()-86400000);
+    const ps=new Date(pe.getTime()-(days-1)*86400000);
+    // All API calls in parallel — no blocking
+    Promise.all([
+      api("exec/summary",p).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Exec: '+e.message);return EMPTY_EM;}),
+      api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null),
+      api("exec/daily",p).catch(()=>[]),
+      api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[]),
+      api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[]),
+      api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];}),
+    ]).then(([summary,prev,daily,asins,shops,team])=>{
+      if(cancelled)return;
+      setEm(summary||EMPTY_EM);
+      setPrevEm(prev&&prev.sales?prev:null);
+      setFDaily((daily||[]).map(r=>{const dt=new Date(r.date);return{date:r.date,label:MS[dt.getMonth()]+" "+dt.getDate(),revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0}}));
+      setFAsin((asins||[]).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:parseFloat(r.cr)||0,ac:parseFloat(r.acos)||0,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0})));
+      setFShopData((shops||[]).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0})));
+      setFSeller((team||[]).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
+      setLoading(false);
+    }).catch(e=>{console.error("Fetch error:",e);if(!cancelled)setLoading(false);});
     return()=>{cancelled=true};
-  },[live,dbConnecting,sd,ed,store,seller,asinF]);
+  },[fetchTrigger]);
 
-  // ═══════════ FETCH PLAN DATA ═══════════
+  // ═══════════ FETCH PLAN DATA (debounced) ═══════════
+  const [planTrigger,setPlanTrigger]=useState(0);
+  const planParamsRef=useRef({planYear,store,seller,asinF});
+  planParamsRef.current={planYear,store,seller,asinF};
   useEffect(()=>{
     if(!live||dbConnecting)return;
+    const timer=setTimeout(()=>setPlanTrigger(t=>t+1),400);
+    return()=>clearTimeout(timer);
+  },[planYear,store,seller,asinF,live,dbConnecting]);
+  useEffect(()=>{
+    if(!live||dbConnecting||planTrigger===0)return;
     let cancelled=false;
+    const{planYear:_py,store:_st,seller:_sl,asinF:_af}=planParamsRef.current;
     (async()=>{
       try{
         const[planRes,actualsRes]=await Promise.all([
-          api("plan/data",{year:planYear,store,seller,asin:asinF}).catch(e=>{console.error("plan/data ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Plan: '+e.message);return null;}),
-          api("plan/actuals",{year:planYear,store,seller,asin:asinF}).catch(e=>{console.error("plan/actuals ERROR:",e.message);return null;})
+          api("plan/data",{year:_py,store:_st,seller:_sl,asin:_af}).catch(e=>{console.error("plan/data ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Plan: '+e.message);return null;}),
+          api("plan/actuals",{year:_py,store:_st,seller:_sl,asin:_af}).catch(e=>{console.error("plan/actuals ERROR:",e.message);return null;})
         ]);
         console.log("plan/data:",JSON.stringify(planRes).slice(0,300));
         console.log("plan/actuals monthly:",actualsRes?.monthly?.length,"rows");
@@ -451,7 +458,7 @@ export default function App(){
       }catch(e){console.error("Plan fetch error:",e)}
     })();
     return()=>{cancelled=true};
-  },[live,dbConnecting,planYear,store,seller,asinF]);
+  },[planTrigger]);
 
   const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n})),[fShopData]);
 
