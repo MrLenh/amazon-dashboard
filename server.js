@@ -111,7 +111,7 @@ app.get('/api/debug/filters', async (req, res) => {
       const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
       const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
       const brands = await q('SELECT DISTINCT store FROM asin WHERE store IS NOT NULL AND LENGTH(store) > 0 ORDER BY store');
-      const asins = await q('SELECT DISTINCT a.asin, a.seller, a.store FROM asin a ORDER BY a.store, a.asin LIMIT 10');
+      const asins = await q("SELECT DISTINCT a.asin, a.seller, a.store FROM asin a WHERE a.asin REGEXP '^(AU-)?B0[A-Za-z0-9]{8}$' ORDER BY a.store, a.asin LIMIT 10");
       results.steps.filterResponse = {
         shops: shops.length,
         sellers: sellers.length,
@@ -304,7 +304,7 @@ app.get('/api/filters', async (req, res) => {
       if (sn && !asinShopMap[r.asin].includes(sn)) asinShopMap[r.asin].push(sn);
     });
 
-    const asins = await q('SELECT DISTINCT a.asin, a.seller, a.store FROM asin a ORDER BY a.store, a.asin');
+    const asins = await q("SELECT DISTINCT a.asin, a.seller, a.store FROM asin a WHERE a.asin REGEXP '^(AU-)?B0[A-Za-z0-9]{8}$' ORDER BY a.store, a.asin");
     res.json({
       shops: shops.map(s => ({ id: s.id, name: s.name })),
       sellers: sellers.map(s => s.seller),
