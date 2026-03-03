@@ -153,7 +153,7 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(COALESCE(p.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w}`, f.p, 45000);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
@@ -196,7 +196,7 @@ app.get('/api/exec/daily', async (req, res) => {
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(${P_UNITS}) as units
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit, SUM(${SC_UNITS}) as units
@@ -219,7 +219,7 @@ app.get('/api/product/asins', async (req, res) => {
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(COALESCE(p.sessions,0)) as sessions, AVG(COALESCE(p.unitSessionPercentage,0)) as cr
-      FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin
+      FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
       ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC LIMIT 500`, f.p, 45000);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
@@ -242,7 +242,7 @@ app.get('/api/shops', async (req, res) => {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units, 0 as orders
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
@@ -278,7 +278,7 @@ app.get('/api/team', async (req, res) => {
       SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(COALESCE(p.unitsOrganic,0)+COALESCE(p.unitsPPC,0)) as units,
       COUNT(DISTINCT p.asin) as asinCount
-      FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin
+      FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
       ${w} GROUP BY COALESCE(NULLIF(a.seller,''),'Unassigned')
       ORDER BY revenue DESC LIMIT 100`, params, 60000);
     res.json(rows.map(r => {
@@ -467,7 +467,7 @@ app.get('/api/plan/data', async (req, res) => {
     if (af && af !== 'All') { where+=' AND ap.asin = ?'; params.push(af); }
     if (seller && seller !== 'All') { where+=' AND a.seller = ?'; params.push(seller); }
     const rows = await q(`SELECT ap.asin, ap.brand_name, ap.month_num, ap.metrics, COALESCE(CAST(ap.value AS DECIMAL(20,4)),0) as value
-      FROM asin_plan ap LEFT JOIN asin a ON ap.asin=a.asin ${where} ORDER BY ap.month_num`, params, 45000);
+      FROM asin_plan ap LEFT JOIN asin a ON ap.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${where} ORDER BY ap.month_num`, params, 45000);
 
     const monthlyPlan={}, asinPlan={};
     rows.forEach(r => {
@@ -532,7 +532,7 @@ app.get('/api/plan/actuals', async (req, res) => {
     const pF = pWhere(`${yr}-01-01`,`${yr}-12-31`,accId,seller,af);
     try {
       adsRows = await q(`SELECT MONTH(p.date) as mn, SUM(ABS(${P_ADS})) as ads
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${pF.w} GROUP BY MONTH(p.date)`, pF.p, 45000);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF.w} GROUP BY MONTH(p.date)`, pF.p, 45000);
     } catch(e2) { console.warn('plan/actuals ads query failed:', e2.message); }
 
     // Source 3: Impressions + Clicks from analytics_search_catalog_performance
@@ -566,8 +566,8 @@ app.get('/api/plan/actuals', async (req, res) => {
       asinRows = await q(`SELECT p.asin, ap2.brand_name as planBrand, a.seller, MONTH(p.date) as mn,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.grossProfit,0)) as gp,
       SUM(${P_UNITS}) as units, SUM(COALESCE(p.sessions,0)) as sessions, SUM(ABS(${P_ADS})) as ads
-      FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin
-      LEFT JOIN (SELECT DISTINCT asin, brand_name FROM asin_plan) ap2 ON p.asin=ap2.asin
+      FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
+      LEFT JOIN (SELECT DISTINCT asin, brand_name FROM asin_plan) ap2 ON p.asin COLLATE utf8mb4_0900_ai_ci=ap2.asin
       ${pF.w} GROUP BY p.asin, ap2.brand_name, a.seller, MONTH(p.date) ORDER BY gp DESC`, pF.p, 45000);
     } catch(e3) { console.warn('plan/actuals asin query failed:', e3.message); }
 
@@ -605,7 +605,7 @@ app.get('/api/ops/daily', async (req, res) => {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units, 0 as orders, SUM(${P_ADS}) as adSpend
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin=a.asin ${f.w} GROUP BY p.date ORDER BY p.date DESC LIMIT 60`, f.p);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date DESC LIMIT 60`, f.p);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
