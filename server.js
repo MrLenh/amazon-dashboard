@@ -344,38 +344,6 @@ app.get('/api/inventory/stock-trend', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/inventory/storage-trend', async (req, res) => {
-  try {
-    const accId = await storeToAccId(req.query.store);
-    let extra = ''; const params = [];
-    if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
-    // Weekly storage fee from fba_iventory_planning (last 90 days)
-    const rows = await q(`
-      SELECT 
-        DATE(date) as d,
-        SUM(COALESCE(estimatedStorageCostNextMonth,0)) as fee
-      FROM fba_iventory_planning 
-      WHERE date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)${extra}
-      GROUP BY DATE(date) ORDER BY d
-    `, params);
-    // Aggregate to weekly to reduce noise
-    const weekly = []; let bucket = null;
-    (rows||[]).forEach(r => {
-      const dt = new Date(r.d);
-      const wk = new Date(dt); wk.setDate(dt.getDate() - dt.getDay()); // Sunday of that week
-      const wkStr = wk.toISOString().slice(0,10);
-      if (!bucket || bucket.wk !== wkStr) {
-        bucket = { wk: wkStr, date: r.d, fee: parseFloat(r.fee)||0, cnt: 1 };
-        weekly.push(bucket);
-      } else {
-        // Keep last value of the week (most recent snapshot)
-        bucket.date = r.d; bucket.fee = parseFloat(r.fee)||0; bucket.cnt++;
-      }
-    });
-    res.json(weekly.map(w => ({ date: w.date, fee: Math.round(w.fee*100)/100 })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 app.get('/api/inventory/by-shop', async (req, res) => {
   try {
     const shopMap = await getShopMap();
