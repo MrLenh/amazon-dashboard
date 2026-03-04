@@ -257,10 +257,44 @@ app.get('/api/shops', async (req, res) => {
     } catch (e) {
       try { (await q('SELECT accountId, SUM(CAST(available AS SIGNED)) as fba FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning) GROUP BY accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
     }
+    // Ads spend per shop from seller_board_product (always needed for shop-level ads)
+    let adsMap = {}; // { accountId: { ads, gp } }
+    try {
+      const pF2 = pWhere(s, e, accId, null, null);
+      const adsRows = await q(`SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF2.w} GROUP BY p.accountId`, pF2.p, 45000);
+      adsRows.forEach(r => { adsMap[r.accountId] = { ads: parseFloat(r.ads)||0, gp: parseFloat(r.gp)||0 }; });
+    } catch(ea) { console.warn('shops ads query:', ea.message); }
+
+    // Plan data per shop: aggregate asin_plan → seller_board_product.accountId
+    let planMap = {}; // { accountId: { gp, rv, ad, un } }
+    try {
+      const yr = new Date().getFullYear();
+      const planRows = await q(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
+        FROM asin_plan ap
+        JOIN (SELECT DISTINCT asin, accountId FROM seller_board_product WHERE YEAR(date)=?) p
+          ON ap.asin COLLATE utf8mb4_0900_ai_ci = p.asin
+        WHERE ap.year = ?
+        GROUP BY p.accountId, ap.metrics`, [yr, yr], 45000);
+      planRows.forEach(r => {
+        if (!planMap[r.accountId]) planMap[r.accountId] = { gp: 0, rv: 0, ad: 0, un: 0 };
+        const pm = planMap[r.accountId];
+        const mk = mapMetric(r.metrics);
+        const v = parseFloat(r.val) || 0;
+        if (mk === 'gp') pm.gp += v;
+        else if (mk === 'rv') pm.rv += v;
+        else if (mk === 'ad') pm.ad += v;
+        else if (mk === 'un') pm.un += v;
+      });
+    } catch (ep) { console.warn('shops plan aggregation failed:', ep.message); }
+
     res.json(rows.map(r => {
       const rev=parseFloat(r.revenue)||0, np=parseFloat(r.netProfit)||0;
       const stk = stockMap[r.accountId] || { fba: 0, sv: 0 };
-      return { shop: shopMap[r.accountId]||`Account ${r.accountId}`, revenue: rev, netProfit: np, units: parseInt(r.units)||0, orders: parseInt(r.orders)||0, margin: rev>0?(np/rev*100):0, fbaStock: stk.fba, stockValue: stk.sv };
+      const plan = planMap[r.accountId] || { gp: 0, rv: 0, ad: 0, un: 0 };
+      const ad = adsMap[r.accountId] || { ads: 0, gp: 0 };
+      const gp = ad.gp || np; // prefer GP from product table, fallback to NP
+      return { shop: shopMap[r.accountId]||`Account ${r.accountId}`, accountId: r.accountId, revenue: rev, grossProfit: gp, netProfit: np, ads: ad.ads, units: parseInt(r.units)||0, orders: parseInt(r.orders)||0, margin: rev>0?(gp/rev*100):0, fbaStock: stk.fba, stockValue: stk.sv, gpPlan: plan.gp, rvPlan: plan.rv, adPlan: plan.ad, unPlan: plan.un };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -630,7 +664,6 @@ app.get('/api/plan/actuals', async (req, res) => {
       if(accId){aiw+=' AND asc2.accountId=?';aip.push(accId);}
       if(af && af!=='All'){aiw+=' AND asc2.asin=?';aip.push(af);}
       else if(seller && seller!=='All'){
-        // Lookup ASINs for this seller
         const selAsins=(await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[])).map(r=>r.asin);
         if(selAsins.length){aiw+=` AND asc2.asin IN (${selAsins.map(()=>'?').join(',')})`;aip.push(...selAsins);}
       }
@@ -643,6 +676,20 @@ app.get('/api/plan/actuals', async (req, res) => {
         asinImpMap[r.asin][r.mn]={imp:parseInt(r.imp)||0,clicks:parseInt(r.clicks)||0};
       });
     } catch(e4) { console.warn('plan/actuals asin impressions query failed:', e4.message); }
+
+    // Stock Value per ASIN from seller_board_stock (snapshot table, no date column)
+    let asinStockMap = {}; // { asin: stockValue }
+    try {
+      let svw='WHERE 1=1'; const svp=[];
+      if(accId){svw+=' AND accountId=?';svp.push(accId);}
+      if(af && af!=='All'){svw+=' AND asin=?';svp.push(af);}
+      else if(seller && seller!=='All'){
+        const selAsins2=(await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[])).map(r=>r.asin);
+        if(selAsins2.length){svw+=` AND asin IN (${selAsins2.map(()=>'?').join(',')})`;svp.push(...selAsins2);}
+      }
+      const svRows = await q(`SELECT asin, SUM(COALESCE(FBAStock,0)) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock ${svw} GROUP BY asin`, svp, 45000);
+      svRows.forEach(r=>{ asinStockMap[r.asin]={sv:parseFloat(r.sv)||0,fba:parseInt(r.fba)||0}; });
+    } catch(e5) { console.warn('plan/actuals stock query failed:', e5.message); }
 
     const asinData={};
     asinRows.forEach(r=>{
@@ -670,11 +717,15 @@ app.get('/api/plan/actuals', async (req, res) => {
       Object.values(d.months).forEach(m=>{t.rv+=m.rv;t.gp+=m.gp;t.np+=m.np;t.ad+=m.ad;t.un+=m.un;t.se+=m.se;t.im+=m.im||0;t.clicks+=m.clicks||0;});
       const cr=t.se>0?t.un/t.se:0;
       const ctr=t.im>0?t.clicks/t.im:0;
+      const stk=asinStockMap[asin]||{sv:0,fba:0};
       return{a:asin,br:d.brand,sl:d.seller,ra:t.rv,ga:t.gp,na:t.np,aa:t.ad,ua:t.un,sa:t.se,ia:t.im,
+        sv:stk.sv,fba:stk.fba,
         cra:Math.round(cr*10000)/10000,cta:Math.round(ctr*10000)/10000,months:d.months};
     }).sort((a,b)=>b.ga-a.ga);
 
-    res.json({monthly:monthlyArr,asinBreakdown});
+    // Compute total stockValue for KPI
+    const totalSV=Object.values(asinStockMap).reduce((s,v)=>s+v.sv,0);
+    res.json({monthly:monthlyArr,asinBreakdown,totalStockValue:totalSV});
   } catch (e) { console.error('plan/actuals:', e.message); res.status(500).json({error:e.message}); }
 });
 
