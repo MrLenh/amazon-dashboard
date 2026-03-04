@@ -581,10 +581,16 @@ app.get('/api/plan/actuals', async (req, res) => {
     // Source 3: Impressions + Clicks from analytics_search_catalog_performance
     let impRows = [];
     try {
-      let iw='WHERE YEAR(startDate)=?'; const ip=[yr];
-      if(accId){iw+=' AND accountId=?';ip.push(accId);}
-      impRows = await q(`SELECT MONTH(startDate) as mn, SUM(COALESCE(impressionCount,0)) as imp, SUM(COALESCE(clickCount,0)) as clicks
-        FROM analytics_search_catalog_performance ${iw} GROUP BY MONTH(startDate)`, ip, 45000);
+      let iw='WHERE YEAR(isc.startDate)=?'; const ip=[yr];
+      if(accId){iw+=' AND isc.accountId=?';ip.push(accId);}
+      if(af && af!=='All'){iw+=' AND isc.asin=?';ip.push(af);}
+      if(seller && seller!=='All'){
+        // Join asin table to filter by seller
+        const selAsins = await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[]);
+        if(selAsins.length){const ph=selAsins.map(()=>'?').join(',');iw+=` AND isc.asin IN (${ph})`;ip.push(...selAsins.map(r=>r.asin));}
+      }
+      impRows = await q(`SELECT MONTH(isc.startDate) as mn, SUM(COALESCE(isc.impressionCount,0)) as imp, SUM(COALESCE(isc.clickCount,0)) as clicks
+        FROM analytics_search_catalog_performance isc ${iw} GROUP BY MONTH(isc.startDate)`, ip, 45000);
     } catch(e) { console.warn('analytics not available:', e.message); }
 
     // Merge all into monthly
