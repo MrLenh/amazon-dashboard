@@ -249,6 +249,9 @@ function OpsPage({t,fDaily,fShopData}){
 }
 
 /* ═══════════ AI CHAT ═══════════ */
+const AI_FONT='Inter,system-ui,-apple-system,sans-serif';
+// Load Inter font
+if(typeof document!=='undefined'&&!document.getElementById('inter-font')){const l=document.createElement('link');l.id='inter-font';l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';document.head.appendChild(l);}
 const AI_HINTS={
   exec:["So sánh Jan vs Feb","Shop nào cần cắt quảng cáo?","Rủi ro lớn nhất hiện tại?"],
   inv:["Giải thích Sell-Through & Days of Health","Nên xử lý hàng tồn >90 ngày như thế nào?","Phí storage có đáng lo không?"],
@@ -305,20 +308,20 @@ function AiChat({t,pg,contextData}){
   };
 
   const renderMd=(text)=>text.split("\n").map((line,i)=>{
-    if(line.startsWith("### "))return<div key={i} style={{fontSize:12,fontWeight:700,color:t.text,marginTop:10,marginBottom:3}}>{line.slice(4)}</div>;
-    if(line.startsWith("## "))return<div key={i} style={{fontSize:13,fontWeight:700,color:t.primary,marginTop:12,marginBottom:4}}>{line.slice(3)}</div>;
-    if(line.startsWith("# "))return<div key={i} style={{fontSize:14,fontWeight:800,color:t.text,marginTop:14,marginBottom:6}}>{line.slice(2)}</div>;
-    if(line.match(/^[•\-\*]\s/))return<div key={i} style={{paddingLeft:14,position:"relative",marginBottom:2}}><span style={{position:"absolute",left:2}}>•</span>{line.replace(/^[•\-\*]\s/,"")}</div>;
-    if(line.trim()==="")return<div key={i} style={{height:4}}/>;
+    if(line.startsWith("### "))return<div key={i} style={{fontSize:13.5,fontWeight:700,color:t.text,marginTop:10,marginBottom:3}}>{line.slice(4)}</div>;
+    if(line.startsWith("## "))return<div key={i} style={{fontSize:14.5,fontWeight:700,color:t.primary,marginTop:12,marginBottom:4}}>{line.slice(3)}</div>;
+    if(line.startsWith("# "))return<div key={i} style={{fontSize:15.5,fontWeight:800,color:t.text,marginTop:14,marginBottom:6}}>{line.slice(2)}</div>;
+    if(line.match(/^[•\-\*]\s/))return<div key={i} style={{paddingLeft:14,position:"relative",marginBottom:3}}><span style={{position:"absolute",left:2}}>•</span>{line.replace(/^[•\-\*]\s/,"")}</div>;
+    if(line.trim()==="")return<div key={i} style={{height:5}}/>;
     const parts=line.split(/\*\*(.*?)\*\*/g);
-    if(parts.length>1)return<div key={i} style={{marginBottom:1}}>{parts.map((p,j)=>j%2===1?<strong key={j} style={{fontWeight:700,color:t.text}}>{p}</strong>:<span key={j}>{p}</span>)}</div>;
-    return<div key={i} style={{marginBottom:1}}>{line}</div>;
+    if(parts.length>1)return<div key={i} style={{marginBottom:2}}>{parts.map((p,j)=>j%2===1?<strong key={j} style={{fontWeight:700,color:t.text}}>{p}</strong>:<span key={j}>{p}</span>)}</div>;
+    return<div key={i} style={{marginBottom:2}}>{line}</div>;
   });
 
   const hints=AI_HINTS[pg]||AI_HINTS.exec;
 
   // Floating button
-  if(!open)return<button onClick={()=>setOpen(true)} style={{position:"fixed",bottom:mob?60:20,right:16,zIndex:999,background:`linear-gradient(135deg,${t.primary},#5A6BC5)`,color:"#fff",border:"none",borderRadius:16,padding:"12px 20px",cursor:"pointer",boxShadow:"0 4px 20px rgba(59,74,138,.35)",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6,transition:"transform .2s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform=""}>🤖 AI Chat</button>;
+  if(!open)return<button onClick={()=>setOpen(true)} style={{position:"fixed",bottom:mob?60:20,right:16,zIndex:999,background:`linear-gradient(135deg,${t.primary},#5A6BC5)`,color:"#fff",border:"none",borderRadius:16,padding:"12px 20px",cursor:"pointer",boxShadow:"0 4px 20px rgba(59,74,138,.35)",fontSize:13.5,fontWeight:600,fontFamily:AI_FONT,display:"flex",alignItems:"center",gap:6,transition:"transform .2s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform=""}>🤖 AI Chat</button>;
 
   const W=mob?"100%":"420px";
   const H=mob?"100%":"70vh";
@@ -327,12 +330,12 @@ function AiChat({t,pg,contextData}){
     {/* Backdrop */}
     <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.3)",zIndex:9998}}/>
     {/* Chat panel */}
-    <div style={{position:"fixed",bottom:mob?0:20,right:mob?0:16,width:W,height:H,maxHeight:mob?"100vh":"70vh",zIndex:9999,background:t.card,borderRadius:mob?0:16,border:mob?"none":"1px solid "+t.cardBorder,boxShadow:"0 12px 40px "+t.shadow,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{position:"fixed",bottom:mob?0:20,right:mob?0:16,width:W,height:H,maxHeight:mob?"100vh":"70vh",zIndex:9999,background:t.card,borderRadius:mob?0:16,border:mob?"none":"1px solid "+t.cardBorder,boxShadow:"0 12px 40px "+t.shadow,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:AI_FONT}}>
 
       {/* Header */}
       <div style={{padding:"14px 16px",background:`linear-gradient(135deg,${t.primary},#5A6BC5)`,flexShrink:0}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>🤖 AI Assistant</div><div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>Đang xem: {PG_LABEL[pg]||pg}</div></div>
+          <div><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:AI_FONT}}>🤖 AI Assistant</div><div style={{fontSize:11,color:"rgba(255,255,255,.7)",marginTop:2,fontFamily:AI_FONT}}>Đang xem: {PG_LABEL[pg]||pg}</div></div>
           <button onClick={()=>setOpen(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",padding:"6px 10px",fontSize:13}}>✕</button>
         </div>
       </div>
@@ -341,14 +344,14 @@ function AiChat({t,pg,contextData}){
       <div style={{flex:1,overflow:"auto",padding:"12px 16px"}}>
         {msgs.length===0&&!loading&&<div style={{textAlign:"center",padding:"24px 10px"}}>
           <div style={{fontSize:32,marginBottom:8}}>🧠</div>
-          <div style={{fontSize:13,fontWeight:600,color:t.text,marginBottom:4}}>Hỏi bất cứ điều gì về data!</div>
-          <div style={{fontSize:11,color:t.textMuted,lineHeight:1.6,marginBottom:14}}>AI sẽ phân tích dựa trên data trang {PG_LABEL[pg]||pg} đang hiển thị.</div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>{hints.map((h,i)=><button key={i} onClick={()=>send(h)} style={{padding:"8px 12px",borderRadius:10,border:"1px solid "+t.inputBorder,background:t.inputBg,color:t.textSec,fontSize:11,cursor:"pointer",textAlign:"left",transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=t.primary;e.currentTarget.style.color=t.primary}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.inputBorder;e.currentTarget.style.color=t.textSec}}>{h}</button>)}</div>
+          <div style={{fontSize:15,fontWeight:600,color:t.text,marginBottom:4}}>Hỏi bất cứ điều gì về data!</div>
+          <div style={{fontSize:12.5,color:t.textMuted,lineHeight:1.6,marginBottom:14}}>AI sẽ phân tích dựa trên data trang {PG_LABEL[pg]||pg} đang hiển thị.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>{hints.map((h,i)=><button key={i} onClick={()=>send(h)} style={{padding:"10px 14px",borderRadius:10,border:"1px solid "+t.inputBorder,background:t.inputBg,color:t.textSec,fontSize:12.5,cursor:"pointer",textAlign:"left",fontFamily:AI_FONT,transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=t.primary;e.currentTarget.style.color=t.primary}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.inputBorder;e.currentTarget.style.color=t.textSec}}>{h}</button>)}</div>
         </div>}
 
         {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:10}}>
           {m.role==="ai"&&<div style={{width:28,height:28,borderRadius:14,background:`linear-gradient(135deg,${t.primary},#5A6BC5)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,marginRight:8,marginTop:2}}>🤖</div>}
-          <div style={{maxWidth:"80%",padding:"10px 14px",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.role==="user"?`linear-gradient(135deg,${t.primary},#5A6BC5)`:t.inputBg,color:m.role==="user"?"#fff":t.textSec,fontSize:12,lineHeight:1.65}}>{m.role==="user"?m.text:renderMd(m.text)}</div>
+          <div style={{maxWidth:"80%",padding:"10px 14px",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.role==="user"?`linear-gradient(135deg,${t.primary},#5A6BC5)`:t.inputBg,color:m.role==="user"?"#fff":t.textSec,fontSize:13.5,lineHeight:1.7,fontFamily:AI_FONT}}>{m.role==="user"?m.text:renderMd(m.text)}</div>
         </div>)}
 
         {loading&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
@@ -363,7 +366,7 @@ function AiChat({t,pg,contextData}){
 
       {/* Input */}
       <div style={{padding:"10px 14px",borderTop:"1px solid "+t.divider,flexShrink:0,display:"flex",gap:8,alignItems:"center"}}>
-        <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Nhập câu hỏi..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid "+t.inputBorder,background:t.inputBg,color:t.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+        <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Nhập câu hỏi..." style={{flex:1,padding:"11px 14px",borderRadius:12,border:"1px solid "+t.inputBorder,background:t.inputBg,color:t.text,fontSize:13.5,fontFamily:AI_FONT,outline:"none",boxSizing:"border-box"}}/>
         <button onClick={()=>send()} disabled={loading||!input.trim()} style={{width:36,height:36,borderRadius:12,border:"none",background:(!loading&&input.trim())?t.primary:t.inputBorder,color:(!loading&&input.trim())?"#fff":t.textMuted,cursor:(!loading&&input.trim())?"pointer":"default",fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>➤</button>
       </div>
     </div>
