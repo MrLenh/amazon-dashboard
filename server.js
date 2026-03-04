@@ -579,15 +579,15 @@ app.get('/api/plan/actuals', async (req, res) => {
     }
 
     // Source 3: Impressions + Clicks from analytics_search_catalog_performance
+    // This table HAS asin column — can filter directly by asin/seller.
     let impRows = [];
     try {
       let iw='WHERE YEAR(isc.startDate)=?'; const ip=[yr];
       if(accId){iw+=' AND isc.accountId=?';ip.push(accId);}
       if(af && af!=='All'){iw+=' AND isc.asin=?';ip.push(af);}
-      if(seller && seller!=='All'){
-        // Join asin table to filter by seller
-        const selAsins = await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[]);
-        if(selAsins.length){const ph=selAsins.map(()=>'?').join(',');iw+=` AND isc.asin IN (${ph})`;ip.push(...selAsins.map(r=>r.asin));}
+      else if(seller && seller!=='All'){
+        const selAsins=(await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[])).map(r=>r.asin);
+        if(selAsins.length){iw+=` AND isc.asin IN (${selAsins.map(()=>'?').join(',')})`;ip.push(...selAsins);}
       }
       impRows = await q(`SELECT MONTH(isc.startDate) as mn, SUM(COALESCE(isc.impressionCount,0)) as imp, SUM(COALESCE(isc.clickCount,0)) as clicks
         FROM analytics_search_catalog_performance isc ${iw} GROUP BY MONTH(isc.startDate)`, ip, 45000);
@@ -621,23 +621,55 @@ app.get('/api/plan/actuals', async (req, res) => {
       ${pF.w} GROUP BY p.asin, ap2.brand_name, a.seller, MONTH(p.date) ORDER BY gp DESC`, pF.p, 45000);
     } catch(e3) { console.warn('plan/actuals asin query failed:', e3.message); }
 
+    // ASIN-level impressions + clicks from analytics_search_catalog_performance (has asin column)
+    let asinImpMap = {}; // { asin: { month: { imp, clicks } } }
+    try {
+      let aiw = 'WHERE YEAR(asc2.startDate)=?'; const aip = [yr];
+      if(accId){aiw+=' AND asc2.accountId=?';aip.push(accId);}
+      if(af && af!=='All'){aiw+=' AND asc2.asin=?';aip.push(af);}
+      else if(seller && seller!=='All'){
+        // Lookup ASINs for this seller
+        const selAsins=(await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[])).map(r=>r.asin);
+        if(selAsins.length){aiw+=` AND asc2.asin IN (${selAsins.map(()=>'?').join(',')})`;aip.push(...selAsins);}
+      }
+      const asinImpRows = await q(`SELECT asc2.asin, MONTH(asc2.startDate) as mn,
+        SUM(COALESCE(asc2.impressionCount,0)) as imp, SUM(COALESCE(asc2.clickCount,0)) as clicks
+        FROM analytics_search_catalog_performance asc2 ${aiw}
+        GROUP BY asc2.asin, MONTH(asc2.startDate)`, aip, 45000);
+      asinImpRows.forEach(r=>{
+        if(!asinImpMap[r.asin]) asinImpMap[r.asin]={};
+        asinImpMap[r.asin][r.mn]={imp:parseInt(r.imp)||0,clicks:parseInt(r.clicks)||0};
+      });
+    } catch(e4) { console.warn('plan/actuals asin impressions query failed:', e4.message); }
+
     const asinData={};
     asinRows.forEach(r=>{
       const key=r.asin, mn=r.mn;
       if(!asinData[key]) asinData[key]={brand:r.planBrand||'',seller:r.seller||'',months:{}};
-      if(!asinData[key].months[mn]) asinData[key].months[mn]={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,cr:0,ct:0};
+      if(!asinData[key].months[mn]) asinData[key].months[mn]={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,clicks:0,cr:0,ct:0};
       const md=asinData[key].months[mn];
       md.rv+=parseFloat(r.revenue)||0;md.gp+=parseFloat(r.gp)||0;md.np+=parseFloat(r.np)||0;md.ad+=parseFloat(r.ads)||0;
       md.un+=parseInt(r.units)||0;md.se+=parseFloat(r.sessions)||0;
       md.cr=md.se>0?md.un/md.se:0;
     });
+    // Merge impressions/clicks into asinData
+    for(const [asin,months] of Object.entries(asinImpMap)){
+      if(!asinData[asin]) continue; // only merge if ASIN has sales data
+      for(const [mn,imp] of Object.entries(months)){
+        if(!asinData[asin].months[mn]) asinData[asin].months[mn]={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,clicks:0,cr:0,ct:0};
+        asinData[asin].months[mn].im=imp.imp;
+        asinData[asin].months[mn].clicks=imp.clicks;
+        asinData[asin].months[mn].ct=imp.imp>0?imp.clicks/imp.imp:0;
+      }
+    }
 
     const asinBreakdown=Object.entries(asinData).map(([asin,d])=>{
-      const t={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0};
-      Object.values(d.months).forEach(m=>{t.rv+=m.rv;t.gp+=m.gp;t.np+=m.np;t.ad+=m.ad;t.un+=m.un;t.se+=m.se;});
+      const t={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,clicks:0};
+      Object.values(d.months).forEach(m=>{t.rv+=m.rv;t.gp+=m.gp;t.np+=m.np;t.ad+=m.ad;t.un+=m.un;t.se+=m.se;t.im+=m.im||0;t.clicks+=m.clicks||0;});
       const cr=t.se>0?t.un/t.se:0;
+      const ctr=t.im>0?t.clicks/t.im:0;
       return{a:asin,br:d.brand,sl:d.seller,ra:t.rv,ga:t.gp,na:t.np,aa:t.ad,ua:t.un,sa:t.se,ia:t.im,
-        cra:Math.round(cr*10000)/10000,cta:0,months:d.months};
+        cra:Math.round(cr*10000)/10000,cta:Math.round(ctr*10000)/10000,months:d.months};
     }).sort((a,b)=>b.ga-a.ga);
 
     res.json({monthly:monthlyArr,asinBreakdown});
