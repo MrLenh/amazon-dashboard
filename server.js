@@ -251,14 +251,16 @@ app.get('/api/shops', async (req, res) => {
     }
     let stockMap = {};
     try {
-      (await q('SELECT accountId, SUM(FBAStock) as fba FROM seller_board_stock WHERE date=(SELECT MAX(date) FROM seller_board_stock) GROUP BY accountId'))
-        .forEach(s => { stockMap[s.accountId] = s.fba; });
+      // seller_board_stock is a snapshot table (no date column) — query all records
+      (await q('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId'))
+        .forEach(s => { stockMap[s.accountId] = { fba: parseInt(s.fba)||0, sv: parseFloat(s.sv)||0 }; });
     } catch (e) {
-      try { (await q('SELECT accountId, SUM(CAST(available AS SIGNED)) as fba FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning) GROUP BY accountId')).forEach(s=>{stockMap[s.accountId]=s.fba;}); } catch(e2){}
+      try { (await q('SELECT accountId, SUM(CAST(available AS SIGNED)) as fba FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning) GROUP BY accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
     }
     res.json(rows.map(r => {
       const rev=parseFloat(r.revenue)||0, np=parseFloat(r.netProfit)||0;
-      return { shop: shopMap[r.accountId]||`Account ${r.accountId}`, revenue: rev, netProfit: np, units: parseInt(r.units)||0, orders: parseInt(r.orders)||0, margin: rev>0?(np/rev*100):0, fbaStock: parseInt(stockMap[r.accountId])||0 };
+      const stk = stockMap[r.accountId] || { fba: 0, sv: 0 };
+      return { shop: shopMap[r.accountId]||`Account ${r.accountId}`, revenue: rev, netProfit: np, units: parseInt(r.units)||0, orders: parseInt(r.orders)||0, margin: rev>0?(np/rev*100):0, fbaStock: stk.fba, stockValue: stk.sv };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -296,10 +298,10 @@ app.get('/api/inventory/snapshot', async (req, res) => {
     let extra = ''; const params = [];
     if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
 
-    // FBA Stock from seller_board_stock (PBI source)
+    // FBA Stock from seller_board_stock (snapshot table, no date column)
     let fbaFromStock = 0;
     try {
-      let sw = 'WHERE date=(SELECT MAX(date) FROM seller_board_stock)';
+      let sw = 'WHERE 1=1';
       const sp = [];
       if (accId) { sw += ' AND accountId = ?'; sp.push(accId); }
       const sr = await q(`SELECT SUM(FBAStock) as fba FROM seller_board_stock ${sw}`, sp);
@@ -374,10 +376,10 @@ app.get('/api/inventory/by-shop', async (req, res) => {
     let accFilter = ''; const accParams = [];
     if (accId) { accFilter = ' AND accountId = ?'; accParams.push(accId); }
 
-    // FBA Stock per shop from seller_board_stock (PBI source)
+    // FBA Stock per shop from seller_board_stock (snapshot table, no date column)
     let stockMap = {};
     try {
-      (await q(`SELECT accountId, SUM(FBAStock) as fba FROM seller_board_stock WHERE date=(SELECT MAX(date) FROM seller_board_stock)${accFilter} GROUP BY accountId`, accParams))
+      (await q(`SELECT accountId, SUM(FBAStock) as fba FROM seller_board_stock WHERE 1=1${accFilter} GROUP BY accountId`, accParams))
         .forEach(r => { stockMap[r.accountId] = parseInt(r.fba) || 0; });
     } catch (e) { /* ok */ }
 
