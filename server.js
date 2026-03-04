@@ -643,16 +643,46 @@ app.get('/api/ops/daily', async (req, res) => {
 app.post('/api/ai/insight', async (req, res) => {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.status(400).json({ error: 'No API key' });
-    const { context, question } = req.body;
+    if (!apiKey) return res.status(400).json({ error: 'No API key configured. Add ANTHROPIC_API_KEY to Railway Variables.' });
+    const { context, question, history } = req.body;
+    const page = context?.page || 'Executive Overview';
+    const period = context?.period || '';
+
+    const systemPrompt = `You are an AI assistant embedded in an Amazon FBA analytics dashboard for an e-commerce holding company (32+ brands, US market).
+
+CURRENT PAGE: ${page}
+PERIOD: ${period}
+
+YOUR ROLE:
+- Answer the user's SPECIFIC question directly. Do NOT give a generic analysis unless asked.
+- Use numbers from the dashboard data to support your answers.
+- Be concise: 150-400 words depending on question complexity.
+- If asked in Vietnamese, respond in Vietnamese. If English, respond in English.
+- Use **bold** for key numbers, bullet points for lists.
+- When relevant, compare against Amazon FBA benchmarks (ACOS 15-25%, healthy margin >15%, sell-through >2%).
+- End with 1-2 actionable next steps when appropriate.
+
+DASHBOARD DATA:
+${JSON.stringify(context, null, 2)}`;
+
+    // Build messages with conversation history
+    const messages = [];
+    if (history && history.length > 0) {
+      history.forEach(h => {
+        messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text });
+      });
+    }
+    messages.push({ role: 'user', content: question });
+
     const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST', headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,system:'You are an Amazon FBA analyst. Give actionable insights in 300-500 words.',
-        messages:[{role:'user',content:`Data:\n${JSON.stringify(context,null,2)}\n\n${question||'Analyze.'}`}]}),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: systemPrompt, messages }),
     });
     const data = await r.json();
-    res.json({insight:data.content?.[0]?.text||'Unable to generate'});
-  } catch (e) { res.status(500).json({error:e.message}); }
+    if (data.error) return res.status(400).json({ error: data.error.message || 'API error' });
+    res.json({ insight: data.content?.[0]?.text || 'Không thể phân tích.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* ═══════════ SERVE FRONTEND ═══════════ */
