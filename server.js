@@ -582,10 +582,9 @@ app.get('/api/plan/actuals', async (req, res) => {
     const { year, store, seller, asin: af } = req.query;
     const yr = parseInt(year) || new Date().getFullYear();
     const accId = await storeToAccId(store);
+    const debug = { yr, accId, seller, af, useProduct: useProduct(seller,af) };
 
     // Source 1: Revenue, GP, Units, Sessions, Ads
-    // When seller/asin filter active → use seller_board_product (has asin/seller cols)
-    // Otherwise → use seller_board_sales (faster, account-level)
     let salesRows = [];
     const pF = pWhere(`${yr}-01-01`,`${yr}-12-31`,accId,seller,af);
     if (useProduct(seller, af)) {
@@ -594,7 +593,8 @@ app.get('/api/plan/actuals', async (req, res) => {
           SUM(${P_SALES}) as revenue, SUM(COALESCE(p.grossProfit,0)) as gp, SUM(COALESCE(p.netProfit,0)) as np,
           SUM(${P_UNITS}) as units, SUM(COALESCE(p.sessions,0)) as sessions, SUM(ABS(${P_ADS})) as ads
           FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF.w} GROUP BY MONTH(p.date)`, pF.p, 45000);
-      } catch(e1) { console.warn('plan/actuals product query failed:', e1.message); }
+        debug.salesSource='product';debug.salesRows=salesRows.length;
+      } catch(e1) { debug.salesErr=e1.message; console.warn('plan/actuals product query failed:', e1.message); }
     } else {
       try {
         const scF = scWhere(`${yr}-01-01`,`${yr}-12-31`,accId);
@@ -602,7 +602,8 @@ app.get('/api/plan/actuals', async (req, res) => {
           SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.grossProfit,0)) as gp, SUM(COALESCE(sc.netProfit,0)) as np,
           SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.sessions,0)) as sessions, SUM(ABS(${SC_ADS})) as ads
           FROM ${salesFrom()} ${scF.w} GROUP BY MONTH(sc.date)`, scF.p, 45000);
-      } catch(e1) { console.warn('plan/actuals sales query failed:', e1.message); }
+        debug.salesSource='sales';debug.salesRows=salesRows.length;debug.salesTable=salesFrom();
+      } catch(e1) { debug.salesErr=e1.message; console.warn('plan/actuals sales query failed:', e1.message); }
     }
 
     // Source 2: Ads from seller_board_product (only needed when using seller_board_sales above)
@@ -655,7 +656,8 @@ app.get('/api/plan/actuals', async (req, res) => {
       FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
       LEFT JOIN (SELECT DISTINCT asin, brand_name FROM asin_plan) ap2 ON p.asin COLLATE utf8mb4_0900_ai_ci=ap2.asin
       ${pF.w} GROUP BY p.asin, ap2.brand_name, a.seller, MONTH(p.date) ORDER BY gp DESC`, pF.p, 45000);
-    } catch(e3) { console.warn('plan/actuals asin query failed:', e3.message); }
+    } catch(e3) { debug.asinErr=e3.message; console.warn('plan/actuals asin query failed:', e3.message); }
+    debug.asinRows=asinRows.length;
 
     // ASIN-level impressions + clicks from analytics_search_catalog_performance (has asin column)
     let asinImpMap = {}; // { asin: { month: { imp, clicks } } }
@@ -678,13 +680,11 @@ app.get('/api/plan/actuals', async (req, res) => {
     } catch(e4) { console.warn('plan/actuals asin impressions query failed:', e4.message); }
 
     // Estimated Stock Value per ASIN per month
-    // Step 1: unit_cost = stockValue / FBAStock from snapshot (seller_board_stock)
-    // Step 2: FBAStock per month from seller_board_stock_daily (latest date each month)
-    // Step 3: estimated_sv = FBAStock_monthly × unit_cost
+    // unit_cost from snapshot × latest FBAStock per month from daily
     let unitCostMap = {}; // { asin: unit_cost }
     let asinStockMonthly = {}; // { asin: { mn: { fba, sv } } }
     try {
-      // Step 1: unit costs from snapshot
+      // Step 1: unit costs from snapshot (fast, small table)
       let ucw='WHERE FBAStock>0'; const ucp=[];
       if(accId){ucw+=' AND accountId=?';ucp.push(accId);}
       const ucRows = await q(`SELECT asin, SUM(COALESCE(stockValue,0)) as sv, SUM(FBAStock) as fba
@@ -693,25 +693,26 @@ app.get('/api/plan/actuals', async (req, res) => {
         const fba=parseInt(r.fba)||0;
         if(fba>0) unitCostMap[r.asin]=(parseFloat(r.sv)||0)/fba;
       });
+      debug.unitCostAsins=Object.keys(unitCostMap).length;
 
-      // Step 2: FBAStock per ASIN per month from daily (latest date per month)
+      // Step 2: latest FBAStock per ASIN per month (simple approach: get max date per month first)
       if(Object.keys(unitCostMap).length>0){
-        let sdw='WHERE YEAR(date)=?'; const sdp=[yr];
-        if(accId){sdw+=' AND accountId=?';sdp.push(accId);}
-        const dailyRows = await q(`SELECT d.asin, MONTH(d.date) as mn, SUM(d.FBAStock) as fba
-          FROM seller_board_stock_daily d
-          INNER JOIN (SELECT asin, accountId, MONTH(date) as mn, MAX(date) as maxd
-            FROM seller_board_stock_daily ${sdw} GROUP BY asin, accountId, MONTH(date)) mx
-          ON d.asin=mx.asin AND d.accountId=mx.accountId AND d.date=mx.maxd
-          ${sdw} GROUP BY d.asin, MONTH(d.date)`, [...sdp,...sdp], 30000);
+        let sdw='WHERE YEAR(d.date)=?'; const sdp=[yr];
+        if(accId){sdw+=' AND d.accountId=?';sdp.push(accId);}
+        // Simple: just use AVG or last-day-of-month FBAStock
+        // Using MAX(date) per month approach but with simpler query
+        const dailyRows = await q(`SELECT d.asin, MONTH(d.date) as mn, 
+          SUBSTRING_INDEX(GROUP_CONCAT(d.FBAStock ORDER BY d.date DESC),',',1) as lastFba
+          FROM seller_board_stock_daily d ${sdw}
+          GROUP BY d.asin, MONTH(d.date)`, sdp, 30000);
         dailyRows.forEach(r=>{
-          const key=r.asin, mn=r.mn, fba=parseInt(r.fba)||0;
+          const key=r.asin, mn=r.mn, fba=parseInt(r.lastFba)||0;
           const uc=unitCostMap[key]||0;
           if(!asinStockMonthly[key]) asinStockMonthly[key]={};
           asinStockMonthly[key][mn]={fba,sv:Math.round(fba*uc)};
         });
       }
-    } catch(e5) { console.warn('plan/actuals stock estimate skipped:', e5.message); }
+    } catch(e5) { debug.stockErr=e5.message; console.warn('stock estimate skipped:', e5.message); }
 
     const asinData={};
     asinRows.forEach(r=>{
@@ -756,7 +757,9 @@ app.get('/api/plan/actuals', async (req, res) => {
         cra:Math.round(cr*10000)/10000,cta:Math.round(ctr*10000)/10000,months:d.months};
     }).sort((a,b)=>b.ga-a.ga);
 
-    res.json({monthly:monthlyArr,asinBreakdown});
+    debug.asinBreakdownCount=asinBreakdown.length;
+    debug.stockAsins=Object.keys(asinStockMonthly).length;
+    res.json({monthly:monthlyArr,asinBreakdown,_debug:debug});
   } catch (e) { console.error('plan/actuals:', e.message); res.status(500).json({error:e.message}); }
 });
 
