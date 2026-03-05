@@ -590,8 +590,8 @@ export default function App(){
     (async()=>{
       try{
         const[planRes,actualsRes]=await Promise.all([
-          api("plan/data",{year:_py,store:_st,seller:_sl,asin:_af}).catch(e=>{console.error("plan/data ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Plan: '+e.message);return null;}),
-          api("plan/actuals",{year:_py,store:_st,seller:_sl,asin:_af}).catch(e=>{console.error("plan/actuals ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Actuals: '+e.message);return null;})
+          api("plan/data",{year:_py,store:_st,seller:_sl,asin:_af},60000).catch(e=>{console.error("plan/data ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Plan: '+e.message);return null;}),
+          api("plan/actuals",{year:_py,store:_st,seller:_sl,asin:_af},90000).catch(e=>{console.error("plan/actuals ERROR:",e.message);setFilterError(prev=>(prev?prev+' | ':'')+'Actuals: '+e.message);return null;})
         ]);
         console.log("plan/data:",JSON.stringify(planRes).slice(0,300));
         console.log("plan/actuals monthly:",actualsRes?.monthly?.length,"rows","debug:",actualsRes?._debug);
