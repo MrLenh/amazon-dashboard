@@ -677,20 +677,6 @@ app.get('/api/plan/actuals', async (req, res) => {
       });
     } catch(e4) { console.warn('plan/actuals asin impressions query failed:', e4.message); }
 
-    // Stock Value per ASIN from seller_board_stock (snapshot table, no date column)
-    let asinStockMap = {}; // { asin: stockValue }
-    try {
-      let svw='WHERE 1=1'; const svp=[];
-      if(accId){svw+=' AND accountId=?';svp.push(accId);}
-      if(af && af!=='All'){svw+=' AND asin=?';svp.push(af);}
-      else if(seller && seller!=='All'){
-        const selAsins2=(await q('SELECT DISTINCT asin FROM asin WHERE seller=?',[seller],10000).catch(()=>[])).map(r=>r.asin);
-        if(selAsins2.length){svw+=` AND asin IN (${selAsins2.map(()=>'?').join(',')})`;svp.push(...selAsins2);}
-      }
-      const svRows = await q(`SELECT asin, SUM(COALESCE(FBAStock,0)) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock ${svw} GROUP BY asin`, svp, 45000);
-      svRows.forEach(r=>{ asinStockMap[r.asin]={sv:parseFloat(r.sv)||0,fba:parseInt(r.fba)||0}; });
-    } catch(e5) { console.warn('plan/actuals stock query failed:', e5.message); }
-
     const asinData={};
     asinRows.forEach(r=>{
       const key=r.asin, mn=r.mn;
@@ -717,15 +703,11 @@ app.get('/api/plan/actuals', async (req, res) => {
       Object.values(d.months).forEach(m=>{t.rv+=m.rv;t.gp+=m.gp;t.np+=m.np;t.ad+=m.ad;t.un+=m.un;t.se+=m.se;t.im+=m.im||0;t.clicks+=m.clicks||0;});
       const cr=t.se>0?t.un/t.se:0;
       const ctr=t.im>0?t.clicks/t.im:0;
-      const stk=asinStockMap[asin]||{sv:0,fba:0};
       return{a:asin,br:d.brand,sl:d.seller,ra:t.rv,ga:t.gp,na:t.np,aa:t.ad,ua:t.un,sa:t.se,ia:t.im,
-        sv:stk.sv,fba:stk.fba,
         cra:Math.round(cr*10000)/10000,cta:Math.round(ctr*10000)/10000,months:d.months};
     }).sort((a,b)=>b.ga-a.ga);
 
-    // Compute total stockValue for KPI
-    const totalSV=Object.values(asinStockMap).reduce((s,v)=>s+v.sv,0);
-    res.json({monthly:monthlyArr,asinBreakdown,totalStockValue:totalSV});
+    res.json({monthly:monthlyArr,asinBreakdown});
   } catch (e) { console.error('plan/actuals:', e.message); res.status(500).json({error:e.message}); }
 });
 
