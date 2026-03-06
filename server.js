@@ -387,25 +387,36 @@ app.get('/api/stock/history', async (req, res) => {
   try {
     const { asin } = req.query;
     if (!asin) return res.status(400).json({ error: 'asin required' });
-    // Get daily FBAStock for this ASIN (last 12 months)
-    const rows = await q(`SELECT d.date, d.FBAStock as fba, d.estimatedSalesVelocity as velocity,
-      d.daysOfStockLeft as daysLeft, d.reserved, d.sentToFBA, d.accountId
-      FROM seller_board_stock_daily d WHERE d.asin=? AND d.date>=DATE_SUB(CURDATE(), INTERVAL 365 DAY)
-      ORDER BY d.date`, [asin], 15000);
-    // Get current snapshot info (stockValue, name, etc)
-    const snap = await q(`SELECT s.asin, s.name, s.sku, s.FBAStock as fba, s.stockValue, s.reserved,
-      s.sentToFBA, s.FBAPrepStock as prepStock, s.estimatedSalesVelocity as velocity,
-      s.daysOfStockLeft as daysLeft, s.roi, s.margin, s.accountId
-      FROM seller_board_stock s WHERE s.asin=? LIMIT 1`, [asin], 5000).catch(()=>[]);
+    // Daily FBAStock (12 months, aggregate across accounts)
+    const rows = await q(`SELECT d.date, SUM(d.FBAStock) as fba, AVG(d.estimatedSalesVelocity) as velocity,
+      MIN(d.daysOfStockLeft) as daysLeft, SUM(d.reserved) as reserved, SUM(d.sentToFBA) as sentToFBA
+      FROM seller_board_stock_daily d WHERE d.asin=?
+      AND d.date>=DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+      GROUP BY d.date ORDER BY d.date`, [asin], 15000);
+    // Snapshot: aggregate all accounts for this ASIN
+    const snap = await q(`SELECT
+      MAX(s.name) as name, MAX(s.sku) as sku,
+      SUM(s.FBAStock) as fba, SUM(COALESCE(s.stockValue,0)) as stockValue,
+      SUM(COALESCE(s.reserved,0)) as reserved, SUM(COALESCE(s.sentToFBA,0)) as sentToFBA,
+      SUM(COALESCE(s.FBAPrepStock,0)) as prepStock, AVG(s.estimatedSalesVelocity) as velocity,
+      MIN(NULLIF(s.daysOfStockLeft,0)) as daysLeft, AVG(s.roi) as roi, AVG(s.margin) as margin,
+      MIN(s.accountId) as accountId
+      FROM seller_board_stock s WHERE s.asin=?`, [asin], 5000).catch(()=>[]);
     const info = snap[0] || {};
-    // Get account name
     const acc = info.accountId ? await q('SELECT shop FROM accounts WHERE id=?',[info.accountId],5000).catch(()=>[]) : [];
+    const fba=parseInt(info.fba)||0;const sv=parseFloat(info.stockValue)||0;
+    const cogs=fba>0?Math.round(sv/fba*100)/100:0;
+    // Also get on-hand stock from daily (latest)
+    const onHand = rows.length>0 ? rows[rows.length-1].fba : fba;
     res.json({
       asin, name: info.name||'', sku: info.sku||'', shop: acc[0]?.shop||'',
-      current: { fba: info.fba||0, stockValue: parseFloat(info.stockValue)||0, reserved: info.reserved||0,
-        sentToFBA: info.sentToFBA||0, prepStock: info.prepStock||0, velocity: parseFloat(info.velocity)||0,
-        daysLeft: info.daysLeft||0, roi: info.roi||0, margin: parseFloat(info.margin)||0 },
-      history: rows.map(r=>({ date: r.date, fba: parseInt(r.fba)||0, velocity: parseFloat(r.velocity)||0,
+      current: { fba, onHand: parseInt(onHand)||0, stockValue: sv, cogs,
+        reserved: parseInt(info.reserved)||0, sentToFBA: parseInt(info.sentToFBA)||0,
+        prepStock: parseInt(info.prepStock)||0, velocity: Math.round((parseFloat(info.velocity)||0)*100)/100,
+        daysLeft: parseInt(info.daysLeft)||0, roi: parseInt(info.roi)||0,
+        margin: Math.round((parseFloat(info.margin)||0)*100)/100 },
+      history: rows.map(r=>({ date: r.date, fba: parseInt(r.fba)||0,
+        velocity: Math.round((parseFloat(r.velocity)||0)*100)/100,
         daysLeft: parseInt(r.daysLeft)||0, reserved: parseInt(r.reserved)||0 }))
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -682,7 +693,7 @@ app.get('/api/plan/actuals', async (req, res) => {
           FROM analytics_search_catalog_performance asc2 ${iw}
           GROUP BY asc2.asin, MONTH(asc2.startDate)`,ip,45000);
       })(),
-      // Q6: Unit costs from snapshot (filtered by store/seller/asin)
+      // Q6: Stock Value snapshot (seller_board_stock — giá trị tại thời điểm hiện tại)
       (async()=>{
         let ucw='WHERE FBAStock>0'; const ucp=[];
         if(accId){ucw+=' AND s.accountId=?';ucp.push(accId);}
@@ -704,36 +715,13 @@ app.get('/api/plan/actuals', async (req, res) => {
     const asinImpRows=val(asinImpRes,'asinImp');
     const ucRows=val(ucRes,'uc');
 
-    // Build unit cost map
-    let unitCostMap = {};
+    // Build snapshot stock value map (直接 from seller_board_stock, no estimation)
+    let asinStockMap = {}; // { asin: { sv, fba } }
     ucRows.forEach(r=>{
-      const fba=parseInt(r.fba)||0;
-      if(fba>0) unitCostMap[r.asin]=(parseFloat(r.sv)||0)/fba;
+      const sv=parseFloat(r.sv)||0;const fba=parseInt(r.fba)||0;
+      asinStockMap[r.asin]={sv,fba};
     });
-    debug.unitCostAsins=Object.keys(unitCostMap).length;
-
-    // ═══ Stock daily query (depends on unitCostMap, runs after batch 1) ═══
-    let asinStockMonthly = {};
-    if(Object.keys(unitCostMap).length>0){
-      try {
-        let sdw='WHERE YEAR(d.date)=?'; const sdp=[yr];
-        if(accId){sdw+=' AND d.accountId=?';sdp.push(accId);}
-        if(af && af!=='All'){sdw+=' AND d.asin=?';sdp.push(af);}
-        else if(seller && seller!=='All'){
-          sdw+=' AND d.asin IN (SELECT asin FROM asin WHERE seller=?)';sdp.push(seller);
-        }
-        const dailyRows = await q(`SELECT d.asin, MONTH(d.date) as mn,
-          SUBSTRING_INDEX(GROUP_CONCAT(d.FBAStock ORDER BY d.date DESC),',',1) as lastFba
-          FROM seller_board_stock_daily d ${sdw}
-          GROUP BY d.asin, MONTH(d.date)`, sdp, 30000);
-        dailyRows.forEach(r=>{
-          const key=r.asin, mn=r.mn, fba=parseInt(r.lastFba)||0;
-          const uc=unitCostMap[key]||0;
-          if(!asinStockMonthly[key]) asinStockMonthly[key]={};
-          asinStockMonthly[key][mn]={fba,sv:Math.round(fba*uc)};
-        });
-      } catch(e5) { debug.stockErr=e5.message; console.warn('stock estimate skipped:', e5.message); }
-    }
+    debug.stockAsins=Object.keys(asinStockMap).length;
 
     // ═══ Merge monthly data ═══
     const monthly = {};
@@ -777,30 +765,19 @@ app.get('/api/plan/actuals', async (req, res) => {
         asinData[asin].months[mn].ct=imp.imp>0?imp.clicks/imp.imp:0;
       }
     }
-    // Merge stock values
-    for(const [asin,months] of Object.entries(asinStockMonthly)){
-      if(!asinData[asin]) asinData[asin]={brand:'',seller:'',months:{}};
-      for(const [mn,stk] of Object.entries(months)){
-        if(!asinData[asin].months[mn]) asinData[asin].months[mn]={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,clicks:0,cr:0,ct:0,sv:0};
-        asinData[asin].months[mn].sv=stk.sv;
-      }
-    }
-
     const asinBreakdown=Object.entries(asinData).map(([asin,d])=>{
       const t={rv:0,gp:0,np:0,ad:0,un:0,se:0,im:0,clicks:0};
-      let latestSv=0;
-      const monthNums=Object.keys(d.months).map(Number).sort((a,b)=>b-a);
       Object.values(d.months).forEach(m=>{t.rv+=m.rv;t.gp+=m.gp;t.np+=m.np;t.ad+=m.ad;t.un+=m.un;t.se+=m.se;t.im+=m.im||0;t.clicks+=m.clicks||0;});
-      if(monthNums.length&&d.months[monthNums[0]]?.sv) latestSv=d.months[monthNums[0]].sv;
+      // Stock Value: snapshot from seller_board_stock (giá trị tại thời điểm hiện tại)
+      const snapSv=asinStockMap[asin]?.sv||0;
       const cr=t.se>0?t.un/t.se:0;
       const ctr=t.im>0?t.clicks/t.im:0;
       return{a:asin,br:d.brand,sl:d.seller,ra:t.rv,ga:t.gp,na:t.np,aa:t.ad,ua:t.un,sa:t.se,ia:t.im,
-        sv:latestSv,
+        sv:snapSv,
         cra:Math.round(cr*10000)/10000,cta:Math.round(ctr*10000)/10000,months:d.months};
     }).sort((a,b)=>b.ga-a.ga);
 
     debug.asinBreakdownCount=asinBreakdown.length;
-    debug.stockAsins=Object.keys(asinStockMonthly).length;
     debug.ms=Date.now()-t0;
     res.json({monthly:monthlyArr,asinBreakdown,_debug:debug});
   } catch (e) { console.error('plan/actuals:', e.message); res.status(500).json({error:e.message,_debug:{ms:Date.now()-t0}}); }
