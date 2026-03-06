@@ -382,6 +382,35 @@ app.get('/api/inventory/stock-trend', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ═══════════ STOCK HISTORY PER ASIN ═══════════ */
+app.get('/api/stock/history', async (req, res) => {
+  try {
+    const { asin } = req.query;
+    if (!asin) return res.status(400).json({ error: 'asin required' });
+    // Get daily FBAStock for this ASIN (last 12 months)
+    const rows = await q(`SELECT d.date, d.FBAStock as fba, d.estimatedSalesVelocity as velocity,
+      d.daysOfStockLeft as daysLeft, d.reserved, d.sentToFBA, d.accountId
+      FROM seller_board_stock_daily d WHERE d.asin=? AND d.date>=DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+      ORDER BY d.date`, [asin], 15000);
+    // Get current snapshot info (stockValue, name, etc)
+    const snap = await q(`SELECT s.asin, s.name, s.sku, s.FBAStock as fba, s.stockValue, s.reserved,
+      s.sentToFBA, s.FBAPrepStock as prepStock, s.estimatedSalesVelocity as velocity,
+      s.daysOfStockLeft as daysLeft, s.roi, s.margin, s.accountId
+      FROM seller_board_stock s WHERE s.asin=? LIMIT 1`, [asin], 5000).catch(()=>[]);
+    const info = snap[0] || {};
+    // Get account name
+    const acc = info.accountId ? await q('SELECT shop FROM accounts WHERE id=?',[info.accountId],5000).catch(()=>[]) : [];
+    res.json({
+      asin, name: info.name||'', sku: info.sku||'', shop: acc[0]?.shop||'',
+      current: { fba: info.fba||0, stockValue: parseFloat(info.stockValue)||0, reserved: info.reserved||0,
+        sentToFBA: info.sentToFBA||0, prepStock: info.prepStock||0, velocity: parseFloat(info.velocity)||0,
+        daysLeft: info.daysLeft||0, roi: info.roi||0, margin: parseFloat(info.margin)||0 },
+      history: rows.map(r=>({ date: r.date, fba: parseInt(r.fba)||0, velocity: parseFloat(r.velocity)||0,
+        daysLeft: parseInt(r.daysLeft)||0, reserved: parseInt(r.reserved)||0 }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/inventory/storage-monthly', async (req, res) => {
   try {
     const accId = await storeToAccId(req.query.store);
@@ -449,6 +478,10 @@ app.get('/api/debug/all', async (req, res) => {
   await test('inventory', () => q('SELECT COUNT(*) as cnt, MAX(date) as maxD FROM fba_iventory_planning'));
   await test('analytics', () => q('SELECT COUNT(*) as cnt, MIN(startDate) as minD, MAX(startDate) as maxD FROM analytics_search_catalog_performance'));
   await test('accounts', () => q('SELECT id, shop FROM accounts'));
+  await test('stock_columns', () => q('SHOW COLUMNS FROM seller_board_stock').then(r=>r.map(c=>c.Field)));
+  await test('stock_daily_columns', () => q('SHOW COLUMNS FROM seller_board_stock_daily').then(r=>r.map(c=>c.Field)));
+  await test('stock_sample', () => q('SELECT * FROM seller_board_stock LIMIT 2'));
+  await test('stock_daily_sample', () => q('SELECT * FROM seller_board_stock_daily ORDER BY date DESC LIMIT 2'));
   res.json(R);
 });
 
@@ -649,12 +682,16 @@ app.get('/api/plan/actuals', async (req, res) => {
           FROM analytics_search_catalog_performance asc2 ${iw}
           GROUP BY asc2.asin, MONTH(asc2.startDate)`,ip,45000);
       })(),
-      // Q6: Unit costs from snapshot
+      // Q6: Unit costs from snapshot (filtered by store/seller/asin)
       (async()=>{
         let ucw='WHERE FBAStock>0'; const ucp=[];
-        if(accId){ucw+=' AND accountId=?';ucp.push(accId);}
-        return q(`SELECT asin, SUM(COALESCE(stockValue,0)) as sv, SUM(FBAStock) as fba
-          FROM seller_board_stock ${ucw} GROUP BY asin`,ucp,10000);
+        if(accId){ucw+=' AND s.accountId=?';ucp.push(accId);}
+        if(af && af!=='All'){ucw+=' AND s.asin=?';ucp.push(af);}
+        else if(seller && seller!=='All'){
+          ucw+=' AND s.asin IN (SELECT asin FROM asin WHERE seller=?)';ucp.push(seller);
+        }
+        return q(`SELECT s.asin, SUM(COALESCE(s.stockValue,0)) as sv, SUM(s.FBAStock) as fba
+          FROM seller_board_stock s ${ucw} GROUP BY s.asin`,ucp,10000);
       })()
     ]);
 
@@ -681,6 +718,10 @@ app.get('/api/plan/actuals', async (req, res) => {
       try {
         let sdw='WHERE YEAR(d.date)=?'; const sdp=[yr];
         if(accId){sdw+=' AND d.accountId=?';sdp.push(accId);}
+        if(af && af!=='All'){sdw+=' AND d.asin=?';sdp.push(af);}
+        else if(seller && seller!=='All'){
+          sdw+=' AND d.asin IN (SELECT asin FROM asin WHERE seller=?)';sdp.push(seller);
+        }
         const dailyRows = await q(`SELECT d.asin, MONTH(d.date) as mn,
           SUBSTRING_INDEX(GROUP_CONCAT(d.FBAStock ORDER BY d.date DESC),',',1) as lastFba
           FROM seller_board_stock_daily d ${sdw}
