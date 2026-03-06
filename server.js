@@ -346,7 +346,7 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       (SELECT MAX(date) FROM fba_iventory_planning) as snapshotDate,
       SUM(CAST(available AS SIGNED)) as availableInv,
       SUM(COALESCE(totalReservedQuantity,0)) as reserved, SUM(COALESCE(inboundQuantity,0)) as inbound,
-      COUNT(DISTINCT CASE WHEN daysOfSupply<=15 THEN sku END) as criticalSkus,
+      COUNT(DISTINCT CASE WHEN daysOfSupply<=30 THEN sku END) as criticalSkus,
       AVG(COALESCE(daysOfSupply,0)) as avgDaysOfSupply,
       SUM(COALESCE(invAge0To90Days,0)) as a0,
       SUM(COALESCE(invAge91To180Days,0)) as a91, SUM(COALESCE(invAge181To270Days,0)) as a181,
@@ -467,7 +467,7 @@ app.get('/api/inventory/by-shop', async (req, res) => {
     } catch(e) { /* ok */ }
 
     // Inventory planning data (for inbound, reserved, critical SKUs)
-    const inv = await q(`SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as avail, SUM(COALESCE(f.inboundQuantity,0)) as inb, SUM(COALESCE(f.totalReservedQuantity,0)) as res, COUNT(DISTINCT CASE WHEN f.daysOfSupply<=15 THEN f.sku END) as crit
+    const inv = await q(`SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as avail, SUM(COALESCE(f.inboundQuantity,0)) as inb, SUM(COALESCE(f.totalReservedQuantity,0)) as res, COUNT(DISTINCT CASE WHEN f.daysOfSupply<=30 THEN f.sku END) as crit
       FROM fba_iventory_planning f WHERE f.date=(SELECT MAX(date) FROM fba_iventory_planning)${accFilter}
       GROUP BY f.accountId`, accParams).catch(()=>[]);
 
