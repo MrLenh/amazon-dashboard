@@ -378,7 +378,7 @@ app.get('/api/inventory/stock-trend', async (req, res) => {
     const accId = await storeToAccId(req.query.store);
     let extra = ''; const params = [];
     if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
-    res.json(await q(`SELECT date, SUM(FBAStock) as fbaStock FROM seller_board_stock_daily WHERE date>=DATE_SUB(CURDATE(), INTERVAL 60 DAY)${extra} GROUP BY date ORDER BY date`, params));
+    res.json(await q(`SELECT date, SUM(FBAStock) as fbaStock, SUM(GREATEST(FBAStock - COALESCE(reserved,0), 0)) as available FROM seller_board_stock_daily WHERE date>=DATE_SUB(CURDATE(), INTERVAL 60 DAY)${extra} GROUP BY date ORDER BY date`, params));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
