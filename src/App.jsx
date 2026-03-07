@@ -75,7 +75,7 @@ function PlanKpi({title,actual,plan,t,highlight,tip,fmt}){const isN=typeof actua
 
 const Sec=({title,icon,t,action,children})=><div style={{marginTop:28}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:8}}>{icon&&<span style={{fontSize:17}}>{icon}</span>}<span style={{fontSize:16,fontWeight:700,color:t.text,letterSpacing:-.2}}>{title}</span></div>{action}</div>{children}</div>;
 const Cd=({children,t,style:s})=><div style={{background:t.card,borderRadius:14,padding:20,border:"1px solid "+t.cardBorder,...s}}>{children}</div>;
-const CT=({active,payload,label,t:th})=>{if(!active||!payload?.length)return null;const t=th||TH.light;return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow}}><div style={{fontSize:11,color:t.textSec,marginBottom:5,fontWeight:700}}>{label}</div>{payload.filter(p=>p.value!=null).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,marginTop:3}}><div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/><span style={{color:t.textSec}}>{p.name}:</span><span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?(Math.abs(p.value)>=1?p.value.toLocaleString("en-US",{maximumFractionDigits:2}):p.value.toFixed(4)):p.value}</span></div>)}</div>};
+const CT=({active,payload,label,t:th})=>{if(!active||!payload?.length)return null;const t=th||TH.light;return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow}}><div style={{fontSize:11,color:t.textSec,marginBottom:5,fontWeight:700}}>{label}</div>{payload.filter(p=>p.value!=null&&!isNaN(p.value)).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,marginTop:3}}><div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/><span style={{color:t.textSec}}>{p.name}:</span><span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?(Math.abs(p.value)>=1?p.value.toLocaleString("en-US",{maximumFractionDigits:2}):p.value.toFixed(4)):p.value}</span></div>)}</div>};
 
 function APG({actual,plan,t,isMoney=true,suffix="",reverse=false}){if(actual==null)return<div><div style={{fontSize:14,fontWeight:700,color:t.textMuted}}>—</div><div style={{fontSize:11,color:t.textMuted}}>Plan: {isMoney?$(plan):N(plan)+suffix}</div></div>;const gap=typeof actual==="number"?actual-plan:null;const gc=gap!=null?(reverse?(gap<=0?t.green:t.red):(gap>=0?t.green:t.red)):t.textMuted;const fA=isMoney?$(actual):(typeof actual==="number"?actual.toLocaleString():actual)+suffix;const fP=isMoney?$(plan):(typeof plan==="number"?plan.toLocaleString():plan)+suffix;const fG=gap!=null?(isMoney?$(gap):(gap>=0?"+":"")+gap.toLocaleString()+suffix):"—";return<div style={{lineHeight:1.6}}><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fA}</div><div style={{fontSize:11.5,color:t.textSec}}>Plan: {fP}</div><div style={{fontSize:11.5,fontWeight:700,color:gc}}>{fG}</div></div>}
 function StockVal({sv,gp,t}){const ratio=gp&&gp!==0?(sv||0)/Math.abs(gp):null;let c=t.green,bg=t.greenBg,lb="Healthy";if(ratio===null){c=t.textMuted;bg=t.cardBorder;lb="N/A";}else if(ratio>3){c=t.red;bg=t.redBg;lb="High";}else if(ratio>1.5){c=t.orange;bg=t.orangeBg;lb="Watch";}return<div style={{lineHeight:1.5}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>{$(sv||0)}</div><div style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:2}}><span style={{fontSize:9,fontWeight:600,color:c,background:bg,padding:"1px 6px",borderRadius:8}}>{lb}</span>{ratio!==null&&<span style={{fontSize:9,color:t.textMuted}}>{ratio.toFixed(1)}x GP</span>}</div></div>}
@@ -473,28 +473,33 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
   // ═══ PREDICTIVE DATA ═══
   const forecast=useMemo(()=>{
     if(!monthly.length)return[];
+    // Find complete months (exclude current partial month — if last month has <15 days of data assume partial)
+    const now=new Date();const curMn=now.getMonth()+1;const curDay=now.getDate();
+    const complete=monthly.filter(m=>!(m.mn===curMn&&curDay<20));
     const base=monthly.map(m=>({m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa}));
-    if(monthly.length>=2){
-      const last=monthly[monthly.length-1],prev=monthly[monthly.length-2];
-      const growthRate=prev.ra>0?(last.ra/prev.ra):1;
+    if(complete.length>=2){
+      const last=complete[complete.length-1],prev=complete[complete.length-2];
+      const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
       const avgRev=(last.ra+prev.ra)/2;
       const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      // Seasonal multipliers (wedding season peaks, summer dip)
       const seasonal=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
+      const gpMargin=last.gpa>0&&last.ra>0?(last.gpa/last.ra):0.15;
+      // Start forecast from month after last complete month
       for(let i=1;i<=4;i++){
-        const mi=(monthly[monthly.length-1].mn-1+i)%12;
+        const mi=(last.mn-1+i)%12;
         const baseRev=avgRev*growthRate*seasonal[mi]*(0.95+i*0.02);
         const rv=Math.round(baseRev);
-        const gpMargin=last.gpa>0?(last.gpa/last.ra):0.15;
-        base.push({
-          m:MS[mi],
-          forecast:rv,
-          gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
-          unitsF:Math.round(last.ua*(rv/last.ra)),
-          sessF:Math.round(last.sa*(rv/last.ra)*0.95),
-          lo:Math.round(rv*0.82),
-          hi:Math.round(rv*1.18)
-        });
+        const existing=base.find(b=>b.m===MS[mi]);
+        if(existing){
+          // Add forecast to existing partial month
+          existing.forecast=rv;existing.gpF=Math.round(rv*gpMargin*(0.9+i*0.03));
+          existing.unitsF=Math.round(last.ua*(rv/last.ra));existing.sessF=Math.round(last.sa*(rv/last.ra)*0.95);
+          existing.lo=Math.round(rv*0.82);existing.hi=Math.round(rv*1.18);
+        }else{
+          base.push({m:MS[mi],forecast:rv,gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
+            unitsF:Math.round(last.ua*(rv/last.ra)),sessF:Math.round(last.sa*(rv/last.ra)*0.95),
+            lo:Math.round(rv*0.82),hi:Math.round(rv*1.18)});
+        }
       }
     }
     return base;
@@ -703,8 +708,8 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
     {layer==="predictive"&&<div>
       <Cd2>
         <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>Forecast Engine</div>
-        <div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:6}}>Revenue Forecast: {forecast.length>3?$(forecast[2]?.forecast):""}</div>
-        <div style={{fontSize:12,color:t.textSec,marginTop:4}}>Method: Weighted Moving Average | Based on {monthly.length} months of data</div>
+        <div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:6}}>Revenue Forecast: {$(forecast.find(f=>f.forecast)?.forecast)||"Insufficient data"}</div>
+        <div style={{fontSize:12,color:t.textSec,marginTop:4}}>Method: Weighted Moving Average | Based on {monthly.filter(m=>!(m.mn===(new Date().getMonth()+1)&&new Date().getDate()<20)).length} complete months | Next: {forecast.find(f=>f.forecast)?.m||"—"}</div>
         <div style={{marginTop:8,padding:"8px 12px",background:t.primaryLight,borderRadius:8,fontSize:11,color:t.primary}}>
           Forecast accuracy improves with more data. Seasonal model available after 6+ months of history.
         </div>
