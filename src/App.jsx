@@ -395,11 +395,15 @@ function buildCtx(pg,d){
 }
 
 /* ═══════════ ANALYTICS PAGE ═══════════ */
-function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
+function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,sd,ed}){
   const[layer,setLayer]=useState("diagnostic");
   const[dTab,setDTab]=useState("drivers");
   const[pMetric,setPMetric]=useState("revenue");
   const[rView,setRView]=useState("list");
+
+  // Period info
+  const periodLabel=sd&&ed?`${sd} → ${ed}`:"All time";
+  const dayCount=fDaily?.length||0;
 
   // ═══ COMPUTE DIAGNOSTIC DATA ═══
   const monthly=useMemo(()=>{
@@ -551,6 +555,11 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
   const MoMBadge=({v,suffix="%",reverse})=>{const pos=reverse?v<=0:v>=0;return<span style={{fontSize:12,fontWeight:700,color:pos?t.green:t.red}}>{v>=0?"+":""}{typeof v==="number"?v.toFixed(1):v}{suffix}</span>};
 
   return<div>
+    {/* Period Info */}
+    <div style={{padding:"10px 16px",marginBottom:14,borderRadius:10,background:t.tableBg,fontSize:12,color:t.textSec,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+      <div>Analyzing: <strong style={{color:t.text}}>{periodLabel}</strong> ({dayCount} days · {fAsin?.length||0} ASINs · {fShopData?.length||0} shops · {fSeller?.length||0} sellers)</div>
+      <div style={{fontSize:10,color:t.textMuted}}>Use header filters (Start/End date, Shop, Seller) to change period</div>
+    </div>
     {/* Layer tabs */}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       {layers.map(l=><button key={l.id} onClick={()=>setLayer(l.id)} style={{flex:1,padding:"14px 16px",border:"1px solid "+(layer===l.id?l.c:t.cardBorder),borderRadius:12,background:layer===l.id?l.c+"10":t.card,cursor:"pointer",textAlign:"left",transition:"all .2s"}}>
@@ -774,10 +783,10 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
             <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>pMetric==="units"||pMetric==="sessions"?N(v):$s(v)}/>
             <Tooltip content={<CT t={t}/>}/>
             <Legend wrapperStyle={{fontSize:10}}/>
-            {pMetric==="revenue"&&<Area dataKey="hi" name="Best Case" stroke="none" fill={t.primary} fillOpacity={0.05}/>}
-            {pMetric==="revenue"&&<Area dataKey="lo" name="Worst Case" stroke="none" fill={t.primary} fillOpacity={0.05}/>}
+            {pMetric==="revenue"&&<Area dataKey="hi" name="Best Case" stroke="none" fill={t.primary} fillOpacity={0.06}/>}
+            {pMetric==="revenue"&&<Area dataKey="lo" name="Worst Case" stroke="none" fill={t.primary} fillOpacity={0.06}/>}
             <Bar dataKey={pMetric==="revenue"?"actual":pMetric} name="Actual" fill={t.primary} radius={[4,4,0,0]}/>
-            <Line dataKey={pMetric==="revenue"?"forecast":pMetric==="gp"?"gpF":pMetric==="units"?"unitsF":"sessF"} name="Forecast" stroke={t.orange} strokeWidth={2} strokeDasharray="6 3" dot={{r:4,fill:t.orange}}/>
+            <Bar dataKey={pMetric==="revenue"?"forecast":pMetric==="gp"?"gpF":pMetric==="units"?"unitsF":"sessF"} name="Forecast" fill={t.orange} fillOpacity={0.4} radius={[4,4,0,0]} strokeDasharray="4 2" stroke={t.orange}/>
           </ComposedChart>
         </ResponsiveContainer>
       </Cd2>
@@ -1319,7 +1328,7 @@ export default function App(){
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
         {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
-        {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={fAsin} em={em} monthPlanData={monthPlanState}/>}
+        {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={fAsin} em={em} monthPlanData={monthPlanState} sd={sd} ed={ed}/>}
         <div style={{height:30}}/>
       </div>
     </div>
