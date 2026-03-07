@@ -477,36 +477,38 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,sd,ed}
   // ═══ PREDICTIVE DATA ═══
   const forecast=useMemo(()=>{
     if(!monthly.length)return[];
-    // Find complete months (exclude current partial month — if last month has <15 days of data assume partial)
     const now=new Date();const curMn=now.getMonth()+1;const curDay=now.getDate();
+    // Complete months = exclude current month if < 20 days in
     const complete=monthly.filter(m=>!(m.mn===curMn&&curDay<20));
-    const base=monthly.map(m=>({m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa}));
-    if(complete.length>=2){
-      const last=complete[complete.length-1],prev=complete[complete.length-2];
-      const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
-      const avgRev=(last.ra+prev.ra)/2;
-      const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      const seasonal=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
-      const gpMargin=last.gpa>0&&last.ra>0?(last.gpa/last.ra):0.15;
-      // Start forecast from month after last complete month
-      for(let i=1;i<=4;i++){
-        const mi=(last.mn-1+i)%12;
-        const baseRev=avgRev*growthRate*seasonal[mi]*(0.95+i*0.02);
-        const rv=Math.round(baseRev);
-        const existing=base.find(b=>b.m===MS[mi]);
-        if(existing){
-          // Add forecast to existing partial month
-          existing.forecast=rv;existing.gpF=Math.round(rv*gpMargin*(0.9+i*0.03));
-          existing.unitsF=Math.round(last.ua*(rv/last.ra));existing.sessF=Math.round(last.sa*(rv/last.ra)*0.95);
-          existing.lo=Math.round(rv*0.82);existing.hi=Math.round(rv*1.18);
-        }else{
-          base.push({m:MS[mi],forecast:rv,gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
-            unitsF:Math.round(last.ua*(rv/last.ra)),sessF:Math.round(last.sa*(rv/last.ra)*0.95),
-            lo:Math.round(rv*0.82),hi:Math.round(rv*1.18)});
-        }
-      }
+    if(complete.length<2)return monthly.map(m=>({m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa}));
+
+    const last=complete[complete.length-1],prev=complete[complete.length-2];
+    const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
+    const avgRev=(last.ra+prev.ra)/2;
+    const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const seasonal=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
+    const gpMargin=last.gpa>0&&last.ra>0?(last.gpa/last.ra):0.15;
+
+    // Build forecast map for future months
+    const fcMap={};
+    for(let i=1;i<=4;i++){
+      const mi=(last.mn-1+i)%12;
+      const rv=Math.round(avgRev*growthRate*seasonal[mi]*(0.95+i*0.02));
+      fcMap[MS[mi]]={forecast:rv,gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
+        unitsF:Math.round(last.ua*(rv/last.ra)),sessF:Math.round(last.sa*(rv/last.ra)*0.95),
+        lo:Math.round(rv*0.82),hi:Math.round(rv*1.18)};
     }
-    return base;
+
+    // Build result: actual months + merge forecast into existing + add future months
+    const result=monthly.map(m=>{
+      const fc=fcMap[m.m];
+      return{m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa,...(fc||{})};
+    });
+    // Add pure forecast months not in actuals
+    Object.entries(fcMap).forEach(([month,fc])=>{
+      if(!result.find(r=>r.m===month)) result.push({m:month,...fc});
+    });
+    return result;
   },[monthly]);
 
   // Stock depletion
