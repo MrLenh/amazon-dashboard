@@ -581,6 +581,31 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
         </div>
       </Cd2>}
 
+      {/* KPI Comparison Grid */}
+      {mom&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+        {[{l:"Revenue",prev:mom.prev.ra,cur:mom.cur.ra,fmt:$},{l:"Gross Profit",prev:mom.gpFrom,cur:mom.gpTo,fmt:$},{l:"Ads Spend",prev:mom.prev.aa,cur:mom.cur.aa,fmt:$,rev:true},{l:"Units",prev:mom.prev.ua,cur:mom.cur.ua,fmt:N},{l:"Sessions",prev:mom.prev.sa,cur:mom.cur.sa,fmt:N},{l:"Conv Rate",prev:mom.crPrev,cur:mom.crCur,fmt:v=>v.toFixed(1)+"%"}].map((k,i)=>{
+          const chg=k.prev?((k.cur-k.prev)/Math.abs(k.prev)*100):0;const pos=k.rev?chg<=0:chg>=0;
+          return<div key={i} style={{background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"14px 16px"}}>
+            <div style={{fontSize:9,color:t.textMuted,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>{k.l}</div>
+            <div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:4}}>{k.fmt(k.cur)}</div>
+            <div style={{fontSize:10,color:t.textMuted,marginTop:2}}>was {k.fmt(k.prev)}</div>
+            <div style={{fontSize:11,fontWeight:700,color:pos?t.green:t.red,marginTop:4}}>{chg>=0?"+":""}{chg.toFixed(1)}%</div>
+          </div>
+        })}
+      </div>}
+
+      {/* Top Gainers & Losers */}
+      {fAsin?.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <Cd2><SH2 title="Top Profit ASINs"/>{fAsin.filter(a=>a.n>0).slice(0,5).map((a,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<4?"1px solid "+t.divider:"none"}}>
+          <div><div style={{fontSize:12,fontWeight:700,color:t.primary}}>{a.a}</div><div style={{fontSize:10,color:t.textMuted}}>{a.b} · M:{a.m.toFixed(1)}%</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:t.green}}>{$(a.n)}</div><div style={{fontSize:10,color:t.textMuted}}>ACoS {a.ac.toFixed(1)}%</div></div>
+        </div>)}</Cd2>
+        <Cd2><SH2 title="Biggest Losses"/>{fAsin.filter(a=>a.n<0).slice(0,5).map((a,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<4?"1px solid "+t.divider:"none"}}>
+          <div><div style={{fontSize:12,fontWeight:700,color:t.primary}}>{a.a}</div><div style={{fontSize:10,color:t.textMuted}}>{a.b} · ACoS:{a.ac.toFixed(1)}%</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:t.red}}>{$(a.n)}</div><div style={{fontSize:10,color:t.textMuted}}>Rev {$(a.r)}</div></div>
+        </div>)}</Cd2>
+      </div>}
+
       {/* Sub-tabs */}
       <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
         {[{id:"drivers",l:"Why Analysis"},{id:"waterfall",l:"Cost Waterfall"},{id:"anomaly",l:"Anomaly Detection"},{id:"shops",l:"Shop Breakdown"}].map(tb=>
@@ -631,6 +656,23 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
           </ResponsiveContainer>
           {em&&<div style={{marginTop:12,padding:"10px 14px",background:t.tableBg,borderRadius:8,fontSize:11,color:t.textSec,lineHeight:1.6}}>
             <strong style={{color:t.text}}>Key insight:</strong> Amazon Fees ({em.amazonFees?((Math.abs(em.amazonFees)/em.sales*100).toFixed(1)):0}% of revenue) is the largest cost — {Math.abs(em.amazonFees||0)>Math.abs(em.advCost||0)?(Math.abs(em.amazonFees||0)/Math.max(Math.abs(em.advCost||0),1)).toFixed(1)+"x":"less than"} Ads spend.
+          </div>}
+          {/* Cost Structure Donut */}
+          {em&&<div style={{marginTop:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:t.text,marginBottom:8}}>Cost Structure (% of Revenue)</div>
+            <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+              {[{l:"Amazon Fees",v:Math.abs(em.amazonFees||0),c:"#8B5CF6"},{l:"Ads",v:Math.abs(em.advCost||0),c:t.orange},{l:"COGS",v:Math.abs(em.cogs||0),c:t.red},{l:"Refunds",v:Math.abs(em.refundCost||0),c:"#F59E0B"},{l:"Shipping",v:Math.abs(em.shippingCost||0),c:t.textMuted},{l:"Gross Profit",v:em.grossProfit||0,c:t.green}].map((c,i)=>{
+                const pct=em.sales>0?(c.v/em.sales*100):0;
+                return<div key={i} style={{display:"flex",alignItems:"center",gap:8,minWidth:160}}>
+                  <div style={{width:8,height:8,borderRadius:4,background:c.c,flexShrink:0}}/>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:t.textSec}}>{c.l}</span><span style={{fontSize:11,fontWeight:700,color:c.c}}>{pct.toFixed(1)}%</span></div>
+                    <div style={{height:4,borderRadius:2,background:t.tableBg,marginTop:3}}><div style={{height:4,borderRadius:2,background:c.c,width:Math.max(pct,0.5)+"%"}}/></div>
+                  </div>
+                  <span style={{fontSize:10,color:t.textMuted,minWidth:55,textAlign:"right"}}>{$(c.v)}</span>
+                </div>
+              })}
+            </div>
           </div>}
         </Cd2>
       </div>}
@@ -740,6 +782,31 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
         </ResponsiveContainer>
       </Cd2>
 
+      {/* Scenario Cards */}
+      {forecast.length>0&&(()=>{const fc=forecast.find(f=>f.forecast);if(!fc)return null;return<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+        {[{l:"Worst Case",v:fc.lo,c:t.red,bg:t.redBg,desc:"If growth stalls + market headwinds"},{l:"Base Case",v:fc.forecast,c:t.primary,bg:t.primaryLight,desc:"Based on weighted average trend"},{l:"Best Case",v:fc.hi,c:t.green,bg:t.greenBg,desc:"If Feb growth momentum continues"}].map((s,i)=>
+          <div key={i} style={{background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"16px",borderTop:"3px solid "+s.c}}>
+            <div style={{fontSize:10,color:t.textMuted,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{s.l}</div>
+            <div style={{fontSize:22,fontWeight:800,color:s.c,marginTop:6}}>{$(s.v)}</div>
+            <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>{s.desc}</div>
+          </div>
+        )}
+      </div>})()}
+
+      {/* Forecast all metrics summary */}
+      {forecast.length>0&&<Cd2>
+        <SH2 title="Forecast Summary — Next Month" sub={"Predicted values for "+(forecast.find(f=>f.forecast)?.m||"—")}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+          {(()=>{const fc=forecast.find(f=>f.forecast);if(!fc)return null;return[{l:"Revenue",v:$(fc.forecast)},{l:"Gross Profit",v:$(fc.gpF)},{l:"Units",v:N(fc.unitsF)},{l:"Sessions",v:N(fc.sessF)}].map((k,i)=>
+            <div key={i} style={{textAlign:"center",padding:"12px",background:t.tableBg,borderRadius:10}}>
+              <div style={{fontSize:9,color:t.textMuted,fontWeight:600,textTransform:"uppercase"}}>{k.l}</div>
+              <div style={{fontSize:18,fontWeight:800,color:t.primary,marginTop:4}}>{k.v}</div>
+              <div style={{fontSize:9,color:t.textMuted,marginTop:2}}>forecast</div>
+            </div>
+          )})()}
+        </div>
+      </Cd2>}
+
       <SH2 title="Stock Depletion Forecast" sub="Estimated days until stockout based on current velocity"/>
       <Note text="Days Left = Estimated Stock ÷ Daily velocity. Critical (<21d) = restock immediately. Warning (<45d) = plan restock. Stock is estimated from sales volume — actual FBA Stock available in Inventory page." color={t.primary}/>
       <Cd2>
@@ -770,6 +837,32 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData}){
       </Cd2>
 
       <Note text="Actions are auto-generated from current data. Priority: P0 = do this week, P1 = this month, P2 = plan ahead. ROI = estimated return on effort. Review and adjust before executing." color={t.orange}/>
+
+      {/* Impact Summary KPIs */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
+        {[{l:"Total Actions",v:prescriptions.length,c:t.text},{l:"P0 (Urgent)",v:prescriptions.filter(p=>p.p==="P0").length,c:t.red},{l:"Monthly Impact",v:"+$"+totalImpact+"K",c:t.green},{l:"Annual Impact",v:"+$"+(totalImpact*12)+"K",c:t.green}].map((k,i)=>
+          <div key={i} style={{background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"16px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:t.textMuted,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{k.l}</div>
+            <div style={{fontSize:24,fontWeight:800,color:k.c,marginTop:6}}>{k.v}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Effort vs Impact Overview */}
+      <Cd2>
+        <SH2 title="Action Overview" sub="Priority breakdown by effort and impact"/>
+        <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12}}>
+          <thead><tr>{["Action","Priority","Impact","Effort","ROI","Timeline"].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i===0?"left":"right",color:t.textMuted,fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead>
+          <tbody>{prescriptions.map((a,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <td style={{padding:"10px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider,maxWidth:200}}>{a.action}</td>
+            <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><Tag2 text={a.p} color={a.color}/></td>
+            <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:t.green,borderBottom:"1px solid "+t.divider}}>{a.impact}</td>
+            <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><Tag2 text={a.effort} color={a.effort==="Low"?t.green:a.effort==="Medium"?t.orange:t.red}/></td>
+            <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:t.primary,borderBottom:"1px solid "+t.divider}}>{a.roi}</td>
+            <td style={{padding:"10px 12px",textAlign:"right",color:t.textSec,borderBottom:"1px solid "+t.divider}}>{a.timeline}</td>
+          </tr>)}</tbody>
+        </table>
+      </Cd2>
 
       <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
         {[{id:"list",l:"Action List"},{id:"timeline",l:"Timeline"},{id:"roi",l:"ROI Summary"}].map(tb=>
