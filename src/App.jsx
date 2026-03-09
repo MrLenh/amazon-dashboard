@@ -215,11 +215,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
     {id:'REFUNDS',label:'Refunds',val:em.refunds||0,fmtV:N,ch:()=>prevEm?pctChg(em.refunds,prevEm.refunds):undefined},
     {id:'PAYOUT',label:'Est. Payout',val:em.estPayout||0,fmtV:$,ch:()=>undefined},
   ];
-  const togglePill=id=>setSelMetrics(prev=>{
-    if(prev.includes(id))return prev.filter(m=>m!==id);
-    if(prev.length>=4)return[...prev.slice(1),id];
-    return[...prev,id];
-  });
+  const togglePill=id=>setSelMetrics(prev=>
+    prev.includes(id)?prev.filter(m=>m!==id):[...prev,id]
+  );
   const selPillData=selMetrics.map(id=>ALL_PILLS.find(p=>p.id===id)).filter(Boolean);
 
   /* ── DETAILED METRICS (expandable) ── */
@@ -349,24 +347,23 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
 
     {/* ② SUMMARY METRICS — 4 KPI CARDS + SELECTOR */}
     <Cd t={t} style={{marginBottom:16,padding:'16px 18px'}}>
-      {/* 4 selected KPI cards */}
-      <div style={{display:'grid',gridTemplateColumns:mob?'1fr 1fr':'repeat(4,1fr)',gap:10,marginBottom:14}}>
+      {/* Selected KPI cards — auto-wrap, no cap */}
+      {selPillData.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:14}}>
         {selPillData.map((p,i)=>{
           const chgVal=p.ch();
           const isNP=p.id==='NET PROFIT';
           const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
-          return<div key={p.id} style={{background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
+          return<div key={p.id} style={{flex:'1 1 180px',minWidth:160,background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
             <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:6}}>{p.label}</div>
-            <div style={{fontSize:mob?20:22,fontWeight:800,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?6:0}}>{p.fmtV(p.val)}</div>
+            <div style={{fontSize:20,fontWeight:800,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?5:0}}>{p.fmtV(p.val)}</div>
             {chgVal!=null&&<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red}}>{chgVal>=0?'↑':'↓'}{Math.abs(chgVal).toFixed(1)}% <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}>vs prev</span></div>}
             <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:12,lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Remove">✕</button>
           </div>;
         })}
-        {selPillData.length<4&&Array.from({length:4-selPillData.length}).map((_,i)=><div key={'empty'+i} style={{background:t.tableBg,borderRadius:12,padding:'14px 16px',border:'2px dashed '+t.inputBorder,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:11,color:t.textMuted}}>+ Select metric</span></div>)}
-      </div>
+      </div>}
       {/* All metrics as small pills to select */}
       <div style={{borderTop:'1px solid '+t.divider,paddingTop:10}}>
-        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Click to add/remove from display above:</div>
+        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Click to add/remove — select any number of metrics:</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
           {ALL_PILLS.map(p=>{
             const sel=selMetrics.includes(p.id);
