@@ -10,7 +10,7 @@ import {
 /* ═══════════ THEMES ═══════════ */
 const TH={
   light:{bg:"#F0F2F8",card:"#FFFFFF",cardBorder:"#E2E6EF",sidebar:"#FFFFFF",sidebarBorder:"#E8ECF3",sidebarActive:"#EEF0F8",topbar:"#FFFFFF",text:"#1A1D26",textSec:"#4A5068",textMuted:"#8890A8",primary:"#3B4A8A",primaryLight:"#EEF0F8",primaryGhost:"#F5F6FB",green:"#1B8553",greenBg:"#EAFAF1",red:"#D4380D",redBg:"#FFF1EC",orange:"#C67D1A",orangeBg:"#FFF8EC",blue:"#3B82F6",purple:"#8B5CF6",chartGrid:"#E8ECF3",inputBg:"#F5F6FA",inputBorder:"#D0D5E0",tableBg:"#F8F9FC",tableHover:"#EEF0F8",divider:"#E8ECF3",kpiIcon:"#EEF0F8",shadow:"rgba(59,74,138,0.10)"},
-  dark:{bg:"#0C0E16",card:"#161825",cardBorder:"#2A2E42",sidebar:"#111320",sidebarBorder:"#252840",sidebarActive:"#1E2348",topbar:"#111320",text:"#F1F3F9",textSec:"#B0B5CC",textMuted:"#727A96",primary:"#8B9EF0",primaryLight:"#1C2040",primaryGhost:"#191C32",green:"#4AE09A",greenBg:"#0F2E20",red:"#FF7A6A",redBg:"#2E1616",orange:"#FFC05C",orangeBg:"#2E2412",blue:"#6CB4FF",purple:"#B494FF",chartGrid:"#2A2E42",inputBg:"#1A1D2E",inputBorder:"#353952",tableBg:"#1A1D2E",tableHover:"#1E2348",divider:"#252840",kpiIcon:"#1E2348",shadow:"rgba(0,0,0,0.5)"},
+  dark:{bg:"#0D0F1A",card:"#181B2E",cardBorder:"#2E3350",sidebar:"#111525",sidebarBorder:"#252A40",sidebarActive:"#1E2448",topbar:"#111525",text:"#F0F2FA",textSec:"#B8BDD8",textMuted:"#6B7494",primary:"#8B9EF0",primaryLight:"#1C2040",primaryGhost:"#191C32",green:"#3DD68C",greenBg:"#0B2918",red:"#FF6B6B",redBg:"#2D1414",orange:"#FFB347",orangeBg:"#2B1E0D",blue:"#60AFFF",purple:"#B494FF",chartGrid:"#252A3E",inputBg:"#1A1D30",inputBorder:"#363B58",tableBg:"#1A1D30",tableHover:"#1F2248",divider:"#252A3E",kpiIcon:"#1E2248",shadow:"rgba(0,0,0,0.6)"},
 };
 
 /* ═══════════ EMPTY DEFAULTS ═══════════ */
@@ -794,10 +794,10 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,sd,ed}
             <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>pMetric==="units"||pMetric==="sessions"?N(v):$s(v)}/>
             <Tooltip content={<CT t={t}/>}/>
             <Legend wrapperStyle={{fontSize:10}}/>
-            <Area dataKey={pMetric==="revenue"?"hi":pMetric==="gp"?"gpHi":pMetric==="units"?"unitsHi":"sessHi"} name="Best Case" stroke={t.green} strokeWidth={1} strokeDasharray="4 2" fill={t.green} fillOpacity={0.04}/>
-            <Area dataKey={pMetric==="revenue"?"lo":pMetric==="gp"?"gpLo":pMetric==="units"?"unitsLo":"sessLo"} name="Worst Case" stroke={t.red} strokeWidth={1} strokeDasharray="4 2" fill={t.red} fillOpacity={0.04}/>
+            <Area dataKey={pMetric==="revenue"?"hi":pMetric==="gp"?"gpHi":pMetric==="units"?"unitsHi":"sessHi"} name="Best Case" stroke={t.green} strokeWidth={1.5} strokeDasharray="5 3" fill={t.green} fillOpacity={0.10}/>
+            <Area dataKey={pMetric==="revenue"?"lo":pMetric==="gp"?"gpLo":pMetric==="units"?"unitsLo":"sessLo"} name="Worst Case" stroke={t.red} strokeWidth={1.5} strokeDasharray="5 3" fill={t.red} fillOpacity={0.10}/>
             <Bar dataKey={pMetric==="revenue"?"actual":pMetric} name="Actual" fill={t.primary} radius={[4,4,0,0]}/>
-            <Bar dataKey={pMetric==="revenue"?"forecast":pMetric==="gp"?"gpF":pMetric==="units"?"unitsF":"sessF"} name="Forecast" fill={t.orange} fillOpacity={0.4} radius={[4,4,0,0]} strokeDasharray="4 2" stroke={t.orange}/>
+            <Bar dataKey={pMetric==="revenue"?"forecast":pMetric==="gp"?"gpF":pMetric==="units"?"unitsF":"sessF"} name="Forecast" fill={t.orange} fillOpacity={0.75} radius={[4,4,0,0]}/>
           </ComposedChart>
         </ResponsiveContainer>
       </Cd2>
