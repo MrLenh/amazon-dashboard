@@ -174,8 +174,7 @@ function genInvAlerts(shops,invData){const a=[];const tFba=invData?.fbaStock||sh
 /* ═══════════ EXECUTIVE v4.5 ═══════════ */
 function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
-  const[drillMetric,setDrillMetric]=useState('SALES');
-  const[expandedRow,setExpandedRow]=useState(null);
+  const[expandedRows,setExpandedRows]=useState(new Set());
   const[shopView,setShopView]=useState('table');
   const[donutTab,setDonutTab]=useState('rev');
   const[showLY,setShowLY]=useState(false);
@@ -203,38 +202,25 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
   const aov=em.orders>0?em.sales/em.orders:0;
   const profitPerUnit=em.units>0?em.netProfit/em.units:0;
   const ALL_PILLS=[
-    {id:'UNITS',label:'Units',val:em.units,fmtV:N},
-    {id:'SALES',label:'Sales',val:em.sales,fmtV:$},
-    {id:'ADV.COST',label:'Adv. Cost',val:Math.abs(em.advCost||0),fmtV:$},
-    {id:'NET PROFIT',label:'Net Profit',val:em.netProfit,fmtV:$},
-    {id:'SESSIONS',label:'Sessions',val:Math.round(em.sessions||0),fmtV:N},
-    {id:'CR%',label:'CR%',val:cr,fmtV:v=>v.toFixed(2)+'%'},
-    {id:'TACoS',label:'TACoS',val:tacos,fmtV:v=>v.toFixed(2)+'%'},
-    {id:'MARGIN',label:'Margin',val:em.margin||0,fmtV:v=>v.toFixed(2)+'%'},
-    {id:'AOV',label:'AOV',val:aov,fmtV:$2},
-    {id:'PROFIT/UNIT',label:'Profit/Unit',val:profitPerUnit,fmtV:$2},
-    {id:'REFUNDS',label:'Refunds',val:em.refunds||0,fmtV:N},
-    {id:'PAYOUT',label:'Est. Payout',val:em.estPayout||0,fmtV:$},
+    {id:'UNITS',label:'Units',val:em.units,fmtV:N,ch:()=>prevEm?pctChg(em.units,prevEm.units):undefined},
+    {id:'SALES',label:'Revenue',val:em.sales,fmtV:$,ch:()=>prevEm?pctChg(em.sales,prevEm.sales):undefined},
+    {id:'ADV.COST',label:'Adv. Cost',val:Math.abs(em.advCost||0),fmtV:$,ch:()=>prevEm?pctChg(em.advCost,prevEm.advCost):undefined},
+    {id:'NET PROFIT',label:'Net Profit',val:em.netProfit,fmtV:$,ch:()=>prevEm?pctChg(em.netProfit,prevEm.netProfit):undefined},
+    {id:'SESSIONS',label:'Sessions',val:Math.round(em.sessions||0),fmtV:N,ch:()=>prevEm?pctChg(em.sessions,prevEm.sessions):undefined},
+    {id:'CR%',label:'CR%',val:cr,fmtV:v=>v.toFixed(2)+'%',ch:()=>undefined},
+    {id:'TACoS',label:'TACoS',val:tacos,fmtV:v=>v.toFixed(2)+'%',ch:()=>undefined},
+    {id:'MARGIN',label:'Margin',val:em.margin||0,fmtV:v=>v.toFixed(2)+'%',ch:()=>prevEm?((em.margin||0)-(prevEm.margin||0)):undefined},
+    {id:'AOV',label:'AOV',val:aov,fmtV:$2,ch:()=>undefined},
+    {id:'PROFIT/UNIT',label:'Profit/Unit',val:profitPerUnit,fmtV:$2,ch:()=>undefined},
+    {id:'REFUNDS',label:'Refunds',val:em.refunds||0,fmtV:N,ch:()=>prevEm?pctChg(em.refunds,prevEm.refunds):undefined},
+    {id:'PAYOUT',label:'Est. Payout',val:em.estPayout||0,fmtV:$,ch:()=>undefined},
   ];
-
-  const togglePill=id=>{
-    setDrillMetric(id);
-    setSelMetrics(prev=>{
-      if(prev.includes(id))return prev.filter(m=>m!==id);
-      if(prev.length>=4)return[...prev.slice(1),id];
-      return[...prev,id];
-    });
-  };
-
-  /* ── DRILL PANEL DATA (stacked area chart using fDaily) ── */
-  const drillKeys={
-    'SALES':'revenue','ADV.COST':'revenue','NET PROFIT':'netProfit',
-    'SESSIONS':'units','UNITS':'units','CR%':'netProfit',
-    'TACoS':'revenue','MARGIN':'netProfit','AOV':'revenue',
-    'PROFIT/UNIT':'netProfit','REFUNDS':'units','PAYOUT':'revenue',
-  };
-  const drillPill=ALL_PILLS.find(p=>p.id===drillMetric);
-  const drillDK=drillKeys[drillMetric]||'revenue';
+  const togglePill=id=>setSelMetrics(prev=>{
+    if(prev.includes(id))return prev.filter(m=>m!==id);
+    if(prev.length>=4)return[...prev.slice(1),id];
+    return[...prev,id];
+  });
+  const selPillData=selMetrics.map(id=>ALL_PILLS.find(p=>p.id===id)).filter(Boolean);
 
   /* ── DETAILED METRICS (expandable) ── */
   const NEW_BADGE=<span style={{fontSize:8,fontWeight:700,color:'#fff',background:t.primary,padding:'1px 5px',borderRadius:5,marginLeft:5,letterSpacing:.5}}>NEW</span>;
@@ -361,35 +347,35 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
       </div>
     </Cd>
 
-    {/* ② SUMMARY METRIC PILLS */}
-    <Cd t={t} style={{marginBottom:16,padding:'14px 18px'}}>
-      <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:1,marginBottom:10}}>Summary Metrics <span style={{fontSize:9,fontWeight:400}}>— select up to 4</span></div>
-      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
-        {ALL_PILLS.map(p=>{
-          const sel=selMetrics.includes(p.id);const isDrill=drillMetric===p.id;
-          return<button key={p.id} onClick={()=>togglePill(p.id)} style={{padding:'6px 14px',borderRadius:20,border:'2px solid '+(isDrill?t.primary:sel?t.primary+'66':t.inputBorder),background:sel?t.primary+'14':'transparent',color:sel?t.primary:t.textSec,fontSize:11,fontWeight:sel?700:500,cursor:'pointer',transition:'all .15s',outline:'none'}}>
-            {p.label}: <span style={{fontWeight:700}}>{p.fmtV(p.val)}</span>
-          </button>;
+    {/* ② SUMMARY METRICS — 4 KPI CARDS + SELECTOR */}
+    <Cd t={t} style={{marginBottom:16,padding:'16px 18px'}}>
+      {/* 4 selected KPI cards */}
+      <div style={{display:'grid',gridTemplateColumns:mob?'1fr 1fr':'repeat(4,1fr)',gap:10,marginBottom:14}}>
+        {selPillData.map((p,i)=>{
+          const chgVal=p.ch();
+          const isNP=p.id==='NET PROFIT';
+          const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
+          return<div key={p.id} style={{background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
+            <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:6}}>{p.label}</div>
+            <div style={{fontSize:mob?20:22,fontWeight:800,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?6:0}}>{p.fmtV(p.val)}</div>
+            {chgVal!=null&&<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red}}>{chgVal>=0?'↑':'↓'}{Math.abs(chgVal).toFixed(1)}% <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}>vs prev</span></div>}
+            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:12,lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Remove">✕</button>
+          </div>;
         })}
+        {selPillData.length<4&&Array.from({length:4-selPillData.length}).map((_,i)=><div key={'empty'+i} style={{background:t.tableBg,borderRadius:12,padding:'14px 16px',border:'2px dashed '+t.inputBorder,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:11,color:t.textMuted}}>+ Select metric</span></div>)}
       </div>
-      {drillPill&&<div style={{borderTop:'1px solid '+t.divider,paddingTop:12}}>
-        <div style={{fontSize:11,fontWeight:700,color:t.primary,marginBottom:8}}>{drillPill.label} — Daily Trend</div>
-        <ResponsiveContainer width="100%" height={160}>
-          <AreaChart data={dailyChartData} margin={{top:4,right:8,bottom:0,left:0}}>
-            <defs>
-              <linearGradient id="drillGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={t.primary} stopOpacity={0.18}/>
-                <stop offset="100%" stopColor={t.primary} stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
-            <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:9}} interval={Math.max(0,Math.floor(dailyChartData.length/8))}/>
-            <YAxis tick={{fill:t.textSec,fontSize:9}} tickFormatter={v=>$s(v)} width={48}/>
-            <Tooltip content={<CT t={t}/>}/>
-            <Area type="monotone" dataKey={drillDK} name={drillPill.label} stroke={t.primary} fill="url(#drillGrad)" strokeWidth={2}/>
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>}
+      {/* All metrics as small pills to select */}
+      <div style={{borderTop:'1px solid '+t.divider,paddingTop:10}}>
+        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Click to add/remove from display above:</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+          {ALL_PILLS.map(p=>{
+            const sel=selMetrics.includes(p.id);
+            return<button key={p.id} onClick={()=>togglePill(p.id)} style={{padding:'5px 11px',borderRadius:20,border:'1px solid '+(sel?t.primary:t.inputBorder),background:sel?t.primary:'transparent',color:sel?'#fff':t.textSec,fontSize:11,fontWeight:sel?600:400,cursor:'pointer',transition:'all .15s',outline:'none'}}>
+              {p.label}
+            </button>;
+          })}
+        </div>
+      </div>
     </Cd>
 
     {/* ③ DETAILED METRICS */}
@@ -397,24 +383,24 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
       <div style={{padding:'12px 18px',borderBottom:'1px solid '+t.divider,fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:1}}>Detailed Metrics</div>
       <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
         <thead><tr>
-          {['Metric','Value','vs Prev Period','vs Same Period LY'].map((h,i)=><th key={i} style={{padding:'8px 16px',textAlign:i>=2?'right':i===1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
+          {['Metric','Value','vs Prev Period','vs Same Period LY'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=2?'right':i===1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
         </tr></thead>
         <tbody>{DETAIL_ROWS.map((row,i)=>{
-          const hasSub=row.sub&&row.sub.length>0;const isExp=expandedRow===row.id;
+          const hasSub=row.sub&&row.sub.length>0;const isExp=expandedRows.has(row.id);
           const pvChg=ch(row.id==='ads'?'advCost':row.id==='fees'?'amazonFees':row.id==='np'?'netProfit':row.id==='cr'?'cr':row.id);
           const lyChg=splyChg(row.id==='ads'?'advCost':row.id==='fees'?'amazonFees':row.id==='np'?'netProfit':row.id);
           return<React.Fragment key={i}>
-            <tr onClick={()=>hasSub&&setExpandedRow(isExp?null:row.id)} style={{cursor:hasSub?'pointer':'default',borderBottom:'1px solid '+t.divider}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <td style={{padding:'9px 16px',fontWeight:500,color:t.textSec,whiteSpace:'nowrap'}}>
+            <tr onClick={()=>hasSub&&setExpandedRows(prev=>{const s=new Set(prev);s.has(row.id)?s.delete(row.id):s.add(row.id);return s;})} style={{cursor:hasSub?'pointer':'default',borderBottom:'1px solid '+t.divider}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'11px 16px',fontWeight:500,color:t.textSec,whiteSpace:'nowrap'}}>
                 {hasSub&&<span style={{marginRight:6,fontSize:10,color:t.primary}}>{isExp?'▼':'▶'}</span>}
                 {row.label}{row.isNew&&NEW_BADGE}<Tip text={row.tip||''} t={t}/>
               </td>
-              <td style={{padding:'9px 16px',textAlign:'right',fontWeight:700,color:row.id==='np'?(em.netProfit>=0?t.green:t.red):t.text}}>{row.fmt(row.val)}</td>
-              <td style={{padding:'9px 16px',textAlign:'right'}}>{pvChg!=null?<span style={{fontSize:11,fontWeight:600,color:pvChg>=0?t.green:t.red}}>{pvChg>=0?'↑':'↓'}{Math.abs(pvChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-              <td style={{padding:'9px 16px',textAlign:'right'}}>{lyChg!=null?<span style={{fontSize:11,fontWeight:600,color:lyChg>=0?t.green:t.red}}>{lyChg>=0?'↑':'↓'}{Math.abs(lyChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+              <td style={{padding:'11px 16px',textAlign:'right',fontWeight:700,color:row.id==='np'?(em.netProfit>=0?t.green:t.red):t.text}}>{row.fmt(row.val)}</td>
+              <td style={{padding:'11px 16px',textAlign:'right'}}>{pvChg!=null?<span style={{fontSize:11,fontWeight:600,color:pvChg>=0?t.green:t.red}}>{pvChg>=0?'↑':'↓'}{Math.abs(pvChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+              <td style={{padding:'11px 16px',textAlign:'right'}}>{lyChg!=null?<span style={{fontSize:11,fontWeight:600,color:lyChg>=0?t.green:t.red}}>{lyChg>=0?'↑':'↓'}{Math.abs(lyChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
             </tr>
             {isExp&&row.sub.map((s,j)=><tr key={'s'+j} style={{background:t.primaryGhost+'88'}}>
-              <td style={{padding:'6px 16px 6px 36px',fontSize:12,color:t.textSec}}>{s.l}</td>
+              <td style={{padding:'8px 16px 8px 36px',fontSize:12,color:t.textSec}}>{s.l}</td>
               <td style={{padding:'6px 16px',textAlign:'right',fontSize:12,fontWeight:600,color:t.text}}>{s.fmt(s.v)}</td>
               <td colSpan={2}/>
             </tr>)}
