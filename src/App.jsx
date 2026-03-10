@@ -525,60 +525,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
       </table>
     </Cd>}
 
-    {/* ③ KPI PILLS — Summary Metrics cards */}
-    <Cd t={t} style={{marginBottom:16,padding:'16px 18px'}}>
-      {selPillData.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:14}}>
-        {selPillData.map((p,i)=>{
-          const chgVal=p.ch();
-          const isNP=p.id==='NET PROFIT';
-          const isIsPP=(p.id==='MARGIN');
-          const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
-          const asinSlices=(()=>{
-            if(!p.asinKey||!fAsin||fAsin.length===0)return[];
-            const sorted=[...fAsin].filter(a=>Math.abs(a[p.asinKey]||0)>0).sort((a,b)=>Math.abs(b[p.asinKey])-Math.abs(a[p.asinKey]));
-            const top5=sorted.slice(0,5);
-            const rest=sorted.slice(5);
-            const restVal=rest.reduce((s,a)=>s+Math.abs(a[p.asinKey]||0),0);
-            const slices=top5.map(a=>({label:a.a,value:Math.abs(a[p.asinKey]||0),fmtV:p.fmtV}));
-            if(restVal>0)slices.push({label:'Others',value:restVal,fmtV:p.fmtV});
-            return slices;
-          })();
-          const hasDonut=asinSlices.length>0;
-          return<div key={p.id} style={{flex:'1 1 200px',minWidth:185,background:t.primaryGhost,borderRadius:12,padding:'14px 16px 12px 16px',border:'2px solid '+t.primary+'44',position:'relative',overflow:'hidden'}}>
-            {/* top row: label + X */}
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,marginRight:hasDonut?64:18}}>
-              <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,lineHeight:1}}>{p.label}</div>
-            </div>
-            {/* value — has right padding so donut never overlaps */}
-            <div style={{paddingRight:hasDonut?68:0}}>
-              <div style={{fontSize:22,fontWeight:700,color:valColor,lineHeight:1,marginBottom:5,fontFamily:"'Georgia','Times New Roman',serif",letterSpacing:-.3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.fmtV(p.val)}</div>
-              {chgVal!=null
-                ?<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red,whiteSpace:'nowrap'}}>
-                    {isIsPP?(chgVal>=0?'+':'')+chgVal.toFixed(2)+'pp':(chgVal>=0?'↑':'↓')+Math.abs(chgVal).toFixed(1)+'%'}
-                    <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}> vs prev</span>
-                  </div>
-                :<div style={{fontSize:10,color:t.textMuted}}>—</div>}
-            </div>
-            {/* donut — absolutely positioned right side, vertically centered */}
-            {hasDonut&&<div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
-              <MiniDonut slices={asinSlices} t={t} size={62}/>
-            </div>}
-            {/* X button top-right, above donut */}
-            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:11,lineHeight:1,padding:'2px 4px',borderRadius:4,zIndex:2}} title="Remove">✕</button>
-          </div>;
-        })}
-      </div>}
-      <div style={{borderTop:selPillData.length?'1px solid '+t.divider:'none',paddingTop:selPillData.length?10:0}}>
-        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Add/remove metrics:</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-          {ALL_PILLS.map(p=>{
-            const sel=selMetrics.includes(p.id);
-            return<button key={p.id} onClick={()=>togglePill(p.id)} style={{padding:'5px 11px',borderRadius:20,border:'1px solid '+(sel?t.primary:t.inputBorder),background:sel?t.primary:'transparent',color:sel?'#fff':t.textSec,fontSize:11,fontWeight:sel?600:400,cursor:'pointer',transition:'all .15s',outline:'none'}}>{p.label}</button>;
-          })}
-        </div>
-      </div>
-    </Cd>
-
     {/* ④ DAILY TREND */}
     {(()=>{
       const total=dailyChartData.length;
