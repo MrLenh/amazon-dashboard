@@ -172,7 +172,7 @@ function genOpsAlerts(fDaily,t){const alerts=[];const negDays=fDaily.filter(d=>d
 function genInvAlerts(shops,invData){const a=[];const tFba=invData?.fbaStock||shops.reduce((s,x)=>s+x.fba,0);const crit=invData?.criticalSkus||shops.reduce((s,x)=>s+x.crit,0);const lowSt=shops.filter(s=>s.st<2);const hiDoh=shops.filter(s=>s.doh>50);const fee=invData?.storageFee||0;a.push({s:"i",t:`Total FBA stock: ${N(tFba)} units across ${shops.length} shops`});if(crit>100)a.push({s:"c",t:`${crit} critical SKUs need restocking`});else if(crit>0)a.push({s:"w",t:`${crit} critical SKUs — monitor closely`});if(fee>5000)a.push({s:"w",t:`Storage fee ${$2(fee)}/month — consider liquidating aged inventory to reduce costs`});else if(fee>0)a.push({s:"i",t:`Storage fee ${$2(fee)}/month`});if(lowSt.length)a.push({s:"w",t:`${lowSt.length} shops with sell-through <2%: ${lowSt.map(s=>s.s).join(", ")}`});if(hiDoh.length)a.push({s:"i",t:`${hiDoh.length} shops with >50 days of health: ${hiDoh.map(s=>s.s).join(", ")} — consider reducing orders`});return a;}
 
 /* ═══════════ EXECUTIVE v4.5 ═══════════ */
-function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt}){
+function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
   const[shopView,setShopView]=useState('table');
@@ -222,30 +222,43 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
 
   /* ── DETAILED METRICS (expandable) ── */
   const NEW_BADGE=<span style={{fontSize:8,fontWeight:700,color:'#fff',background:t.primary,padding:'1px 5px',borderRadius:5,marginLeft:5,letterSpacing:.5}}>NEW</span>;
+  // prevCr = CR% of prev period (for vs Prev Period comparison)
+  const prevCr=prevEm&&prevEm.sessions>0?(prevEm.units/prevEm.sessions*100):0;
+  const prevTacos=prevEm&&prevEm.sales>0?(Math.abs(prevEm.advCost||0)/prevEm.sales*100):0;
+  // pvChg2: for metrics not directly in prevEm (computed values)
+  const pv=(cur,prev)=>prev!=null&&prev!==0?((cur-prev)/Math.abs(prev)*100):undefined;
+  const pvPP=(cur,prev)=>prev!=null?(cur-prev):undefined; // percentage point diff
+
   const DETAIL_ROWS=[
-    {id:'sales',label:'Sales',val:em.sales,fmt:$2,tip:TIPS.sales,sub:[]},
-    {id:'units',label:'Units',val:em.units,fmt:N,tip:TIPS.units,sub:[
+    // ── Sellerboard order ──
+    {id:'sales',    label:'Sales',         val:em.sales,                         fmt:$2,  tip:TIPS.sales,     pvk:'sales',    sub:[]},
+    {id:'units',    label:'Units',         val:em.units,                         fmt:N,   tip:TIPS.units,     pvk:'units',    sub:[
       {l:'Organic',v:em.unitsOrganic||0,fmt:N},{l:'Sponsored (PPC)',v:em.unitsSP||0,fmt:N},
     ]},
-    {id:'ads',label:'Adv. Cost',val:Math.abs(em.advCost||0),fmt:$2,tip:TIPS.advCost,sub:[
+    {id:'refunds',  label:'Refunds',       val:em.refunds||0,                    fmt:N,   tip:'Number of refunds',    pvk:'refunds',  sub:[]},
+    {id:'promo',    label:'Promo',         val:em.promo||0,                      fmt:$2,  tip:'Promotions & coupons', pvk:null,       isNew:true,sub:[]},
+    {id:'ads',      label:'Adv. Cost',     val:Math.abs(em.advCost||0),          fmt:$2,  tip:TIPS.advCost,   pvk:'advCost',  sub:[
       {l:'Sponsored Products',v:em.sp||0,fmt:$2},{l:'Sponsored Brands',v:em.sb||0,fmt:$2},
       {l:'Sponsored Brands Video',v:em.sbv||0,fmt:$2},{l:'Sponsored Display',v:em.sd||0,fmt:$2},
     ]},
-    {id:'fees',label:'Amazon Fees',val:Math.abs(em.amazonFees||0),fmt:$2,tip:TIPS.amazonFees,sub:[
+    {id:'refundCost',label:'Refund Cost',  val:Math.abs(em.refundCost||0),       fmt:$2,  tip:'Cost of processing refunds',  pvk:'refundCost', sub:[]},
+    {id:'fees',     label:'Amazon Fees',   val:Math.abs(em.amazonFees||0),       fmt:$2,  tip:TIPS.amazonFees, pvk:'amazonFees', sub:[
       {l:'FBA Fulfillment Fee',v:em.fbaFulfillment||0,fmt:$2},
       {l:'Referral Fee (Commission)',v:em.commission||0,fmt:$2},
     ]},
-    {id:'cogs',label:'COGS',val:Math.abs(em.cogs||0),fmt:$2,tip:'Cost of Goods Sold',sub:[]},
-    {id:'sessions',label:'Sessions',val:Math.round(em.sessions||0),fmt:N,tip:TIPS.sessions,isNew:true,sub:[
+    {id:'cogs',     label:'Cost of Goods', val:Math.abs(em.cogs||0),             fmt:$2,  tip:'Cost of Goods Sold', pvk:'cogs',    sub:[]},
+    {id:'grossProfit',label:'Gross Profit',val:em.grossProfit||0,                fmt:$2,  tip:'Revenue minus COGS and Amazon fees', pvk:'grossProfit', sub:[]},
+    {id:'np',       label:'Net Profit',    val:em.netProfit,                     fmt:$2,  tip:TIPS.netProfit, pvk:'netProfit', sub:[]},
+    {id:'payout',   label:'Est. Payout',   val:em.estPayout||0,                  fmt:$2,  tip:TIPS.estPayout, pvk:'estPayout', sub:[]},
+    {id:'realAcos', label:'Real ACOS',     val:em.realAcos||0,                   fmt:v=>v.toFixed(2)+'%', tip:'Ad Cost / Sales', pvk:'realAcos', reverseColor:true, sub:[]},
+    {id:'pctRef',   label:'% Refunds',     val:em.pctRefunds||0,                 fmt:v=>v.toFixed(2)+'%', tip:'Refunds / Orders', pvk:'pctRefunds', reverseColor:true, sub:[]},
+    {id:'margin',   label:'Margin',        val:em.margin||0,                     fmt:v=>v.toFixed(2)+'%', tip:TIPS.margin, pvk:'margin', isPP:true, sub:[]},
+    {id:'sessions', label:'Sessions',      val:Math.round(em.sessions||0),       fmt:N,   tip:TIPS.sessions,  pvk:'sessions', isNew:true, sub:[
       {l:'Browser Sessions',v:em.browserSessions||0,fmt:N},{l:'Mobile App Sessions',v:em.mobileSessions||0,fmt:N},
     ]},
-    {id:'cr',label:'CR%',val:cr,fmt:v=>v.toFixed(2)+'%',tip:TIPS.cr,isNew:true,sub:[]},
-    {id:'tacos',label:'TACoS',val:tacos,fmt:v=>v.toFixed(2)+'%',tip:TIPS.realAcos,sub:[]},
-    {id:'roas',label:'ROAS',val:em.realAcos>0?(100/em.realAcos):0,fmt:v=>v.toFixed(2)+'x',tip:'Revenue / Ad Spend',isNew:true,sub:[]},
-    {id:'margin',label:'Margin',val:em.margin||0,fmt:v=>v.toFixed(2)+'%',tip:TIPS.margin,sub:[]},
-    {id:'np',label:'Net Profit',val:em.netProfit,fmt:$2,tip:TIPS.netProfit,sub:[]},
-    {id:'payout',label:'Est. Payout',val:em.estPayout||0,fmt:$2,tip:TIPS.estPayout,sub:[]},
-    {id:'promo',label:'Promo',val:em.promo||0,fmt:$2,tip:'Promotions & coupons value',isNew:true,sub:[]},
+    {id:'cr',       label:'CR%',           val:cr,                               fmt:v=>v.toFixed(2)+'%', tip:TIPS.cr, pvk:'_cr', isNew:true, sub:[]},
+    {id:'tacos',    label:'TACoS',         val:tacos,                            fmt:v=>v.toFixed(2)+'%', tip:TIPS.realAcos, pvk:'_tacos', reverseColor:true, sub:[]},
+    {id:'roas',     label:'ROAS',          val:em.realAcos>0?(100/em.realAcos):0,fmt:v=>v.toFixed(2)+'x', tip:'Revenue / Ad Spend', pvk:'_roas', isNew:true, sub:[]},
   ];
 
   /* ── DAILY TREND (combo: bars + lines) ── */
@@ -338,7 +351,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
           return<div key={i} style={{textAlign:'center',padding:'8px 4px',borderRadius:8,background:t.primaryGhost}}>
             <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5}}>{m.l}</div>
             <div style={{fontSize:mob?13:14,fontWeight:700,color:m.l==='Net Profit'?(em.netProfit>=0?t.green:t.red):t.text,marginTop:3}}>{m.v}</div>
-            {pv!=null&&<div style={{fontSize:9,fontWeight:600,color:pv>=0?t.green:t.red,marginTop:2}}>{pv>=0?'↑':'↓'}{Math.abs(pv).toFixed(1)}% <span style={{color:t.textMuted,fontWeight:400}}>prev</span></div>}
+            {pv!=null&&<div title={'vs '+((prevPeriod&&prevPeriod.s)?prevPeriod.s+' – '+prevPeriod.e:'prev period')} style={{fontSize:9,fontWeight:600,color:pv>=0?t.green:t.red,marginTop:2,cursor:'help'}}>{pv>=0?'↑':'↓'}{Math.abs(pv).toFixed(1)}% <span style={{color:t.textMuted,fontWeight:400}}>prev</span></div>}
             {sy!=null&&<div style={{fontSize:9,fontWeight:600,color:sy>=0?'#3DD68C':'#FF9A8A',marginTop:1}}>{sy>=0?'↑':'↓'}{Math.abs(sy).toFixed(1)}% <span style={{fontWeight:400}}>LY</span></div>}
           </div>;
         })}
@@ -380,26 +393,36 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,pctChg,mob,onAsinClick,s
       <div style={{padding:'12px 18px',borderBottom:'1px solid '+t.divider,fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:1}}>Detailed Metrics</div>
       <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
         <thead><tr>
-          {['Metric','Value','vs Prev Period','vs Same Period LY'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=2?'right':i===1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
+          {['Metric','Value','vs Prev Period'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
         </tr></thead>
         <tbody>{DETAIL_ROWS.map((row,i)=>{
           const hasSub=row.sub&&row.sub.length>0;const isExp=expandedRows.has(row.id);
-          const pvChg=ch(row.id==='ads'?'advCost':row.id==='fees'?'amazonFees':row.id==='np'?'netProfit':row.id==='cr'?'cr':row.id);
-          const lyChg=splyChg(row.id==='ads'?'advCost':row.id==='fees'?'amazonFees':row.id==='np'?'netProfit':row.id);
+          // Compute vs Prev Period using pvk
+          let pvChg=undefined;
+          if(prevEm&&row.pvk){
+            if(row.pvk==='_cr') pvChg=pv(cr,prevCr);
+            else if(row.pvk==='_tacos') pvChg=pv(tacos,prevTacos);
+            else if(row.pvk==='_roas'){const pr=prevTacos>0?(100/prevTacos):0;pvChg=pv(em.realAcos>0?(100/em.realAcos):0,pr);}
+            else if(row.isPP) pvChg=pvPP(em[row.pvk]||0,prevEm[row.pvk]||0); // percentage point diff
+            else pvChg=pv(em[row.pvk]||0,prevEm[row.pvk]||0);
+          }
+          const pvLabel=prevPeriod&&prevPeriod.s?prevPeriod.s+' – '+prevPeriod.e:'prev period';
+          const pvGood=row.reverseColor?(pvChg!=null&&pvChg<0):(pvChg!=null&&pvChg>=0);
+          const isNpRow=(row.id==='np'||row.id==='grossProfit');
+          const valColor=isNpRow?(row.val>=0?t.green:t.red):t.text;
           return<React.Fragment key={i}>
             <tr onClick={()=>hasSub&&setExpandedRows(prev=>{const s=new Set(prev);s.has(row.id)?s.delete(row.id):s.add(row.id);return s;})} style={{cursor:hasSub?'pointer':'default',borderBottom:'1px solid '+t.divider}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'11px 16px',fontWeight:500,color:t.textSec,whiteSpace:'nowrap'}}>
                 {hasSub&&<span style={{marginRight:6,fontSize:10,color:t.primary}}>{isExp?'▼':'▶'}</span>}
                 {row.label}{row.isNew&&NEW_BADGE}<Tip text={row.tip||''} t={t}/>
               </td>
-              <td style={{padding:'11px 16px',textAlign:'right',fontWeight:700,color:row.id==='np'?(em.netProfit>=0?t.green:t.red):t.text}}>{row.fmt(row.val)}</td>
-              <td style={{padding:'11px 16px',textAlign:'right'}}>{pvChg!=null?<span style={{fontSize:11,fontWeight:600,color:pvChg>=0?t.green:t.red}}>{pvChg>=0?'↑':'↓'}{Math.abs(pvChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-              <td style={{padding:'11px 16px',textAlign:'right'}}>{lyChg!=null?<span style={{fontSize:11,fontWeight:600,color:lyChg>=0?t.green:t.red}}>{lyChg>=0?'↑':'↓'}{Math.abs(lyChg).toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+              <td style={{padding:'11px 16px',textAlign:'right',fontWeight:700,color:valColor}}>{row.fmt(row.val)}</td>
+              <td style={{padding:'11px 16px',textAlign:'right'}}>{pvChg!=null?<span title={'Compared to: '+pvLabel} style={{fontSize:11,fontWeight:600,color:pvGood?t.green:t.red,cursor:'help',borderBottom:'1px dashed '+(pvGood?t.green:t.red)+'66'}}>{pvChg>=0?'↑':'↓'}{row.isPP?Math.abs(pvChg).toFixed(2)+'pp':Math.abs(pvChg).toFixed(1)+'%'}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
             </tr>
             {isExp&&row.sub.map((s,j)=><tr key={'s'+j} style={{background:t.primaryGhost+'88'}}>
               <td style={{padding:'8px 16px 8px 36px',fontSize:12,color:t.textSec}}>{s.l}</td>
               <td style={{padding:'6px 16px',textAlign:'right',fontSize:12,fontWeight:600,color:t.text}}>{s.fmt(s.v)}</td>
-              <td colSpan={2}/>
+              <td/>
             </tr>)}
           </React.Fragment>;
         })}</tbody>
@@ -1418,6 +1441,7 @@ export default function App(){
   // ═══════════ LIVE DATA STATE ═══════════
   const[em,setEm]=useState(EMPTY_EM);
   const[prevEm,setPrevEm]=useState(null);
+  const[prevPeriod,setPrevPeriod]=useState({s:'',e:''});
   const[fDaily,setFDaily]=useState([]);
   const[fAsin,setFAsin]=useState([]);
   const[fShopData,setFShopData]=useState([]);
@@ -1522,6 +1546,7 @@ export default function App(){
     const days=Math.max(1,Math.round((new Date(_ed)-new Date(_sd))/86400000)+1);
     const pe=new Date(new Date(_sd+"T00:00:00").getTime()-86400000);
     const ps=new Date(pe.getTime()-(days-1)*86400000);
+    setPrevPeriod({s:ps.toISOString().slice(0,10),e:pe.toISOString().slice(0,10)});
     // Batch 1: critical data (summary + daily)
     const arr=v=>Array.isArray(v)?v:[];
     (async()=>{try{
@@ -1684,7 +1709,7 @@ export default function App(){
       {/* CONTENT */}
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
-        {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={{...em,...execDetail}} sd={sd} ed={ed} prevEm={prevEm} pctChg={pctChg} mob={mob} splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}/>}
+        {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={{...em,...execDetail}} sd={sd} ed={ed} prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob} splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}/>}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF}/>}
         {pg==="prod"&&<ProdPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily}/>}
