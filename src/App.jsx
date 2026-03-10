@@ -703,16 +703,38 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
       <div style={{fontSize:11,color:t.textSec}}>Latest inventory snapshot{d.snapshotDate?` — data from ${d.snapshotDate}`:""}.  No time filter needed.</div>
     </Cd>
 
-    {/* ① KPI cards */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}}>
-      <KpiCard title="FBA Stock" value={N(d.fbaStock||0)} icon="" t={t} tip={TIPS.fbaStock}/>
-      <KpiCard title="Available" value={N(d.availableInv||0)} t={t} tip={TIPS.invAvail}/>
-      <KpiCard title="Reserved" value={N(d.reserved||0)} t={t} tip={TIPS.invReserved}/>
-      <KpiCard title="Inbound" value={N(d.inbound||0)} t={t} tip={TIPS.invInbound}/>
-      <KpiCard title="Critical SKUs" value={N(d.criticalSkus||0)} t={t} tip={TIPS.invCritical}/>
-      <KpiCard title="Avg Days Supply" value={Math.round(d.avgDaysOfSupply||0)} icon="" t={t} tip={TIPS.invDaysSupply}/>
-      <KpiCard title="Storage Fee" value={$2(fee)} icon="" t={t} tip={TIPS.storageFee}/>
-    </div>
+    {/* ① KPI stat strip */}
+    {(()=>{
+      const doh=Math.round(d.avgDaysOfSupply||0);
+      const crit=d.criticalSkus||0;
+      const metrics=[
+        {label:"FBA Stock",    value:N(d.fbaStock||0),      icon:"📦", color:t.primary,  tip:TIPS.fbaStock,    sub:"total units"},
+        {label:"Available",    value:N(d.availableInv||0),  icon:"✅", color:t.green,    tip:TIPS.invAvail,    sub:"ready to ship"},
+        {label:"Reserved",     value:N(d.reserved||0),      icon:"🔒", color:t.orange,   tip:TIPS.invReserved, sub:"held by Amazon"},
+        {label:"Inbound",      value:N(d.inbound||0),       icon:"🚚", color:t.blue,     tip:TIPS.invInbound,  sub:"in transit"},
+        {label:"Critical SKUs",value:N(crit),               icon:"⚠️", color:crit>0?t.red:t.green, tip:TIPS.invCritical, sub:crit>0?"need restock":"all healthy"},
+        {label:"Days of Supply",value:doh>0?doh+"d":"—",   icon:"📅", color:doh>0&&doh<30?t.red:doh<60?t.orange:t.green, tip:TIPS.invDaysSupply, sub:doh<30?"restock soon":doh<60?"monitor":"healthy"},
+        {label:"Storage Fee",  value:$2(fee),               icon:"💰", color:fee>10000?t.red:fee>5000?t.orange:t.text, tip:TIPS.storageFee, sub:"per month"},
+      ];
+      return<div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:0,marginBottom:16,background:t.card,borderRadius:16,border:"1px solid "+t.cardBorder,overflow:"hidden",boxShadow:"0 2px 12px "+t.shadow}}>
+        {metrics.map((m,i)=><div key={i}
+          style={{padding:"18px 16px",borderRight:i<metrics.length-1?"1px solid "+t.divider:"none",position:"relative",transition:"background .15s",cursor:"default"}}
+          onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          {/* colored top accent bar */}
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:m.color,borderRadius:"0 0 0 0",opacity:.7}}/>
+          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
+            <span style={{fontSize:14,lineHeight:1}}>{m.icon}</span>
+            <span style={{fontSize:10,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:.8,whiteSpace:"nowrap"}}>
+              {m.label}
+            </span>
+            {m.tip&&<Tip text={m.tip} t={t}/>}
+          </div>
+          <div style={{fontSize:22,fontWeight:800,color:m.color,letterSpacing:-.5,lineHeight:1,marginBottom:4}}>{m.value}</div>
+          <div style={{fontSize:10,color:t.textMuted,fontWeight:500}}>{m.sub}</div>
+        </div>)}
+      </div>;
+    })()}
 
     {/* ② Alerts */}
     <div style={{marginBottom:16}}><Alerts t={t} alerts={invAlerts}/></div>
