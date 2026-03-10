@@ -275,9 +275,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
     {id:'realAcos', label:'Real ACOS',     val:em.realAcos||0,                   fmt:v=>v.toFixed(2)+'%', tip:'Ad Cost / Sales', pvk:'realAcos', reverseColor:true, sub:[]},
     {id:'pctRef',   label:'% Refunds',     val:em.pctRefunds||0,                 fmt:v=>v.toFixed(2)+'%', tip:'Refunds / Orders', pvk:'pctRefunds', reverseColor:true, sub:[]},
     {id:'margin',   label:'Margin',        val:em.margin||0,                     fmt:v=>v.toFixed(2)+'%', tip:TIPS.margin, pvk:'margin', isPP:true, sub:[]},
-    {id:'sessions', label:'Sessions',      val:Math.round(em.sessions||0),       fmt:N,   tip:TIPS.sessions,  pvk:'sessions', isNew:true, sub:[
-      {l:'Browser Sessions',v:em.browserSessions||0,fmt:N},{l:'Mobile App Sessions',v:em.mobileSessions||0,fmt:N},
-    ]},
+    {id:'sessions', label:'Sessions',      val:Math.round(em.sessions||0),       fmt:N,   tip:TIPS.sessions,  pvk:'sessions', isNew:true, sub:[]},
     {id:'cr',       label:'CR%',           val:cr,                               fmt:v=>v.toFixed(2)+'%', tip:TIPS.cr, pvk:'_cr', isNew:true, sub:[]},
     {id:'tacos',    label:'TACoS',         val:tacos,                            fmt:v=>v.toFixed(2)+'%', tip:TIPS.realAcos, pvk:'_tacos', reverseColor:true, sub:[]},
     {id:'roas',     label:'ROAS',          val:em.realAcos>0?(100/em.realAcos):0,fmt:v=>v.toFixed(2)+'x', tip:'Revenue / Ad Spend', pvk:'_roas', isNew:true, sub:[]},
@@ -447,8 +445,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
               <td style={{padding:'11px 16px',textAlign:'right'}}>{pvChg!=null?<span title={'Compared to: '+pvLabel} style={{fontSize:11,fontWeight:600,color:pvGood?t.green:t.red,cursor:'help',borderBottom:'1px dashed '+(pvGood?t.green:t.red)+'66'}}>{pvChg>=0?'↑':'↓'}{row.isPP?Math.abs(pvChg).toFixed(2)+'pp':Math.abs(pvChg).toFixed(1)+'%'}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
             </tr>
             {isExp&&row.sub.map((s,j)=><tr key={'s'+j} style={{background:t.primaryGhost+'88'}}>
-              <td style={{padding:'8px 16px 8px 36px',fontSize:12,color:t.textSec}}>{s.l}</td>
-              <td style={{padding:'6px 16px',textAlign:'right',fontSize:12,fontWeight:600,color:t.text}}>{s.fmt(s.v)}</td>
+              <td style={{padding:'8px 16px 8px 36px',fontSize:12,color:s.muted?t.textMuted:t.textSec}}>{s.l}{s.muted&&<span style={{fontSize:9,color:t.textMuted,marginLeft:5}}>(seller_board_sales − analytics)</span>}</td>
+              <td style={{padding:'6px 16px',textAlign:'right',fontSize:12,fontWeight:600,color:s.muted?t.textMuted:t.text}}>{s.fmt(s.v)}</td>
               <td/>
             </tr>)}
           </React.Fragment>;
