@@ -195,15 +195,32 @@ app.get('/api/exec/daily', async (req, res) => {
     let rows;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
-      rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(${P_UNITS}) as units
+      rows = await q(`SELECT p.date,
+        SUM(${P_SALES}) as revenue,
+        SUM(COALESCE(p.netProfit,0)) as netProfit,
+        SUM(${P_UNITS}) as units,
+        SUM(ABS(COALESCE(p.sponsoredProducts,0))+ABS(COALESCE(p.sponsoredBrands,0))+ABS(COALESCE(p.sponsoredBrandsVideo,0))+ABS(COALESCE(p.sponsoredDisplay,0))) as advCost,
+        SUM(COALESCE(p.sessions,0)) as sessions
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
-      rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit, SUM(${SC_UNITS}) as units
+      rows = await q(`SELECT sc.date,
+        SUM(${SC_SALES}) as revenue,
+        SUM(COALESCE(sc.netProfit,0)) as netProfit,
+        SUM(${SC_UNITS}) as units,
+        SUM(${SC_ADS}) as advCost,
+        SUM(COALESCE(sc.sessions,0)) as sessions
         FROM ${salesFrom()} ${f.w} GROUP BY sc.date ORDER BY sc.date`, f.p, 45000);
     }
-    console.log('exec/daily:', rows?.length||0, 'rows');
-    res.json(rows || []);
+    console.log('exec/daily:', rows?.length||0, 'rows, first:', rows?.[0]);
+    res.json((rows || []).map(r => ({
+      date: r.date,
+      revenue: parseFloat(r.revenue)||0,
+      netProfit: parseFloat(r.netProfit)||0,
+      units: parseInt(r.units)||0,
+      advCost: parseFloat(r.advCost)||0,
+      sessions: parseFloat(r.sessions)||0,
+    })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1001,7 +1018,31 @@ app.get('/api/exec/detail', async (req, res) => {
       browserSessions=parseFloat(r[0]?.bs)||0; mobileSessions=parseFloat(r[0]?.ms)||0;
     } catch(e5) { /* table may not exist — silently skip */ }
 
-    res.json({ sp:sp_, sb, sbv, sd, fbaFulfillment, commission, unitsOrganic, unitsSP, promo, browserSessions, mobileSessions });
+    // ── Q6: SALES BREAKDOWN (Organic / PPC) ──
+    // Source: seller_board_product[salesOrganic] + seller_board_product[salesPPC]
+    // Uses same fp (product) filter as other sub-queries
+    let salesOrganic=0, salesPPC=0;
+    try {
+      // Try seller_board_product first (filtered by seller/asin if needed)
+      const r=await q(`SELECT
+        SUM(COALESCE(p.salesOrganic,0)) as so,
+        SUM(COALESCE(p.salesPPC,0))     as sp_s
+        FROM seller_board_product p
+        LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
+        ${fp.w}`, fp.p, 45000);
+      salesOrganic=parseFloat(r[0]?.so)||0; salesPPC=parseFloat(r[0]?.sp_s)||0;
+    } catch(e6) {
+      // Fallback: seller_board_sales (no seller/asin filter available)
+      try {
+        const r=await q(`SELECT
+          SUM(COALESCE(sc.salesOrganic,0)) as so,
+          SUM(COALESCE(sc.salesPPC,0))     as sp_s
+          FROM ${salesFrom()} ${sw}`, sp, 45000);
+        salesOrganic=parseFloat(r[0]?.so)||0; salesPPC=parseFloat(r[0]?.sp_s)||0;
+      } catch(e6b) { console.warn('exec/detail sales breakdown:', e6b.message); }
+    }
+
+    res.json({ sp:sp_, sb, sbv, sd, fbaFulfillment, commission, unitsOrganic, unitsSP, promo, browserSessions, mobileSessions, salesOrganic, salesPPC });
   } catch (e) { console.error('exec/detail:', e.message); res.status(500).json({ error: e.message }); }
 });
 
