@@ -795,25 +795,58 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
       </Sec>
     </div>
 
-    {/* ④ Stock by Shop — expanded breakdown */}
-    <Sec title="Stock by Shop" icon="" t={t}>
-      <Cd t={t} style={{padding:0,overflow:'hidden'}}>
+    {/* ④ Stock by Shop — stacked bar + table */}
+    <Sec title="FBA Stock by Shop" icon="" t={t}>
+      <Cd t={t}>
+        {/* Stacked horizontal bar chart */}
+        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:10,flexWrap:'wrap'}}>
+          {[{color:t.green,label:'Available'},{color:t.blue,label:'Inbound'},{color:t.orange,label:'Reserved'}].map((l,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:t.textSec}}>
+              <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
+              {l.label}
+            </div>
+          ))}
+        </div>
+        <ResponsiveContainer width="100%" height={Math.max(200,invShop.length*36)}>
+          <BarChart data={[...invShop].sort((a,b)=>b.fba-a.fba).map(r=>({
+            name:r.s,
+            Available:Math.max(0,r.fba-r.res-r.inb),
+            Inbound:r.inb,
+            Reserved:r.res,
+          }))} layout="vertical" margin={{left:8,right:40,top:4,bottom:4}} barSize={16} barCategoryGap="22%">
+            <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid} horizontal={false}/>
+            <XAxis type="number" tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/>
+            <YAxis type="category" dataKey="name" tick={{fill:t.textSec,fontSize:11}} width={88}/>
+            <Tooltip content={<CT t={t}/>}/>
+            <Bar dataKey="Available" stackId="s" fill={t.green} radius={[0,0,0,0]}/>
+            <Bar dataKey="Inbound"   stackId="s" fill={t.blue}  radius={[0,0,0,0]}/>
+            <Bar dataKey="Reserved"  stackId="s" fill={t.orange} radius={[0,4,4,0]}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </Cd>
+      {/* Table below */}
+      <Cd t={t} style={{padding:0,overflow:'hidden',marginTop:10}}>
         <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
             <thead><tr>
-              {['Shop','FBA Stock','Available','Inbound','Reserved','Critical SKUs','Sell-Through','Days of Supply'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+              {['Shop','Total','Available','Inbound','Reserved','Unfulfillable','Critical','Sell-Through','Days'].map((h,i)=>(
+                <th key={i} style={{padding:'8px 12px',textAlign:i===0?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>
+              ))}
             </tr></thead>
-            <tbody>{[...invShop].sort((a,b)=>b.fba-a.fba).map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.s}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(Math.max(0,r.fba-r.res))}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.inb)}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',color:t.orange,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.res)}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.crit>0?<span style={{color:t.red,fontWeight:700}}>{r.crit}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.st<0.02?t.red:r.st<0.1?t.orange:t.green,fontWeight:600}}>{(r.st*100).toFixed(1)}%</td>
-              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.doh>90?t.orange:r.doh<20?t.red:t.text,fontWeight:600}}>{r.doh>0?r.doh+'d':'—'}</td>
-            </tr>)}
-            </tbody>
+            <tbody>{[...invShop].sort((a,b)=>b.fba-a.fba).map((r,i)=>{
+              const avail=Math.max(0,r.fba-r.res);
+              return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td style={{padding:'8px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.s}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(avail)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.inb>0?N(r.inb):<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.res>0?N(r.res):<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>—</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.crit>0?<span style={{color:t.red,fontWeight:700}}>{r.crit}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.st<0.02?t.red:r.st<0.1?t.orange:t.green,fontWeight:600}}>{(r.st*100).toFixed(1)}%</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.doh<20?t.red:r.doh>90?t.orange:t.text,fontWeight:600}}>{r.doh>0?r.doh+'d':'—'}</td>
+              </tr>;
+            })}</tbody>
           </table>
         </div>
       </Cd>
@@ -833,18 +866,25 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
         <div style={{overflowX:'auto',maxHeight:480,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
             <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>ASIN / Name</th>
-              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>Shop</th>
-              {thSort('fba','FBA Stock')}
+              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',minWidth:190}}>ASIN / Name</th>
+              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Shop</th>
+              {thSort('salePrice','Price')}
+              {thSort('fba','FBA Total')}
               {thSort('available','Available')}
               {thSort('inbound','Inbound')}
               {thSort('reserved','Reserved')}
+              {thSort('unfulfillable','Unfulfill.')}
               {thSort('daysLeft','Days Left')}
+              {thSort('age0_90','0-90d')}
+              {thSort('age91_180','91-180d')}
+              {thSort('age181_270','181-270d')}
+              {thSort('age271_365','271-365d')}
+              {thSort('age365plus','365d+')}
               {thSort('storageFee','Storage Fee')}
-              {thSort('aged','Aged >90d')}
+              {thSort('longTermFee','LT Fee')}
               {thSort('stockValue','Stock Value')}
             </tr></thead>
-            <tbody>{filteredAsin.length===0?<tr><td colSpan={10} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
+            <tbody>{filteredAsin.length===0?<tr><td colSpan={17} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
               const oos=r.oos45;
               return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{background:oos?t.redBg+'55':'transparent'}}>
                 <td style={{padding:'8px 12px',borderBottom:'1px solid '+t.divider}}>
@@ -855,21 +895,29 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                   {r.name&&<div style={{fontSize:10,color:t.textMuted,marginTop:1,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>}
                   {r.sku&&<div style={{fontSize:9,color:t.textMuted}}>{r.sku}</div>}
                 </td>
-                <td style={{padding:'8px 12px',fontSize:12,color:t.textSec,borderBottom:'1px solid '+t.divider}}>{r.shop}</td>
+                <td style={{padding:'8px 12px',fontSize:12,color:t.textSec,borderBottom:'1px solid '+t.divider,whiteSpace:'nowrap'}}>{r.shop}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:600}}>{r.salePrice>0?$2(r.salePrice):<span style={{color:t.textMuted}}>—</span>}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.available)}</td>
-                <td style={{padding:'8px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.inbound)}</td>
-                <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{N(r.reserved)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.inbound>0?N(r.inbound):<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.reserved>0?N(r.reserved):<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.unfulfillable>0?t.red:t.textMuted}}>{r.unfulfillable>0?N(r.unfulfillable):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,borderBottom:'1px solid '+t.divider,color:r.daysLeft>0&&r.daysLeft<=14?t.red:r.daysLeft<=45?t.orange:t.text}}>{r.daysLeft>0?r.daysLeft+'d':'—'}</td>
+                {/* Stock age columns */}
+                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.green,fontSize:11}}>{r.age0_90>0?N(r.age0_90):<span style={{color:t.textMuted}}>—</span>}</td>
+                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age91_180>0?t.orange:t.textMuted,fontSize:11}}>{r.age91_180>0?N(r.age91_180):'—'}</td>
+                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age181_270>0?t.orange:t.textMuted,fontSize:11}}>{r.age181_270>0?N(r.age181_270):'—'}</td>
+                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age271_365>0?t.red:t.textMuted,fontSize:11}}>{r.age271_365>0?N(r.age271_365):'—'}</td>
+                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age365plus>0?t.red:t.textMuted,fontSize:11,fontWeight:r.age365plus>0?700:400}}>{r.age365plus>0?N(r.age365plus):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.storageFee>200?t.red:r.storageFee>50?t.orange:t.text}}>{r.storageFee>0?$2(r.storageFee):'—'}</td>
-                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.aged>100?t.orange:t.text}}>{r.aged>0?N(r.aged):'—'}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.longTermFee>0?t.red:t.textMuted,fontWeight:r.longTermFee>0?700:400}}>{r.longTermFee>0?$2(r.longTermFee):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.stockValue>0?$2(r.stockValue):'—'}</td>
               </tr>;
             })}</tbody>
           </table>
         </div>
         <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,background:t.tableBg}}>
-          {filteredAsin.length} of {asinRows.length} ASINs · <span style={{color:t.red}}>⚠ = OOS risk ≤45 days</span> · Click column header to sort
+          {filteredAsin.length} of {asinRows.length} ASINs · <span style={{color:t.green}}>■</span> 0-90d <span style={{color:t.orange}}>■</span> 91-270d <span style={{color:t.red}}>■</span> 271d+ · <span style={{color:t.red}}>⚠ OOS ≤45d</span> · LT Fee = Long-term storage fee · Click headers to sort
         </div>
       </Cd>
     </Sec>
