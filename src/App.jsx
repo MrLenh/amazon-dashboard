@@ -654,7 +654,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
 }
 
 /* ═══════════ INVENTORY ═══════════ */
-function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin}){
+function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinClick}){
   const d=invData||{};
   const fee=d.storageFee||0;
   const feeHist=invFeeMonthly||[];
@@ -785,7 +785,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin}){
                 <td style={{padding:'8px 12px',borderBottom:'1px solid '+t.divider}}>
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     {oos&&<span title="OOS risk <45 days" style={{color:t.red,fontSize:10,fontWeight:700}}>⚠</span>}
-                    <AsinLink asin={r.asin} onClick={()=>{}} t={t}/>
+                    <AsinLink asin={r.asin} onClick={onAsinClick||(()=>{})} t={t}/>
                   </div>
                   {r.name&&<div style={{fontSize:10,color:t.textMuted,marginTop:1,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>}
                   {r.sku&&<div style={{fontSize:9,color:t.textMuted}}>{r.sku}</div>}
@@ -1940,7 +1940,7 @@ export default function App(){
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
         {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={{...em,...execDetail}} sd={sd} ed={ed} prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob} splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}/>}
-        {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin}/>}
+        {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF}/>}
         {pg==="prod"&&<ProdPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
