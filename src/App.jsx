@@ -654,27 +654,170 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
 }
 
 /* ═══════════ INVENTORY ═══════════ */
-function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly}){
+function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin}){
   const d=invData||{};
   const fee=d.storageFee||0;
   const feeHist=invFeeMonthly||[];
+  const asinRows=invAsin||[];
+  const[asinSearch,setAsinSearch]=useState('');
+  const[asinSort,setAsinSort]=useState('fba');
+  const[asinSortDir,setAsinSortDir]=useState(-1); // -1 desc, 1 asc
+
+  // Alerts derived from asin data
+  const invAlerts=useMemo(()=>{
+    const a=[];
+    const oos=asinRows.filter(r=>r.oos45&&r.fba>0);
+    const highFee=asinRows.filter(r=>r.storageFee>200).sort((a,b)=>b.storageFee-a.storageFee).slice(0,3);
+    const lowSt=invShop.filter(s=>s.st<0.02&&s.fba>0);
+    const aged=asinRows.filter(r=>r.aged>0).sort((a,b)=>b.aged-a.aged).slice(0,3);
+    const totalFee=d.storageFee||0;
+    if(totalFee>5000)a.push({s:'c',t:`Storage fee ${$2(totalFee)}/month — consider liquidating aged stock`});
+    else if(totalFee>0)a.push({s:'i',t:`Storage fee ${$2(totalFee)}/month`});
+    if(oos.length>0)a.push({s:'c',t:`${oos.length} ASINs at risk of OOS within 45 days: ${oos.slice(0,3).map(r=>r.asin).join(', ')}${oos.length>3?' …':''}`});
+    if(highFee.length>0)a.push({s:'w',t:`High storage fee ASINs: ${highFee.map(r=>r.asin+' ('+$2(r.storageFee)+')').join(' · ')}`});
+    if(aged.length>0)a.push({s:'w',t:`Aged stock (>90d): ${aged.map(r=>r.asin+' '+N(r.aged)+' units').join(' · ')}`});
+    if(lowSt.length>0)a.push({s:'w',t:`${lowSt.length} shops with sell-through <2%: ${lowSt.map(s=>s.s).join(', ')}`});
+    if(d.criticalSkus>0)a.push({s:'w',t:`${d.criticalSkus} critical SKUs ≤30 days of supply`});
+    if(!a.length)a.push({s:'i',t:'Inventory looks healthy — no critical alerts'});
+    return a;
+  },[asinRows,invShop,d]);
+
+  // Filtered + sorted ASIN table
+  const filteredAsin=useMemo(()=>{
+    let rows=asinRows;
+    const q=asinSearch.trim().toLowerCase();
+    if(q)rows=rows.filter(r=>r.asin.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)||r.sku.toLowerCase().includes(q));
+    return [...rows].sort((a,b)=>asinSortDir*((b[asinSort]||0)-(a[asinSort]||0)));
+  },[asinRows,asinSearch,asinSort,asinSortDir]);
+
+  const thSort=(k,label)=>{
+    const active=asinSort===k;
+    return<th onClick={()=>{if(active)setAsinSortDir(d=>-d);else{setAsinSort(k);setAsinSortDir(-1);}}} style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:active?t.primary:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,cursor:'pointer',whiteSpace:'nowrap',userSelect:'none'}}>
+      {label}{active?(asinSortDir===-1?' ↓':' ↑'):''}
+    </th>;
+  };
+
   return<div>
-    <Cd t={t} style={{padding:"10px 16px",marginBottom:14,borderLeft:"3px solid "+t.blue}}><div style={{fontSize:11,color:t.textSec}}>Latest inventory snapshot{d.snapshotDate?` — data from ${d.snapshotDate}`:""}.  No time filter needed.</div></Cd>
+    {/* Snapshot notice */}
+    <Cd t={t} style={{padding:"10px 16px",marginBottom:14,borderLeft:"3px solid "+t.blue}}>
+      <div style={{fontSize:11,color:t.textSec}}>Latest inventory snapshot{d.snapshotDate?` — data from ${d.snapshotDate}`:""}.  No time filter needed.</div>
+    </Cd>
+
+    {/* ① KPI cards */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}}>
-      <KpiCard title="FBA Stock" value={N(d.fbaStock||0)} icon="" t={t} tip={TIPS.fbaStock}/><KpiCard title="Available" value={N(d.availableInv||0)} t={t} tip={TIPS.invAvail}/><KpiCard title="Reserved" value={N(d.reserved||0)} t={t} tip={TIPS.invReserved}/><KpiCard title="Critical SKUs" value={N(d.criticalSkus||0)} t={t} tip={TIPS.invCritical}/><KpiCard title="Inbound" value={N(d.inbound||0)} t={t} tip={TIPS.invInbound}/><KpiCard title="Avg Days Supply" value={Math.round(d.avgDaysOfSupply||0)} icon="" t={t} tip={TIPS.invDaysSupply}/><KpiCard title="Storage Fee" value={$2(fee)} icon="" t={t} tip={TIPS.storageFee}/>
+      <KpiCard title="FBA Stock" value={N(d.fbaStock||0)} icon="" t={t} tip={TIPS.fbaStock}/>
+      <KpiCard title="Available" value={N(d.availableInv||0)} t={t} tip={TIPS.invAvail}/>
+      <KpiCard title="Reserved" value={N(d.reserved||0)} t={t} tip={TIPS.invReserved}/>
+      <KpiCard title="Inbound" value={N(d.inbound||0)} t={t} tip={TIPS.invInbound}/>
+      <KpiCard title="Critical SKUs" value={N(d.criticalSkus||0)} t={t} tip={TIPS.invCritical}/>
+      <KpiCard title="Avg Days Supply" value={Math.round(d.avgDaysOfSupply||0)} icon="" t={t} tip={TIPS.invDaysSupply}/>
+      <KpiCard title="Storage Fee" value={$2(fee)} icon="" t={t} tip={TIPS.storageFee}/>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>
-      <Sec title="Available Stock Trend" icon="" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={240}><AreaChart data={invTrend}><defs><linearGradient id="ig" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={.2}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textSec,fontSize:11}}/><YAxis tick={{fill:t.textSec,fontSize:11}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Area type="monotone" dataKey="v" name="Available" stroke={t.primary} fill="url(#ig)" strokeWidth={2}/></AreaChart></ResponsiveContainer></Cd></Sec>
-      <Sec title="Sell-Through & Days of Supply" icon="" t={t}><Cd t={t}><div style={{fontSize:10,color:t.textMuted,marginBottom:8}}>Sell-Through = Units Sold (30d) ÷ (Units Sold + FBA Stock) · Days of Supply = FBA Stock ÷ Avg Daily Sales</div><ResponsiveContainer width="100%" height={240}><BarChart data={invShop} barGap={3} barCategoryGap="18%"><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="s" tick={{fill:t.textSec,fontSize:11}} interval={0} angle={-20} textAnchor="end" height={50}/><YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:11}} tickFormatter={v=>Math.round(v*100)+"%"}/><YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:11}} tickFormatter={v=>v+"d"}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar yAxisId="l" dataKey="st" name="Sell-Through %" fill={t.green} radius={[3,3,0,0]}/><Bar yAxisId="r" dataKey="doh" name="Days of Supply" fill={t.orange} radius={[3,3,0,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
+
+    {/* ② Alerts */}
+    <div style={{marginBottom:16}}><Alerts t={t} alerts={invAlerts}/></div>
+
+    {/* ③ Charts row */}
+    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginBottom:14}}>
+      <Sec title="Available Stock Trend" icon="" t={t}>
+        <Cd t={t}><ResponsiveContainer width="100%" height={220}><AreaChart data={invTrend}><defs><linearGradient id="ig" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={.2}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="d" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor((invTrend||[]).length/8))}/><YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Area type="monotone" dataKey="v" name="Available" stroke={t.primary} fill="url(#ig)" strokeWidth={2}/></AreaChart></ResponsiveContainer></Cd>
+      </Sec>
+      <Sec title="Inventory Aging" icon="" t={t}>
+        <Cd t={t} style={{position:"relative"}}>
+          {(()=>{const over90=(d.age91_180||0)+(d.age181_270||0)+(d.age271_365||0)+(d.age365plus||0);return over90>0&&<div style={{position:"absolute",top:8,right:12,background:over90>50000?t.redBg:t.orangeBg,color:over90>50000?t.red:t.orange,padding:"3px 10px",borderRadius:8,fontSize:10,fontWeight:600,zIndex:1}}>90d+: {N(over90)} units</div>})()}
+          <ResponsiveContainer width="100%" height={220}><BarChart data={[{name:"0-90d",v:d.age0_90||0,fill:t.green},{name:"91-180d",v:d.age91_180||0,fill:t.orange},{name:"181-270d",v:d.age181_270||0,fill:t.orange},{name:"271-365d",v:d.age271_365||0,fill:t.red},{name:"365d+",v:d.age365plus||0,fill:t.red}]}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/><YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="v" name="Units" radius={[4,4,0,0]}>{[{fill:t.green},{fill:t.orange},{fill:t.orange},{fill:t.red},{fill:t.red}].map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer>
+        </Cd>
+      </Sec>
     </div>
+
+    {/* ④ Stock by Shop — expanded breakdown */}
+    <Sec title="Stock by Shop" icon="" t={t}>
+      <Cd t={t} style={{padding:0,overflow:'hidden'}}>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
+            <thead><tr>
+              {['Shop','FBA Stock','Available','Inbound','Reserved','Critical SKUs','Sell-Through','Days of Supply'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{[...invShop].sort((a,b)=>b.fba-a.fba).map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.s}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(Math.max(0,r.fba-r.res))}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.inb)}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',color:t.orange,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.res)}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.crit>0?<span style={{color:t.red,fontWeight:700}}>{r.crit}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.st<0.02?t.red:r.st<0.1?t.orange:t.green,fontWeight:600}}>{(r.st*100).toFixed(1)}%</td>
+              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.doh>90?t.orange:r.doh<20?t.red:t.text,fontWeight:600}}>{r.doh>0?r.doh+'d':'—'}</td>
+            </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </Cd>
+    </Sec>
+
+    {/* ⑤ ASIN Detail Table */}
+    <Sec title={"ASIN Stock Detail"+(asinRows.length>0?" ("+asinRows.length+" ASINs)":"")} icon="" t={t} style={{marginTop:14}}>
+      <Cd t={t} style={{padding:0,overflow:'hidden'}}>
+        {/* Search bar */}
+        <div style={{padding:'10px 14px',borderBottom:'1px solid '+t.divider,background:t.tableBg}}>
+          <input
+            value={asinSearch} onChange={e=>setAsinSearch(e.target.value)}
+            placeholder="Search ASIN / SKU / name..."
+            style={{width:'100%',padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',boxSizing:'border-box'}}
+          />
+        </div>
+        <div style={{overflowX:'auto',maxHeight:480,overflowY:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
+            <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
+              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>ASIN / Name</th>
+              <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>Shop</th>
+              {thSort('fba','FBA Stock')}
+              {thSort('available','Available')}
+              {thSort('inbound','Inbound')}
+              {thSort('reserved','Reserved')}
+              {thSort('daysLeft','Days Left')}
+              {thSort('storageFee','Storage Fee')}
+              {thSort('aged','Aged >90d')}
+              {thSort('stockValue','Stock Value')}
+            </tr></thead>
+            <tbody>{filteredAsin.length===0?<tr><td colSpan={10} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
+              const oos=r.oos45;
+              return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{background:oos?t.redBg+'55':'transparent'}}>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid '+t.divider}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    {oos&&<span title="OOS risk <45 days" style={{color:t.red,fontSize:10,fontWeight:700}}>⚠</span>}
+                    <AsinLink asin={r.asin} onClick={()=>{}} t={t}/>
+                  </div>
+                  {r.name&&<div style={{fontSize:10,color:t.textMuted,marginTop:1,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>}
+                  {r.sku&&<div style={{fontSize:9,color:t.textMuted}}>{r.sku}</div>}
+                </td>
+                <td style={{padding:'8px 12px',fontSize:12,color:t.textSec,borderBottom:'1px solid '+t.divider}}>{r.shop}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.available)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.inbound)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{N(r.reserved)}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,borderBottom:'1px solid '+t.divider,color:r.daysLeft>0&&r.daysLeft<=14?t.red:r.daysLeft<=45?t.orange:t.text}}>{r.daysLeft>0?r.daysLeft+'d':'—'}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.storageFee>200?t.red:r.storageFee>50?t.orange:t.text}}>{r.storageFee>0?$2(r.storageFee):'—'}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.aged>100?t.orange:t.text}}>{r.aged>0?N(r.aged):'—'}</td>
+                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.stockValue>0?$2(r.stockValue):'—'}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+        <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,background:t.tableBg}}>
+          {filteredAsin.length} of {asinRows.length} ASINs · <span style={{color:t.red}}>⚠ = OOS risk ≤45 days</span> · Click column header to sort
+        </div>
+      </Cd>
+    </Sec>
+
+    {/* ⑥ Storage fee history + sell-through chart */}
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
-      <Sec title="Inventory Aging" icon="" t={t}><Cd t={t} style={{position:"relative"}}>{(()=>{const over90=(d.age91_180||0)+(d.age181_270||0)+(d.age271_365||0)+(d.age365plus||0);return over90>0&&<div style={{position:"absolute",top:8,right:12,background:over90>50000?t.redBg:t.orangeBg,color:over90>50000?t.red:t.orange,padding:"4px 10px",borderRadius:8,fontSize:10,fontWeight:600,zIndex:1}}>90d+ stock: {N(over90)} units</div>})()}<ResponsiveContainer width="100%" height={220}><BarChart data={[{name:"0-90d",v:d.age0_90||0},{name:"91-180d",v:d.age91_180||0},{name:"181-270d",v:d.age181_270||0},{name:"271-365d",v:d.age271_365||0},{name:"365d+",v:d.age365plus||0}]}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="name" tick={{fill:t.textSec,fontSize:11}}/><YAxis tick={{fill:t.textSec,fontSize:11}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="v" name="Units" fill={t.orange} radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
-      <Sec title="Storage Fee History" icon="" t={t}><Cd t={t}>{feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{const prev=i>0?feeHist[i-1].fee:null;const chg=prev?((r.fee-prev)/Math.max(prev,1)*100):null;const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:t.text,borderBottom:"1px solid "+t.divider}}>{$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>})}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}</Cd></Sec>
+      <Sec title="Storage Fee History" icon="" t={t}>
+        <Cd t={t}>{feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{const prev=i>0?feeHist[i-1].fee:null;const chg=prev?((r.fee-prev)/Math.max(prev,1)*100):null;const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:t.text,borderBottom:"1px solid "+t.divider}}>{$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>})}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}</Cd>
+      </Sec>
+      <Sec title="Sell-Through & Days of Supply by Shop" icon="" t={t}>
+        <Cd t={t}><div style={{fontSize:10,color:t.textMuted,marginBottom:8}}>Sell-Through = Units Sold 30d ÷ (Sold + Stock) · Days of Supply = Stock ÷ Avg Daily Sales</div><ResponsiveContainer width="100%" height={220}><BarChart data={invShop} barGap={3} barCategoryGap="18%"><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="s" tick={{fill:t.textSec,fontSize:10}} interval={0} angle={-20} textAnchor="end" height={50}/><YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>Math.round(v*100)+"%"}/><YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v+"d"}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar yAxisId="l" dataKey="st" name="Sell-Through %" fill={t.green} radius={[3,3,0,0]}/><Bar yAxisId="r" dataKey="doh" name="Days of Supply" fill={t.orange} radius={[3,3,0,0]}/></BarChart></ResponsiveContainer></Cd>
+      </Sec>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr",gap:14,marginTop:14}}>
-      <Sec title="FBA Stock by Shop" icon="" t={t}><Cd t={t}><ResponsiveContainer width="100%" height={Math.max(220,invShop.length*32)}><BarChart data={[...invShop].sort((a,b)=>b.fba-a.fba)} layout="vertical" margin={{left:10,right:30}} barSize={14} barCategoryGap="20%"><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis type="number" tick={{fill:t.textSec,fontSize:11}} tickFormatter={N}/><YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:11}} width={90}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="fba" name="FBA Stock" fill={t.primary} radius={[0,4,4,0]}/></BarChart></ResponsiveContainer></Cd></Sec>
-    </div>
-    <div style={{marginTop:14}}><Alerts t={t} alerts={genInvAlerts(invShop,invData)}/></div>
   </div>;
 }
 
@@ -1534,6 +1677,7 @@ export default function App(){
   const[invShop,setInvShop]=useState([]);
   const[invTrend,setInvTrend]=useState([]);
   const[invFeeMonthly,setInvFeeMonthly]=useState([]);
+  const[invAsin,setInvAsin]=useState([]);
   const[planKpiState,setPlanKpiState]=useState({gp:{a:0,p:0},np:{a:0,p:0},rv:{a:0,p:0},ad:{a:0,p:0},un:{a:0,p:0},se:{a:0,p:0},im:{a:0,p:0},cr:{a:0,p:0},ct:{a:0,p:0}});
   const[monthPlanState,setMonthPlanState]=useState([]);
   const[asinPlanBkState,setAsinPlanBkState]=useState([]);
@@ -1605,6 +1749,7 @@ export default function App(){
           api("inventory/by-shop",{store}).then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
           api("inventory/stock-trend",{store}).then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))).catch(()=>{});
           api("inventory/storage-monthly",{store}).then(d=>setInvFeeMonthly(d||[])).catch(()=>{});
+          api("inventory/by-asin",{store}).then(d=>setInvAsin(d||[])).catch(()=>{});
         }
       }catch(e){console.error("INIT ERROR:",e)}
       setDbConnecting(false);
@@ -1667,6 +1812,7 @@ export default function App(){
       api("inventory/by-shop",{store:_st}).then(d=>{if(!cancelled)setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))}).catch(()=>{});
       api("inventory/stock-trend",{store:_st}).then(d=>{if(!cancelled)setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))}).catch(()=>{});
       api("inventory/storage-monthly",{store:_st}).then(d=>{if(!cancelled)setInvFeeMonthly(d||[])}).catch(()=>{});
+      api("inventory/by-asin",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvAsin(d||[])}).catch(()=>{});
     }
     if(!cancelled)setLoading(false);})();
     return()=>{cancelled=true};
@@ -1794,7 +1940,7 @@ export default function App(){
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
         {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={{...em,...execDetail}} sd={sd} ed={ed} prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob} splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}/>}
-        {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly}/>}
+        {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF}/>}
         {pg==="prod"&&<ProdPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
