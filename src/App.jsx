@@ -4,7 +4,7 @@ import { checkBackend, api, apiPost } from "./api.js";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Cell, ScatterChart, Scatter,
-  ZAxis, PieChart, Pie, ReferenceLine
+  ZAxis, PieChart, Pie, ReferenceLine, Brush
 } from "recharts";
 
 /* ═══════════ THEMES ═══════════ */
@@ -284,6 +284,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   /* ── DAILY TREND (combo: bars + lines) ── */
   const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:false});
   const[trendLines,setTrendLines]=useState({crPct:false,tacos:false});
+  const[trendZoom,setTrendZoom]=useState(0); // 0 = All
   const dailyChartData=fDaily.map(d=>({
     ...d,
     advCost:d.advCost||0,
@@ -481,32 +482,58 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
     </Cd>
 
     {/* ④ DAILY TREND */}
-    <Cd t={t} style={{marginBottom:16}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
-        <div style={{fontSize:13,fontWeight:700,color:t.text}}>Daily Trend</div>
-        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+    {(()=>{
+      const total=dailyChartData.length;
+      // Compute startIndex from trendZoom for Brush initial window
+      const brushStart=trendZoom>0?Math.max(0,total-trendZoom):0;
+      const brushEnd=Math.max(0,total-1);
+      const xInterval=Math.max(0,Math.floor(total/10));
+      return<Cd t={t} style={{marginBottom:16}}>
+        {/* Row 1: title + preset range buttons */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
+          <div style={{fontSize:13,fontWeight:700,color:t.text}}>Daily Trend</div>
+          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+            <span style={{fontSize:10,color:t.textMuted,marginRight:2}}>Zoom:</span>
+            {[{l:'7D',v:7},{l:'14D',v:14},{l:'30D',v:30},{l:'All',v:0}].map(r=>{
+              const active=trendZoom===r.v;
+              return<button key={r.v} onClick={()=>setTrendZoom(r.v)} style={{padding:'3px 9px',borderRadius:6,border:'1px solid '+(active?t.primary:t.inputBorder),background:active?t.primary:'transparent',color:active?'#fff':t.textMuted,fontSize:10,fontWeight:active?700:500,cursor:'pointer',transition:'all .12s'}}>{r.l}</button>;
+            })}
+          </div>
+        </div>
+        {/* Row 2: series toggles */}
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
           {[{k:'revenue',l:'Revenue',c:t.primary},{k:'netProfit',l:'Net Profit',c:t.green},{k:'advCost',l:'Ad Spend',c:t.orange}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
-          <div style={{width:1,background:t.divider}}/>
+          <div style={{width:1,background:t.divider,alignSelf:'stretch'}}/>
           {[{k:'crPct',l:'CR%',c:'#9B59B6'},{k:'tacos',l:'TACoS',c:'#E67E22'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
           {dailyLY&&dailyLY.length>0&&<button onClick={()=>setShowLY(!showLY)} style={{padding:'4px 10px',borderRadius:8,border:'1px dashed '+(showLY?LY_COLOR:t.inputBorder),background:showLY?LY_COLOR+'18':'transparent',color:showLY?LY_COLOR:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Last Year</button>}
         </div>
-      </div>
-      <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={dailyChartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
-          <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor(dailyChartData.length/10))}/>
-          <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
-          {(trendLines.crPct||trendLines.tacos)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']}/>}
-          <Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/>
-          {trendBars.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={t.primary} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-          {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill={t.green} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-          {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill={t.orange} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-          {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#9B59B6" strokeWidth={2} dot={false}/>}
-          {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#E67E22" strokeWidth={2} dot={false}/>}
-          {showLY&&dailyLY&&dailyLY.map((p,i)=>null)}
-        </ComposedChart>
-      </ResponsiveContainer>
-    </Cd>
+        <ResponsiveContainer width="100%" height={360}>
+          <ComposedChart data={dailyChartData} margin={{bottom:8}}>
+            <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
+            <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={xInterval}/>
+            <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+            {(trendLines.crPct||trendLines.tacos)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']}/>}
+            <Tooltip content={<CT t={t}/>}/>
+            <Legend wrapperStyle={{fontSize:10}}/>
+            {trendBars.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={t.primary} radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill={t.green} radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill={t.orange} radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#9B59B6" strokeWidth={2} dot={false}/>}
+            {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#E67E22" strokeWidth={2} dot={false}/>}
+            <Brush
+              dataKey="label"
+              startIndex={brushStart}
+              endIndex={brushEnd}
+              height={28}
+              stroke={t.inputBorder}
+              fill={t.tableBg}
+              travellerWidth={8}
+              onChange={()=>setTrendZoom(0)}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Cd>;
+    })()}
 
     {/* ⑤ SHOP SECTION */}
     <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1.6fr 0.4fr',gap:14,marginBottom:16}}>
