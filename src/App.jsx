@@ -175,6 +175,7 @@ function genInvAlerts(shops,invData){const a=[];const tFba=invData?.fbaStock||sh
 function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
+  const[showDetail,setShowDetail]=useState(false);
   const[shopView,setShopView]=useState('table');
   const[donutTab,setDonutTab]=useState('rev');
   const[showLY,setShowLY]=useState(false);
@@ -277,7 +278,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   /* ── SHOP SECTION ── */
   const SHOP_COLORS_REV=[t.primary,'#4C6EF5','#748FFC','#91A7FF','#BAC8FF','#DEE2FF','#EDF2FF'];
   const SHOP_COLORS_ADS=['#FF922B','#FFA94D','#FFD43B','#FFE066','#FFF3BF','#FFEC99','#FFF8DB'];
-  const PROFIT_PALETTE=['#12b886','#4c6ef5','#f76707','#7048e8','#e67700','#0ca678','#c92a2a','#1971c2'];
+  const PROFIT_PALETTE=['#0ca678','#12b886','#20c997','#38d9a9','#099268','#087f5b','#63e6be','#96f2d7'];
+  const LOSS_PALETTE=['#c92a2a','#a61e1e','#e03131','#862e2e'];
   const SHOP_COLORS_PROFIT=fShop.map((s,i)=>(s.n||0)<0?t.red:PROFIT_PALETTE[i%PROFIT_PALETTE.length]);
   const donutColors={rev:SHOP_COLORS_REV,ads:SHOP_COLORS_ADS,profit:SHOP_COLORS_PROFIT};
   const tRev=fShop.reduce((s,x)=>s+x.r,0);
@@ -286,7 +288,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   const donutData={
     rev:fShop.slice(0,8).map((s,i)=>({name:s.s,value:s.r,fill:SHOP_COLORS_REV[i%7]})),
     ads:fShop.slice(0,8).map((s,i)=>({name:s.s,value:Math.abs(s.n_ads||0),fill:SHOP_COLORS_ADS[i%7]})),
-    profit:fShop.slice(0,8).map((s,i)=>({name:s.s,value:s.n||0,fill:(s.n||0)<0?t.red:PROFIT_PALETTE[i%PROFIT_PALETTE.length]})),
+    profit:(()=>{let pi=0,li=0;return fShop.slice(0,8).map(s=>{if((s.n||0)<0){const c=LOSS_PALETTE[li%LOSS_PALETTE.length];li++;return{name:s.s,value:Math.abs(s.n||0),fill:c};}else{const c=PROFIT_PALETTE[pi%PROFIT_PALETTE.length];pi++;return{name:s.s,value:s.n||0,fill:c};}});})(),
   };
   if(fShop.length>8){
     const rest=fShop.slice(8);
@@ -342,11 +344,13 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   /* ═══ RENDER ═══ */
   return<div>
 
-    {/* ① SELLERBOARD SUMMARY */}
-    <Cd t={t} style={{borderLeft:'4px solid '+t.primary,marginBottom:16,padding:'14px 18px'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+    {/* ① SELLERBOARD SUMMARY + DETAIL DRAWER BUTTON */}
+    <Cd t={t} style={{borderLeft:'4px solid '+t.primary,marginBottom:showDetail?0:16,borderRadius:showDetail?'12px 12px 0 0':'12px',padding:'14px 18px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
         <div><div style={{fontSize:12,fontWeight:800,color:t.text,letterSpacing:.5}}>SELLERBOARD SUMMARY</div><div style={{fontSize:10,color:t.textMuted,marginTop:1}}>{fmtD(sd)} — {fmtD(ed)}</div></div>
-        {splyEm&&<span style={{fontSize:9,color:t.textMuted,fontWeight:600}}>vs Same Period Last Year shown below</span>}
+        <button onClick={()=>setShowDetail(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:showDetail?t.primary:t.primaryGhost,border:'1px solid '+(showDetail?t.primary:t.primary+'44'),color:showDetail?'#fff':t.primary,borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s',flexShrink:0}}>
+          Detail metrics <span style={{fontSize:10,transition:'transform .2s',display:'inline-block',transform:showDetail?'rotate(180deg)':'none'}}>▾</span>
+        </button>
       </div>
       <div style={{display:'grid',gridTemplateColumns:mob?'repeat(3,1fr)':'repeat(7,1fr)',gap:mob?10:5}}>
         {smItems.map((m,i)=>{
@@ -361,39 +365,12 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
       </div>
     </Cd>
 
-    {/* ② SUMMARY METRICS — 4 KPI CARDS + SELECTOR */}
-    <Cd t={t} style={{marginBottom:16,padding:'16px 18px'}}>
-      {/* Selected KPI cards — auto-wrap, no cap */}
-      {selPillData.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:14}}>
-        {selPillData.map((p,i)=>{
-          const chgVal=p.ch();
-          const isNP=p.id==='NET PROFIT';
-          const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
-          return<div key={p.id} style={{flex:'1 1 180px',minWidth:160,background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
-            <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:6}}>{p.label}</div>
-            <div style={{fontSize:20,fontWeight:800,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?5:0}}>{p.fmtV(p.val)}</div>
-            {chgVal!=null&&<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red}}>{chgVal>=0?'↑':'↓'}{Math.abs(chgVal).toFixed(1)}% <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}>vs prev</span></div>}
-            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:12,lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Remove">✕</button>
-          </div>;
-        })}
-      </div>}
-      {/* All metrics as small pills to select */}
-      <div style={{borderTop:'1px solid '+t.divider,paddingTop:10}}>
-        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Click to add/remove — select any number of metrics:</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-          {ALL_PILLS.map(p=>{
-            const sel=selMetrics.includes(p.id);
-            return<button key={p.id} onClick={()=>togglePill(p.id)} style={{padding:'5px 11px',borderRadius:20,border:'1px solid '+(sel?t.primary:t.inputBorder),background:sel?t.primary:'transparent',color:sel?'#fff':t.textSec,fontSize:11,fontWeight:sel?600:400,cursor:'pointer',transition:'all .15s',outline:'none'}}>
-              {p.label}
-            </button>;
-          })}
-        </div>
-      </div>
-    </Cd>
-
-    {/* ③ DETAILED METRICS */}
-    <Cd t={t} style={{marginBottom:16,padding:0,overflow:'hidden'}}>
-      <div style={{padding:'12px 18px',borderBottom:'1px solid '+t.divider,fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:1}}>Detailed Metrics</div>
+    {/* ② DETAIL METRICS — collapsible drawer */}
+    {showDetail&&<Cd t={t} style={{marginBottom:16,padding:0,overflow:'hidden',borderTop:'none',borderRadius:'0 0 12px 12px',borderTopColor:'transparent'}}>
+      <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
+        <thead><tr>
+          {['Metric','Value','vs Prev Period'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
+        </tr></thead>
       <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
         <thead><tr>
           {['Metric','Value','vs Prev Period'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
@@ -430,7 +407,32 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
           </React.Fragment>;
         })}</tbody>
       </table>
-    </Cd>
+    </Cd>}
+
+    {/* ③ KPI PILLS — Summary Metrics cards */}
+    <Cd t={t} style={{marginBottom:16,padding:'16px 18px'}}>
+      {selPillData.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:14}}>
+        {selPillData.map((p,i)=>{
+          const chgVal=p.ch();
+          const isNP=p.id==='NET PROFIT';
+          const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
+          return<div key={p.id} style={{flex:'1 1 180px',minWidth:160,background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
+            <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:6}}>{p.label}</div>
+            <div style={{fontSize:20,fontWeight:800,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?5:0}}>{p.fmtV(p.val)}</div>
+            {chgVal!=null&&<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red}}>{chgVal>=0?'↑':'↓'}{Math.abs(chgVal).toFixed(1)}% <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}>vs prev</span></div>}
+            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:12,lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Remove">✕</button>
+          </div>;
+        })}
+      </div>}
+      <div style={{borderTop:selPillData.length?'1px solid '+t.divider:'none',paddingTop:selPillData.length?10:0}}>
+        <div style={{fontSize:10,color:t.textMuted,fontWeight:600,marginBottom:8}}>Add/remove metrics:</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+          {ALL_PILLS.map(p=>{
+            const sel=selMetrics.includes(p.id);
+            return<button key={p.id} onClick={()=>togglePill(p.id)} style={{padding:'5px 11px',borderRadius:20,border:'1px solid '+(sel?t.primary:t.inputBorder),background:sel?t.primary:'transparent',color:sel?'#fff':t.textSec,fontSize:11,fontWeight:sel?600:400,cursor:'pointer',transition:'all .15s',outline:'none'}}>{p.label}</button>;
+          })}
+        </div>
+      </div>
 
     {/* ④ DAILY TREND */}
     <Cd t={t} style={{marginBottom:16}}>
@@ -1559,7 +1561,7 @@ export default function App(){
       ]);
       if(cancelled)return;
       setEm(summary&&summary.sales!=null?summary:EMPTY_EM);
-      setFDaily(arr(daily).map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+"T12:00:00");const label=isNaN(dt)?ds:MS[dt.getMonth()]+" "+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0}}));
+      setFDaily(arr(daily).map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+"T12:00:00");const label=isNaN(dt)?ds:MS[dt.getMonth()]+" "+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0,advCost:parseFloat(r.advCost)||0,sessions:parseInt(r.sessions)||0}}));
       // Batch 2: secondary data + prev period (non-blocking)
       const[prev,asins,shops,team]=await Promise.all([
         api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null),
