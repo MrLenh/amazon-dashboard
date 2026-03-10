@@ -203,19 +203,19 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
 
   /* ── SELLERBOARD SUMMARY — chip definitions ── */
   const SB_ALL={
-    sales:{l:'Sales',v:$2(em.sales),k:'sales',profit:false},
-    orders:{l:'Orders',v:N(em.orders),k:'orders'},
-    units:{l:'Units',v:N(em.units),k:'units'},
-    refunds:{l:'Refunds',v:N(em.refunds),k:'refunds'},
-    advCost:{l:'Adv. Cost',v:$2(Math.abs(em.advCost||0)),k:'advCost'},
-    estPayout:{l:'Est. Payout',v:$2(em.estPayout),k:'estPayout'},
-    netProfit:{l:'Net Profit',v:$2(em.netProfit),k:'netProfit',profit:true},
-    tacos:{l:'TACoS',v:tacos.toFixed(2)+'%',k:'_tacos'},
-    margin:{l:'Margin',v:(em.margin||0).toFixed(2)+'%',k:'margin'},
-    sessions:{l:'Sessions',v:N(Math.round(em.sessions||0)),k:'sessions'},
-    cr:{l:'CR%',v:cr.toFixed(2)+'%',k:'_cr'},
-    aov:{l:'AOV',v:$2(aov),k:'_aov'},
-    shippingCost:{l:'Shipping',v:$2(Math.abs(em.shippingCost||0)),k:'shippingCost'},
+    sales:     {l:'Sales',     v:$2(em.sales),                       k:'sales',    profit:false, mw:148},
+    orders:    {l:'Orders',    v:N(em.orders),                       k:'orders',                 mw:105},
+    units:     {l:'Units',     v:N(em.units),                        k:'units',                  mw:100},
+    refunds:   {l:'Refunds',   v:N(em.refunds),                      k:'refunds',                mw:95},
+    advCost:   {l:'Adv. Cost', v:$2(Math.abs(em.advCost||0)),        k:'advCost',                mw:132},
+    estPayout: {l:'Est. Payout',v:$2(em.estPayout),                  k:'estPayout',              mw:148},
+    netProfit: {l:'Net Profit', v:$2(em.netProfit),                  k:'netProfit', profit:true, mw:132},
+    tacos:     {l:'TACoS',     v:tacos.toFixed(2)+'%',               k:'_tacos',   isPct:true, ppDiff:prevEm?tacos-prevTacos:null, reverse:true, mw:95},
+    margin:    {l:'Margin',    v:(em.margin||0).toFixed(2)+'%',      k:'margin',   isPct:true, ppDiff:prevEm?(em.margin||0)-(prevEm.margin||0):null, mw:95},
+    sessions:  {l:'Sessions',  v:N(Math.round(em.sessions||0)),      k:'sessions',               mw:112},
+    cr:        {l:'CR%',       v:cr.toFixed(2)+'%',                  k:'_cr',      isPct:true, ppDiff:prevEm?cr-prevCr:null, mw:90},
+    aov:       {l:'AOV',       v:$2(aov),                            k:'_aov',                   mw:110},
+    shippingCost:{l:'Shipping', v:$2(Math.abs(em.shippingCost||0)),  k:'shippingCost',            mw:118},
   };
   const sbRemove=key=>{if(sbVisible.length<=1)return;setSbVisible(prev=>prev.filter(k=>k!==key))};
   const sbAdd=key=>{if(!sbVisible.includes(key))setSbVisible(prev=>[...prev,key])};
@@ -382,11 +382,29 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
           const m=SB_ALL[key];if(!m)return null;
           const pv=ch(m.k);
           const pvLabel=prevPeriod&&prevPeriod.s?prevPeriod.s+' – '+prevPeriod.e:'prev period';
-          return<div key={key} style={{display:'flex',alignItems:'center',gap:8,background:t.tableBg,border:'1px solid '+t.cardBorder,borderRadius:10,padding:'8px 10px',transition:'border-color .15s',minWidth:0}}>
+          // For % metrics: show absolute pp diff; for others: show % change
+          const isNegGood=m.reverse; // TACoS: lower is better
+          let changeEl=null;
+          if(m.isPct&&m.ppDiff!=null){
+            const pp=m.ppDiff;
+            const good=isNegGood?pp<=0:pp>=0;
+            changeEl=<div title={'vs '+pvLabel} style={{fontSize:10,fontWeight:600,color:good?t.green:t.red,marginTop:3,cursor:'help'}}>
+              {pp>=0?'+':''}{pp.toFixed(2)}pp <span style={{color:t.textMuted,fontWeight:400,fontSize:9}}>prev</span>
+            </div>;
+          } else if(pv!=null){
+            const good=m.reverse?pv<=0:pv>=0;
+            changeEl=<div title={'vs '+pvLabel} style={{fontSize:10,fontWeight:600,color:good?t.green:t.red,marginTop:3,cursor:'help'}}>
+              {pv>=0?'↑':'↓'}{Math.abs(pv).toFixed(1)}% <span style={{color:t.textMuted,fontWeight:400,fontSize:9}}>prev</span>
+            </div>;
+          } else {
+            changeEl=<div style={{fontSize:10,color:t.textMuted,marginTop:3}}>—</div>;
+          }
+          const valColor=m.profit?(em.netProfit>=0?t.green:t.red):t.text;
+          return<div key={key} style={{display:'flex',alignItems:'center',gap:8,background:t.tableBg,border:'1px solid '+t.cardBorder,borderRadius:10,padding:'9px 11px',transition:'border-color .15s',minWidth:m.mw||95,flex:'0 0 auto'}}>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.7,marginBottom:3}}>{m.l}</div>
-              <div style={{fontSize:15,fontWeight:700,color:m.profit?(em.netProfit>=0?t.green:t.red):t.text,fontFamily:'monospace',lineHeight:1,whiteSpace:'nowrap'}}>{m.v}</div>
-              {pv!=null?<div title={'vs '+pvLabel} style={{fontSize:10,fontWeight:600,color:pv>=0?t.green:t.red,marginTop:3,cursor:'help'}}>{pv>=0?'↑':'↓'}{Math.abs(pv).toFixed(1)}% <span style={{color:t.textMuted,fontWeight:400,fontSize:9}}>prev</span></div>:<div style={{fontSize:10,color:t.textMuted,marginTop:3}}>—</div>}
+              <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.8,marginBottom:4}}>{m.l}</div>
+              <div style={{fontSize:16,fontWeight:600,color:valColor,fontFamily:"'Georgia','Times New Roman',serif",lineHeight:1,whiteSpace:'nowrap',letterSpacing:-.2}}>{m.v}</div>
+              {changeEl}
             </div>
             <button onClick={()=>sbRemove(key)} title="Remove" style={{width:17,height:17,borderRadius:'50%',border:'1px solid '+t.inputBorder,background:t.card,color:t.textMuted,fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,lineHeight:1,transition:'all .12s',padding:0}}
               onMouseEnter={e=>{e.currentTarget.style.background='#e53e3e';e.currentTarget.style.borderColor='#e53e3e';e.currentTarget.style.color='#fff';}}
