@@ -371,10 +371,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
         <thead><tr>
           {['Metric','Value','vs Prev Period'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
         </tr></thead>
-      <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13}}>
-        <thead><tr>
-          {['Metric','Value','vs Prev Period'].map((h,i)=><th key={i} style={{padding:'10px 16px',textAlign:i>=1?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>)}
-        </tr></thead>
         <tbody>{DETAIL_ROWS.map((row,i)=>{
           const hasSub=row.sub&&row.sub.length>0;const isExp=expandedRows.has(row.id);
           // Compute vs Prev Period using pvk
@@ -433,6 +429,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
           })}
         </div>
       </div>
+    </Cd>
 
     {/* ④ DAILY TREND */}
     <Cd t={t} style={{marginBottom:16}}>
