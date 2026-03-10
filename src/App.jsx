@@ -533,8 +533,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
           const isNP=p.id==='NET PROFIT';
           const isIsPP=(p.id==='MARGIN');
           const valColor=isNP?(em.netProfit>=0?t.green:t.red):t.text;
-          // Build donut slices from fAsin
-          const donutSlices=useMemo?null:(()=>{})(); // can't use hooks here, compute inline
           const asinSlices=(()=>{
             if(!p.asinKey||!fAsin||fAsin.length===0)return[];
             const sorted=[...fAsin].filter(a=>Math.abs(a[p.asinKey]||0)>0).sort((a,b)=>Math.abs(b[p.asinKey])-Math.abs(a[p.asinKey]));
@@ -545,18 +543,28 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
             if(restVal>0)slices.push({label:'Others',value:restVal,fmtV:p.fmtV});
             return slices;
           })();
-          return<div key={p.id} style={{flex:'1 1 195px',minWidth:175,background:t.primaryGhost,borderRadius:12,padding:'14px 16px',border:'2px solid '+t.primary+'44',position:'relative'}}>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:6}}>{p.label}<Tip text={''} t={t}/></div>
-                <div style={{fontSize:22,fontWeight:700,color:valColor,lineHeight:1.1,marginBottom:chgVal!=null?5:0,fontFamily:"'Georgia','Times New Roman',serif",letterSpacing:-.3}}>{p.fmtV(p.val)}</div>
-                {chgVal!=null&&<div style={{fontSize:11,fontWeight:600,color:(isIsPP?chgVal>=0:chgVal>=0)?t.green:t.red}}>
-                  {isIsPP?(chgVal>=0?'+':'')+chgVal.toFixed(2)+'pp':(chgVal>=0?'↑':'↓')+Math.abs(chgVal).toFixed(1)+'%'} <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}>vs prev</span>
-                </div>}
-              </div>
-              {asinSlices.length>0&&<MiniDonut slices={asinSlices} t={t} size={72}/>}
+          const hasDonut=asinSlices.length>0;
+          return<div key={p.id} style={{flex:'1 1 200px',minWidth:185,background:t.primaryGhost,borderRadius:12,padding:'14px 16px 12px 16px',border:'2px solid '+t.primary+'44',position:'relative',overflow:'hidden'}}>
+            {/* top row: label + X */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,marginRight:hasDonut?64:18}}>
+              <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,lineHeight:1}}>{p.label}</div>
             </div>
-            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:12,lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Remove">✕</button>
+            {/* value — has right padding so donut never overlaps */}
+            <div style={{paddingRight:hasDonut?68:0}}>
+              <div style={{fontSize:22,fontWeight:700,color:valColor,lineHeight:1,marginBottom:5,fontFamily:"'Georgia','Times New Roman',serif",letterSpacing:-.3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.fmtV(p.val)}</div>
+              {chgVal!=null
+                ?<div style={{fontSize:11,fontWeight:600,color:chgVal>=0?t.green:t.red,whiteSpace:'nowrap'}}>
+                    {isIsPP?(chgVal>=0?'+':'')+chgVal.toFixed(2)+'pp':(chgVal>=0?'↑':'↓')+Math.abs(chgVal).toFixed(1)+'%'}
+                    <span style={{fontWeight:400,color:t.textMuted,fontSize:10}}> vs prev</span>
+                  </div>
+                :<div style={{fontSize:10,color:t.textMuted}}>—</div>}
+            </div>
+            {/* donut — absolutely positioned right side, vertically centered */}
+            {hasDonut&&<div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
+              <MiniDonut slices={asinSlices} t={t} size={62}/>
+            </div>}
+            {/* X button top-right, above donut */}
+            <button onClick={()=>togglePill(p.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',color:t.textMuted,fontSize:11,lineHeight:1,padding:'2px 4px',borderRadius:4,zIndex:2}} title="Remove">✕</button>
           </div>;
         })}
       </div>}
