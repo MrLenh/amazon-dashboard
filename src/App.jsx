@@ -285,6 +285,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:false});
   const[trendLines,setTrendLines]=useState({crPct:false,tacos:false});
   const[trendZoom,setTrendZoom]=useState(0); // 0 = All
+  const[showBrush,setShowBrush]=useState(false);
   const dailyChartData=fDaily.map(d=>({
     ...d,
     advCost:d.advCost||0,
@@ -498,6 +499,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
               const active=trendZoom===r.v;
               return<button key={r.v} onClick={()=>setTrendZoom(r.v)} style={{padding:'3px 9px',borderRadius:6,border:'1px solid '+(active?t.primary:t.inputBorder),background:active?t.primary:'transparent',color:active?'#fff':t.textMuted,fontSize:10,fontWeight:active?700:500,cursor:'pointer',transition:'all .12s'}}>{r.l}</button>;
             })}
+            <div style={{width:1,background:t.divider,height:16,alignSelf:'center'}}/>
+            <button onClick={()=>setShowBrush(v=>!v)} title={showBrush?'Hide slicer':'Show slicer'} style={{padding:'3px 9px',borderRadius:6,border:'1px solid '+(showBrush?t.primary:t.inputBorder),background:showBrush?t.primaryGhost:'transparent',color:showBrush?t.primary:t.textMuted,fontSize:10,fontWeight:showBrush?700:500,cursor:'pointer',display:'flex',alignItems:'center',gap:4,transition:'all .12s'}}>
+              <span style={{fontSize:11}}>⇔</span> Slicer
+            </button>
           </div>
         </div>
         {/* Row 2: series toggles */}
@@ -507,7 +512,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
           {[{k:'crPct',l:'CR%',c:'#9B59B6'},{k:'tacos',l:'TACoS',c:'#E67E22'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
           {dailyLY&&dailyLY.length>0&&<button onClick={()=>setShowLY(!showLY)} style={{padding:'4px 10px',borderRadius:8,border:'1px dashed '+(showLY?LY_COLOR:t.inputBorder),background:showLY?LY_COLOR+'18':'transparent',color:showLY?LY_COLOR:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Last Year</button>}
         </div>
-        <ResponsiveContainer width="100%" height={360}>
+        <ResponsiveContainer width="100%" height={showBrush?400:440}>
           <ComposedChart data={dailyChartData} margin={{bottom:8}}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={xInterval}/>
@@ -520,7 +525,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
             {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill={t.orange} radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#9B59B6" strokeWidth={2} dot={false}/>}
             {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#E67E22" strokeWidth={2} dot={false}/>}
-            <Brush
+            {showBrush&&<Brush
               dataKey="label"
               startIndex={brushStart}
               endIndex={brushEnd}
@@ -529,7 +534,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
               fill={t.tableBg}
               travellerWidth={8}
               onChange={()=>setTrendZoom(0)}
-            />
+            />}
           </ComposedChart>
         </ResponsiveContainer>
       </Cd>;
