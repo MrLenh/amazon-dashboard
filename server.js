@@ -514,6 +514,7 @@ app.get('/api/inventory/by-shop', async (req, res) => {
       return {
         shop: shopMap[aid] || `Account ${aid}`,
         fbaStock: fba,
+        available: parseInt(invRow.avail) || 0,
         inbound: parseInt(invRow.inb) || 0,
         reserved: parseInt(invRow.res) || 0,
         criticalSkus: parseInt(invRow.crit) || 0,
