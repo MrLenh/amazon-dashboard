@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
-const VER = 'v4.5-2026-03-09';
+const VER = 'v4.5-2026-03-11';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -23,18 +23,66 @@ try {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'expeditee',
-    waitForConnections: true, connectionLimit: 10, queueLimit: 0,
+    waitForConnections: true, connectionLimit: 20, queueLimit: 50,
     connectTimeout: 10000,
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
   });
   console.log('✅ MySQL pool created');
 } catch (e) { console.warn('⚠️ MySQL pool failed:', e.message); }
 
-async function q(sql, params = [], timeoutMs = 30000) {
+/* ═══════════ QUERY CACHE (TTL 2 min) ═══════════ */
+const _qcache = new Map();
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+function cacheKey(sql, params) { return sql.replace(/\s+/g,' ').trim() + '|' + JSON.stringify(params); }
+function cacheGet(key) {
+  const e = _qcache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.ts > CACHE_TTL) { _qcache.delete(key); return null; }
+  return e.v;
+}
+function cacheSet(key, v) {
+  if (_qcache.size > 500) { // evict oldest
+    const first = _qcache.keys().next().value;
+    _qcache.delete(first);
+  }
+  _qcache.set(key, { v, ts: Date.now() });
+}
+// Cached query wrapper — only caches SELECT statements
+async function qc(sql, params = [], timeoutMs = 45000) {
+  const key = cacheKey(sql, params);
+  const hit = cacheGet(key);
+  if (hit) return hit;
+  const rows = await q(sql, params, timeoutMs);
+  if (sql.trimStart().toUpperCase().startsWith('SELECT')) cacheSet(key, rows);
+  return rows;
+}
+
+async function q(sql, params = [], timeoutMs = 45000) {
   if (!pool) throw new Error('Database not connected');
-  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error(`Query timeout ${timeoutMs/1000}s`)), timeoutMs));
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error(`signal timed out`)), timeoutMs));
   return Promise.race([pool.execute(sql, params).then(([rows]) => rows), timeout]);
 }
+
+/* ═══════════ BOOT: create indexes if missing ═══════════ */
+async function ensureIndexes() {
+  if (!pool) return;
+  const idxSQL = [
+    // seller_board_sales — main table for exec/summary
+    `ALTER TABLE seller_board_sales ADD INDEX IF NOT EXISTS idx_sbs_date_acc (date, accountId)`,
+    `ALTER TABLE seller_board_sales ADD INDEX IF NOT EXISTS idx_sbs_acc_date (accountId, date)`,
+    // seller_board_product — used for ASIN/team/shops queries
+    `ALTER TABLE seller_board_product ADD INDEX IF NOT EXISTS idx_sbp_date_acc (date, accountId)`,
+    `ALTER TABLE seller_board_product ADD INDEX IF NOT EXISTS idx_sbp_asin (asin)`,
+    // fba_iventory_planning — inventory queries
+    `ALTER TABLE fba_iventory_planning ADD INDEX IF NOT EXISTS idx_inv_date_acc (date, accountId)`,
+  ];
+  for (const sql of idxSQL) {
+    try { await q(sql, [], 30000); console.log('✅ Index:', sql.match(/idx_\w+/)?.[0]); }
+    catch(e) { console.warn('⚠️ Index skip:', sql.match(/idx_\w+/)?.[0], '-', e.message.slice(0,60)); }
+  }
+}
+// Run index creation in background after startup
+setTimeout(() => ensureIndexes(), 3000);
 
 /* ═══════════ SALES TABLE ═══════════ */
 function salesFrom(alias = 'sc') { return `seller_board_sales ${alias}`; }
@@ -147,7 +195,7 @@ app.get('/api/exec/summary', async (req, res) => {
     let rows, cogsVal = 0;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
-      rows = await q(`SELECT SUM(${P_SALES}) as sales, SUM(${P_UNITS}) as units, 0 as orders,
+      rows = await qc(`SELECT SUM(${P_SALES}) as sales, SUM(${P_UNITS}) as units, 0 as orders,
         SUM(COALESCE(p.refunds,0)) as refunds, SUM(${P_ADS}) as advCost,
         0 as shippingCost, 0 as refundCost,
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
@@ -156,7 +204,7 @@ app.get('/api/exec/summary', async (req, res) => {
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
-      rows = await q(`SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
+      rows = await qc(`SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
         SUM(COALESCE(sc.refunds,0)) as refunds, SUM(${SC_ADS}) as advCost,
         SUM(COALESCE(sc.shipping,0)) as shippingCost, SUM(COALESCE(sc.refundCost,0)) as refundCost,
         SUM(COALESCE(sc.amazonFees,0)) as amazonFees,
@@ -167,7 +215,7 @@ app.get('/api/exec/summary', async (req, res) => {
       try {
         let cw = 'WHERE p.date BETWEEN ? AND ?'; const cp = [s, e];
         if (accId) { cw += ' AND p.accountId = ?'; cp.push(accId); }
-        const cr = await q(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp);
+        const cr = await qc(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp);
         cogsVal = parseFloat(cr[0]?.cogs) || 0;
       } catch(ce) {}
     }
@@ -195,7 +243,7 @@ app.get('/api/exec/daily', async (req, res) => {
     let rows;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
-      rows = await q(`SELECT p.date,
+      rows = await qc(`SELECT p.date,
         SUM(${P_SALES}) as revenue,
         SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units,
@@ -204,7 +252,7 @@ app.get('/api/exec/daily', async (req, res) => {
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
-      rows = await q(`SELECT sc.date,
+      rows = await qc(`SELECT sc.date,
         SUM(${SC_SALES}) as revenue,
         SUM(COALESCE(sc.netProfit,0)) as netProfit,
         SUM(${SC_UNITS}) as units,
@@ -232,7 +280,7 @@ app.get('/api/product/asins', async (req, res) => {
     const accId = await storeToAccId(store);
     const f = pWhere(s, e, accId, seller, af);
     const shopMap = await getShopMap();
-    const rows = await q(`SELECT p.asin, p.accountId, a.seller,
+    const rows = await qc(`SELECT p.asin, p.accountId, a.seller,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(COALESCE(p.sessions,0)) as sessions, AVG(COALESCE(p.unitSessionPercentage,0)) as cr
@@ -257,28 +305,28 @@ app.get('/api/shops', async (req, res) => {
     let rows;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
-      rows = await q(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
+      rows = await qc(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units, 0 as orders
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p);
     } else {
       const f = scWhere(s, e, accId);
-      rows = await q(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
+      rows = await qc(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
         SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders
         FROM ${salesFrom()} ${f.w} GROUP BY sc.accountId ORDER BY revenue DESC`, f.p, 45000);
     }
     let stockMap = {};
     try {
       // seller_board_stock is a snapshot table (no date column) — query all records
-      (await q('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId'))
+      (await qc('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId'))
         .forEach(s => { stockMap[s.accountId] = { fba: parseInt(s.fba)||0, sv: parseFloat(s.sv)||0 }; });
     } catch (e) {
-      try { (await q('SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as fba FROM fba_iventory_planning f JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate GROUP BY f.accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
+      try { (await qc('SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as fba FROM fba_iventory_planning f JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate GROUP BY f.accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
     }
     // Ads spend per shop from seller_board_product (always needed for shop-level ads)
     let adsMap = {}; // { accountId: { ads, gp } }
     try {
       const pF2 = pWhere(s, e, accId, null, null);
-      const adsRows = await q(`SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
+      const adsRows = await qc(`SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF2.w} GROUP BY p.accountId`, pF2.p, 45000);
       adsRows.forEach(r => { adsMap[r.accountId] = { ads: parseFloat(r.ads)||0, gp: parseFloat(r.gp)||0 }; });
     } catch(ea) { console.warn('shops ads query:', ea.message); }
@@ -287,7 +335,7 @@ app.get('/api/shops', async (req, res) => {
     let planMap = {}; // { accountId: { gp, rv, ad, un } }
     try {
       const yr = new Date().getFullYear();
-      const planRows = await q(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
+      const planRows = await qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
         FROM asin_plan ap
         JOIN (SELECT DISTINCT asin, accountId FROM seller_board_product WHERE YEAR(date)=?) p
           ON ap.asin COLLATE utf8mb4_0900_ai_ci = p.asin
@@ -326,7 +374,7 @@ app.get('/api/team', async (req, res) => {
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
     if (accId) { w += ' AND p.accountId = ?'; params.push(accId); }
     if (seller && seller !== 'All') { w += " AND COALESCE(NULLIF(a.seller,''),'Unassigned') = ?"; params.push(seller); }
-    const rows = await q(`SELECT COALESCE(NULLIF(a.seller,''),'Unassigned') as seller,
+    const rows = await qc(`SELECT COALESCE(NULLIF(a.seller,''),'Unassigned') as seller,
       SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue,
       SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(COALESCE(p.unitsOrganic,0)+COALESCE(p.unitsPPC,0)) as units,
@@ -355,11 +403,11 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       let sw = 'WHERE 1=1';
       const sp = [];
       if (accId) { sw += ' AND accountId = ?'; sp.push(accId); }
-      const sr = await q(`SELECT SUM(FBAStock) as fba FROM seller_board_stock ${sw}`, sp);
+      const sr = await qc(`SELECT SUM(FBAStock) as fba FROM seller_board_stock ${sw}`, sp);
       fbaFromStock = parseInt(sr[0]?.fba) || 0;
     } catch (e) { /* seller_board_stock may not exist */ }
 
-    const rows = await q(`SELECT
+    const rows = await qc(`SELECT
       MAX(f.date) as snapshotDate,
       MIN(f.date) as oldestDate,
       SUM(GREATEST(CAST(f.available AS SIGNED), 0)) as availableInv,
