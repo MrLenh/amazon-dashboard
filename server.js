@@ -272,7 +272,7 @@ app.get('/api/shops', async (req, res) => {
       (await q('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId'))
         .forEach(s => { stockMap[s.accountId] = { fba: parseInt(s.fba)||0, sv: parseFloat(s.sv)||0 }; });
     } catch (e) {
-      try { (await q('SELECT accountId, SUM(CAST(available AS SIGNED)) as fba FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning) GROUP BY accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
+      try { (await q('SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as fba FROM fba_iventory_planning f JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate GROUP BY f.accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
     }
     // Ads spend per shop from seller_board_product (always needed for shop-level ads)
     let adsMap = {}; // { accountId: { ads, gp } }
@@ -347,7 +347,7 @@ app.get('/api/inventory/snapshot', async (req, res) => {
   try {
     const accId = await storeToAccId(req.query.store);
     let extra = ''; const params = [];
-    if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
+    if (accId) { extra = ' AND f.accountId = ?'; params.push(accId); }
 
     // FBA Stock from seller_board_stock (snapshot table, no date column)
     let fbaFromStock = 0;
@@ -360,17 +360,21 @@ app.get('/api/inventory/snapshot', async (req, res) => {
     } catch (e) { /* seller_board_stock may not exist */ }
 
     const rows = await q(`SELECT
-      (SELECT MAX(date) FROM fba_iventory_planning) as snapshotDate,
-      SUM(GREATEST(CAST(available AS SIGNED), 0)) as availableInv,
-      SUM(COALESCE(totalReservedQuantity,0)) as reserved, SUM(COALESCE(inboundQuantity,0)) as inbound,
-      COUNT(DISTINCT CASE WHEN daysOfSupply<=30 THEN sku END) as criticalSkus,
-      AVG(CASE WHEN daysOfSupply > 0 THEN daysOfSupply ELSE NULL END) as avgDaysOfSupply,
-      SUM(COALESCE(invAge0To90Days,0)) as a0,
-      SUM(COALESCE(invAge91To180Days,0)) as a91, SUM(COALESCE(invAge181To270Days,0)) as a181,
-      SUM(COALESCE(invAge271To365Days,0)) as a271, SUM(COALESCE(invAge365PlusDays,0)) as a365,
-      SUM(COALESCE(estimatedStorageCostNextMonth,0)) as storageFee,
-      AVG(COALESCE(sellThrough,0)) as avgSellThrough
-      FROM fba_iventory_planning WHERE date=(SELECT MAX(date) FROM fba_iventory_planning)${extra}`, params);
+      MAX(f.date) as snapshotDate,
+      MIN(f.date) as oldestDate,
+      SUM(GREATEST(CAST(f.available AS SIGNED), 0)) as availableInv,
+      SUM(COALESCE(f.totalReservedQuantity,0)) as reserved, SUM(COALESCE(f.inboundQuantity,0)) as inbound,
+      COUNT(DISTINCT CASE WHEN f.daysOfSupply<=30 THEN f.sku END) as criticalSkus,
+      AVG(CASE WHEN f.daysOfSupply > 0 THEN f.daysOfSupply ELSE NULL END) as avgDaysOfSupply,
+      SUM(COALESCE(f.invAge0To90Days,0)) as a0,
+      SUM(COALESCE(f.invAge91To180Days,0)) as a91, SUM(COALESCE(f.invAge181To270Days,0)) as a181,
+      SUM(COALESCE(f.invAge271To365Days,0)) as a271, SUM(COALESCE(f.invAge365PlusDays,0)) as a365,
+      SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee,
+      AVG(COALESCE(f.sellThrough,0)) as avgSellThrough
+      FROM fba_iventory_planning f
+      JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest
+        ON f.accountId = latest.aid AND f.date = latest.maxDate
+      WHERE 1=1${extra}`, params);
     const r = rows[0]||{};
     const avail=parseInt(r.availableInv)||0;
     const reserved=parseInt(r.reserved)||0;
@@ -380,6 +384,7 @@ app.get('/api/inventory/snapshot', async (req, res) => {
     const fbaStock = fbaFromStock > 0 ? fbaFromStock : (avail + reserved);
     res.json({
       snapshotDate: r.snapshotDate ? String(r.snapshotDate).slice(0,10) : null,
+      oldestDate: r.oldestDate ? String(r.oldestDate).slice(0,10) : null,
       fbaStock, availableInv: avail,
       totalInventory: avail+reserved+inbound,
       reserved, inbound,
@@ -467,6 +472,9 @@ app.get('/api/inventory/by-shop', async (req, res) => {
     const accId = await storeToAccId(req.query.store);
     let accFilter = ''; const accParams = [];
     if (accId) { accFilter = ' AND accountId = ?'; accParams.push(accId); }
+    // Separate qualified filter for JOIN queries on fba_iventory_planning (alias f)
+    const invFilter = accId ? ' AND f.accountId = ?' : '';
+    const invParams = accId ? [accId] : [];
 
     // FBA Stock per shop from seller_board_stock (snapshot)
     let stockMap = {};
@@ -486,8 +494,11 @@ app.get('/api/inventory/by-shop', async (req, res) => {
 
     // Inventory planning data (for inbound, reserved, critical SKUs)
     const inv = await q(`SELECT f.accountId, SUM(GREATEST(CAST(f.available AS SIGNED), 0)) as avail, SUM(COALESCE(f.inboundQuantity,0)) as inb, SUM(COALESCE(f.totalReservedQuantity,0)) as res, COUNT(DISTINCT CASE WHEN f.daysOfSupply<=30 THEN f.sku END) as crit
-      FROM fba_iventory_planning f WHERE f.date=(SELECT MAX(date) FROM fba_iventory_planning)${accFilter}
-      GROUP BY f.accountId`, accParams).catch(()=>[]);
+      FROM fba_iventory_planning f
+      JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest
+        ON f.accountId = latest.aid AND f.date = latest.maxDate
+      WHERE 1=1${invFilter}
+      GROUP BY f.accountId`, invParams).catch(()=>[]);
 
     // Combine all data
     const allAccIds = new Set([...Object.keys(stockMap).map(Number), ...inv.map(r=>r.accountId)]);
@@ -527,7 +538,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     let stockWhere = 'WHERE 1=1'; const stockParams = [];
     if (accId) { stockWhere += ' AND s.accountId = ?'; stockParams.push(accId); }
 
-    let planWhere = 'WHERE f.date=(SELECT MAX(date) FROM fba_iventory_planning)'; const planParams = [];
+    let planWhere = 'JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate WHERE 1=1'; const planParams = [];
     if (accId) { planWhere += ' AND f.accountId = ?'; planParams.push(accId); }
 
     // Seller filter via asin table
