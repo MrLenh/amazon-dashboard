@@ -1231,9 +1231,13 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
   const warnAlerts=alertRows.filter(a=>a.pctGp>=75);
   const hasColFilter=colBrand!=="All"||colSeller!=="All";
 
-  // Dropdown options for breakdown ColFilter
-  const brandOpts=["All",...new Set(basePlanBk.map(r=>r.br).filter(Boolean))];
-  const sellerOpts=["All",...new Set(basePlanBk.map(r=>r.sl).filter(Boolean))];
+  // Cross-filtered options: Brand list filtered by selected seller, Seller list filtered by selected brand
+  const brandOpts=["All",...new Set(
+    (colSeller!=="All"?basePlanBk.filter(r=>r.sl===colSeller):basePlanBk).map(r=>r.br).filter(Boolean)
+  )].sort();
+  const sellerOpts=["All",...new Set(
+    (colBrand!=="All"?basePlanBk.filter(r=>r.br===colBrand):basePlanBk).map(r=>r.sl).filter(Boolean)
+  )].sort();
 
   // Handle ASIN row click → sync global filters
   const handleBkAsinClick=r=>{
