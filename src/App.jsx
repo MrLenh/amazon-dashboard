@@ -997,13 +997,14 @@ function PlanAlertsTab({alerts,t,onAsinClick}){
   const btnStyle=(dis)=>({padding:"4px 9px",borderRadius:6,border:`1px solid ${t.cardBorder}`,background:dis?t.tableBg:t.card,color:dis?t.textMuted:t.textSec,fontSize:11,cursor:dis?"default":"pointer"});
 
   return<div>
-    {/* Summary strip */}
-    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+    {/* Summary strip — inline stat bar, not card buttons */}
+    <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:12,background:t.tableBg,border:`1px solid ${t.divider}`,borderRadius:8,padding:"8px 16px",flexWrap:"wrap",rowGap:6}}>
       {[{label:"Total",val:alerts.length,color:t.textSec},{label:"Critical",val:critical.length,color:t.red},{label:"Warning",val:warning.length,color:t.orange},{label:"Showing",val:filtered.length,color:t.primary}].map((s,i)=>(
-        <div key={i} style={{background:t.card,border:`1px solid ${t.cardBorder}`,borderRadius:8,padding:"7px 14px",display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:10,color:t.textMuted}}>{s.label}</span>
-          <span style={{fontSize:15,fontWeight:800,color:s.color}}>{s.val}</span>
-        </div>
+        <React.Fragment key={i}>
+          {i>0&&<span style={{width:1,height:16,background:t.divider,margin:"0 14px",flexShrink:0}}/>}
+          <span style={{fontSize:11,color:t.textMuted,marginRight:5}}>{s.label}</span>
+          <span style={{fontSize:13,fontWeight:800,color:s.color}}>{s.val}</span>
+        </React.Fragment>
       ))}
     </div>
 
@@ -1282,21 +1283,21 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
       </div>;
     })()}
 
-    {/* ── KPI Cards — Row 1: Financial (6 cards) ── */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginBottom:8}}>
+    {/* ── KPI Cards — Row 1: GP · Revenue · Ads · Units · ROAS (5 cards) ── */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:8}}>
       <PlanKpi title="Gross Profit" actual={kpiData.gp.a} plan={kpiData.gp.p} t={t} highlight tip={TIPS.gp}/>
       <PlanKpi title="Revenue"      actual={kpiData.rv.a} plan={kpiData.rv.p} t={t} tip={TIPS.revenue}/>
       <PlanKpi title="Ads Spend"    actual={kpiData.ad.a} plan={kpiData.ad.p} t={t} tip={TIPS.advCost}/>
       <PlanKpi title="Units"        actual={kpiData.un.a} plan={kpiData.un.p} t={t} fmt={N} tip={TIPS.units}/>
       <PlanKpi title="ROAS ✦"       actual={kpiRoas.a}    plan={kpiRoas.p}    t={t} fmt={v=>v!=null?v.toFixed(2)+"x":"—"}/>
-      <PlanKpi title="Margin ✦"     actual={kpiMargin.a}  plan={kpiMargin.p}  t={t} fmt={v=>v!=null?v.toFixed(1)+"%":"—"}/>
     </div>
-    {/* ── KPI Cards — Row 2: Traffic (4 cards) ── */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginBottom:14}}>
-      <PlanKpi title="Sessions"    actual={kpiData.se.a} plan={kpiData.se.p} t={t} fmt={N} tip={TIPS.sessions}/>
-      <PlanKpi title="Impressions" actual={kpiData.im.a} plan={kpiData.im.p} t={t} fmt={N}/>
-      <PlanKpi title="Conv. Rate"  actual={kpiData.cr.a!=null?Math.round(kpiData.cr.a*10000)/100:null} plan={Math.round((kpiData.cr.p||0)*10000)/100} t={t} fmt={v=>v!=null?Math.round(v*100)/100+"%":"—"} tip={TIPS.cr}/>
-      <PlanKpi title="CTR"         actual={kpiData.ct.a!=null?Math.round(kpiData.ct.a*10000)/100:null} plan={Math.round((kpiData.ct.p||0)*10000)/100} t={t} fmt={v=>v!=null?Math.round(v*100)/100+"%":"—"} tip={TIPS.ctr}/>
+    {/* ── KPI Cards — Row 2: Margin · Sessions · Impressions · CR · CTR (5 cards) ── */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:14}}>
+      <PlanKpi title="Margin ✦"     actual={kpiMargin.a}  plan={kpiMargin.p}  t={t} fmt={v=>v!=null?v.toFixed(1)+"%":"—"}/>
+      <PlanKpi title="Sessions"     actual={kpiData.se.a} plan={kpiData.se.p} t={t} fmt={N} tip={TIPS.sessions}/>
+      <PlanKpi title="Impressions"  actual={kpiData.im.a} plan={kpiData.im.p} t={t} fmt={N}/>
+      <PlanKpi title="Conv. Rate"   actual={kpiData.cr.a!=null?Math.round(kpiData.cr.a*10000)/100:null} plan={Math.round((kpiData.cr.p||0)*10000)/100} t={t} fmt={v=>v!=null?Math.round(v*100)/100+"%":"—"} tip={TIPS.cr}/>
+      <PlanKpi title="CTR"          actual={kpiData.ct.a!=null?Math.round(kpiData.ct.a*10000)/100:null} plan={Math.round((kpiData.ct.p||0)*10000)/100} t={t} fmt={v=>v!=null?Math.round(v*100)/100+"%":"—"} tip={TIPS.ctr}/>
     </div>
 
     {/* ── Trend chart ── */}
