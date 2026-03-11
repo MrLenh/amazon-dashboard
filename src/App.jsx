@@ -25,6 +25,103 @@ const mC=(m,t)=>m>10?t.green:m>0?t.orange:t.red;
 const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const TIPS={sales:"Total revenue from all sales",units:"Total units sold",refunds:"Refunded orders",advCost:"Total ad spend (PPC)",shippingCost:"FBA shipping fees",refundCost:"Cost of processing refunds",amazonFees:"Referral + FBA fees",cogs:"Cost of Goods Sold",netProfit:"Revenue − All Costs",estPayout:"Estimated Amazon payout",realAcos:"Ad Spend / Sales × 100%",pctRefunds:"Refunds / Orders × 100%",margin:"Net Profit / Revenue × 100%",sessions:"Product page views",gp:"SUM(grossProfit) from seller_board_sales",cr:"Orders / Sessions × 100%",ctr:"Clicks / Impressions × 100%",sellThrough:"Units Sold / (Sold + Ending Inventory)",doh:"Current Stock / Avg Daily Sales",fbaStock:"Total FBA inventory (from Seller Board Stock). Includes Available + Reserved units across all warehouses",invAvail:"Units ready to ship. Source: fba_inventory_planning → available",invReserved:"Units held by Amazon (pending orders, transfers). Source: fba_inventory_planning → totalReservedQuantity",invCritical:"SKUs with ≤ 30 days of supply remaining — need restocking urgently",invInbound:"Total units across all inbound stages (working + shipped + received). Source: fba_iventory_planning → inboundQuantity",invDaysSupply:"Average days current stock will last based on recent sales velocity. Low = restock soon, High = excess inventory",storageFee:"Estimated monthly FBA storage fee from Amazon. Includes standard + aged inventory surcharge (>90 days). Source: fba_inventory_planning → estimatedStorageCostNextMonth",revenue:"Total sales revenue across all channels in selected period",np:"Revenue minus all costs (ads, COGS, Amazon fees, shipping, refunds)",avgMargin:"Average Net Profit ÷ Revenue across all entities shown",aov:"Average revenue per order = Total Sales ÷ Total Orders",upo:"Average units per order = Total Units ÷ Total Orders",prodRev:"Revenue from seller_board_product for selected ASINs/shops",prodNP:"Net Profit per ASIN from seller_board_product",prodMargin:"Net Profit ÷ Revenue per product",prodUnits:"Total units sold per ASIN in selected period",shopFba:"Latest FBA stock count from seller_board_stock per shop",teamRev:"Total revenue across all sellers in selected period",teamNP:"Total net profit across all sellers",teamMargin:"Average margin across all sellers",opsRev:"Daily revenue from seller_board_product (last 60 days)",opsNP:"Daily net profit from seller_board_product",opsUnits:"Daily units from seller_board_product",stockValue:"Current inventory value (snapshot from Sellerboard). Health ratio = Stock Value ÷ |GP|. Healthy <1.5x · Watch 1.5-3x · High >3x"};
 
+/* ═══════════ ZONE A — PERIOD PRESET HELPER ═══════════ */
+const ZONE_A_PRESETS=[
+  {key:'tod_7_14_30', label:'Today / Yesterday / 7 days / 14 days / 30 days'},
+  {key:'tod_yd_mtd',  label:'Today / Yesterday / Month to date / This month (forecast) / Last month'},
+  {key:'week',        label:'This week / Last week / 2 weeks ago / 3 weeks ago'},
+  {key:'month',       label:'Month to date / Last month / 2 months ago / 3 months ago'},
+  {key:'qtr',         label:'This quarter / Last quarter / 2 quarters ago / 3 quarters ago'},
+];
+function getZoneAPeriods(presetKey, refDateStr){
+  const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
+  const fmt=d=>d.toISOString().slice(0,10);
+  const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r};
+  const today=fmt(ref);
+  const yday=fmt(sub(ref,1));
+  const soWeek=d=>{const r=new Date(d);r.setDate(r.getDate()-((r.getDay()+6)%7));return r};
+  const soMonth=d=>new Date(d.getFullYear(),d.getMonth(),1);
+  const eoMonth=d=>new Date(d.getFullYear(),d.getMonth()+1,0);
+  const soQ=d=>new Date(d.getFullYear(),Math.floor(d.getMonth()/3)*3,1);
+  const eoQ=d=>new Date(d.getFullYear(),Math.floor(d.getMonth()/3)*3+3,0);
+  const fmtLabel=d=>MS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+  const rangeLabel=(s,e)=>fmtLabel(new Date(s+'T12:00:00'))+' – '+fmtLabel(new Date(e+'T12:00:00'));
+  switch(presetKey){
+    case 'tod_7_14_30': return[
+      {id:'today', label:'Today',    start:today,               end:today,              dateLabel:fmtLabel(ref)},
+      {id:'yday',  label:'Yesterday',start:yday,                end:yday,               dateLabel:fmtLabel(sub(ref,1))},
+      {id:'7d',    label:'7 days',   start:fmt(sub(ref,6)),     end:yday,               dateLabel:rangeLabel(fmt(sub(ref,6)),yday)},
+      {id:'14d',   label:'14 days',  start:fmt(sub(ref,13)),    end:yday,               dateLabel:rangeLabel(fmt(sub(ref,13)),yday)},
+      {id:'30d',   label:'30 days',  start:fmt(sub(ref,29)),    end:yday,               dateLabel:rangeLabel(fmt(sub(ref,29)),yday)},
+    ];
+    case 'tod_yd_mtd': return[
+      {id:'today', label:'Today',              start:today,                   end:today,                     dateLabel:fmtLabel(ref)},
+      {id:'yday',  label:'Yesterday',          start:yday,                    end:yday,                      dateLabel:fmtLabel(sub(ref,1))},
+      {id:'mtd',   label:'Month to date',      start:fmt(soMonth(ref)),       end:today,                     dateLabel:rangeLabel(fmt(soMonth(ref)),today)},
+      {id:'tmf',   label:'This month (fcst)',  start:fmt(soMonth(ref)),       end:fmt(eoMonth(ref)),         dateLabel:MS[ref.getMonth()]+' '+ref.getFullYear()+' (est)'},
+      {id:'lm',    label:'Last month',         start:fmt(soMonth(sub(ref,ref.getDate()))), end:fmt(eoMonth(sub(ref,ref.getDate()))), dateLabel:MS[(ref.getMonth()+11)%12]+' '+( ref.getMonth()===0?ref.getFullYear()-1:ref.getFullYear())},
+    ];
+    case 'week':{
+      const tw0=soWeek(ref);const lw0=sub(tw0,7);const lw1=sub(tw0,1);const ww0=sub(tw0,14);const ww1=sub(tw0,8);const www0=sub(tw0,21);const www1=sub(tw0,15);
+      return[
+        {id:'tw',  label:'This week',   start:fmt(tw0),   end:today,      dateLabel:rangeLabel(fmt(tw0),today)},
+        {id:'lw',  label:'Last week',   start:fmt(lw0),   end:fmt(lw1),   dateLabel:rangeLabel(fmt(lw0),fmt(lw1))},
+        {id:'2w',  label:'2 weeks ago', start:fmt(ww0),   end:fmt(ww1),   dateLabel:rangeLabel(fmt(ww0),fmt(ww1))},
+        {id:'3w',  label:'3 weeks ago', start:fmt(www0),  end:fmt(www1),  dateLabel:rangeLabel(fmt(www0),fmt(www1))},
+      ];}
+    case 'month':{
+      const m0s=soMonth(ref);const m1=sub(ref,ref.getDate());const m1s=soMonth(m1);const m1e=eoMonth(m1);
+      const m2=sub(m1s,1);const m2s=soMonth(m2);const m2e=eoMonth(m2);
+      const m3=sub(m2s,1);const m3s=soMonth(m3);const m3e=eoMonth(m3);
+      return[
+        {id:'mtd', label:'Month to date', start:fmt(m0s),  end:today,    dateLabel:rangeLabel(fmt(m0s),today)},
+        {id:'lm',  label:'Last month',    start:fmt(m1s),  end:fmt(m1e), dateLabel:MS[m1s.getMonth()]+' '+m1s.getFullYear()},
+        {id:'2m',  label:'2 months ago',  start:fmt(m2s),  end:fmt(m2e), dateLabel:MS[m2s.getMonth()]+' '+m2s.getFullYear()},
+        {id:'3m',  label:'3 months ago',  start:fmt(m3s),  end:fmt(m3e), dateLabel:MS[m3s.getMonth()]+' '+m3s.getFullYear()},
+      ];}
+    case 'qtr':{
+      const tqs=soQ(ref);const tqe=eoQ(ref);
+      const lq=sub(tqs,1);const lqs=soQ(lq);const lqe=eoQ(lq);
+      const q2=sub(lqs,1);const q2s=soQ(q2);const q2e=eoQ(q2);
+      const q3=sub(q2s,1);const q3s=soQ(q3);const q3e=eoQ(q3);
+      const qLabel=d=>`Q${Math.floor(d.getMonth()/3)+1} ${d.getFullYear()}`;
+      return[
+        {id:'tq', label:'This quarter',   start:fmt(tqs), end:fmt(tqe), dateLabel:qLabel(tqs)},
+        {id:'lq', label:'Last quarter',   start:fmt(lqs), end:fmt(lqe), dateLabel:qLabel(lqs)},
+        {id:'2q', label:'2 quarters ago', start:fmt(q2s), end:fmt(q2e), dateLabel:qLabel(q2s)},
+        {id:'3q', label:'3 quarters ago', start:fmt(q3s), end:fmt(q3e), dateLabel:qLabel(q3s)},
+      ];}
+    default: return[];
+  }
+}
+
+/* ═══════════ BUILD DETAIL ROWS — shared between Zone A tiles + Zone B drawer ═══════════ */
+function buildDetailRows(em, detail={}){
+  const merged={...em,...detail};
+  const cr=merged.sessions>0?(merged.units/merged.sessions*100):0;
+  const tacos=merged.sales>0?(Math.abs(merged.advCost||0)/merged.sales*100):0;
+  return[
+    {id:'sales',     label:'Sales',          val:merged.sales||0,                              fmt:$2,   sub:[{l:'Organic',v:merged.salesOrganic||0,fmt:$2},{l:'Sponsored (PPC)',v:merged.salesPPC||0,fmt:$2}]},
+    {id:'units',     label:'Units',          val:merged.units||0,                              fmt:N,    sub:[{l:'Organic',v:merged.unitsOrganic||0,fmt:N},{l:'Sponsored (PPC)',v:merged.unitsSP||0,fmt:N}]},
+    {id:'refunds',   label:'Refunds',        val:merged.refunds||0,                            fmt:N,    sub:[]},
+    {id:'promo',     label:'Promo',          val:merged.promo||0,                              fmt:$2,   sub:[]},
+    {id:'ads',       label:'Adv. Cost',      val:Math.abs(merged.advCost||0),                  fmt:$2,   sub:[{l:'Sponsored Products',v:merged.sp||0,fmt:$2},{l:'Sponsored Brands',v:merged.sb||0,fmt:$2},{l:'Sponsored Brands Video',v:merged.sbv||0,fmt:$2},{l:'Sponsored Display',v:merged.sd||0,fmt:$2}]},
+    {id:'refundCost',label:'Refund Cost',    val:Math.abs(merged.refundCost||0),               fmt:$2,   sub:[]},
+    {id:'fees',      label:'Amazon Fees',    val:Math.abs(merged.amazonFees||0),               fmt:$2,   sub:[{l:'FBA Fulfillment Fee',v:merged.fbaFulfillment||0,fmt:$2},{l:'Referral Fee (Commission)',v:merged.commission||0,fmt:$2}]},
+    {id:'cogs',      label:'Cost of Goods',  val:Math.abs(merged.cogs||0),                     fmt:$2,   sub:[]},
+    {id:'grossProfit',label:'Gross Profit',  val:merged.grossProfit||0,                        fmt:$2,   sub:[]},
+    {id:'np',        label:'Net Profit',     val:merged.netProfit||0,                          fmt:$2,   sub:[]},
+    {id:'payout',    label:'Est. Payout',    val:merged.estPayout||0,                          fmt:$2,   sub:[]},
+    {id:'realAcos',  label:'Real ACOS',      val:merged.realAcos||0,                           fmt:v=>v.toFixed(2)+'%', sub:[]},
+    {id:'pctRef',    label:'% Refunds',      val:merged.pctRefunds||0,                         fmt:v=>v.toFixed(2)+'%', sub:[]},
+    {id:'margin',    label:'Margin',         val:merged.margin||0,                             fmt:v=>v.toFixed(2)+'%', sub:[]},
+    {id:'sessions',  label:'Sessions',       val:Math.round(merged.sessions||0),               fmt:N,    sub:[]},
+    {id:'cr',        label:'CR%',            val:cr,                                           fmt:v=>v.toFixed(2)+'%', sub:[]},
+    {id:'tacos',     label:'TACoS',          val:tacos,                                        fmt:v=>v.toFixed(2)+'%', sub:[]},
+    {id:'roas',      label:'ROAS',           val:merged.realAcos>0?(100/merged.realAcos):0,    fmt:v=>v.toFixed(2)+'x', sub:[]},
+  ];
+}
+
 /* ═══════════ BIDIRECTIONAL FILTER HOOK ═══════════ */
 function useBidirectionalFilters(store,seller,asinF,masterList){
   return useMemo(()=>{
@@ -223,7 +320,9 @@ function MiniDonut({slices,t,size=72}){
   </div>;
 }
 
-function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt}){
+function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt,
+  store,seller,setStore,setSeller,storeOpts,sellerOpts,onApplyZoneB,
+  zoneATileData,zoneAPreset,setZoneAPreset,zoneAStore,setZoneAStore,zoneALoading,zoneAStoreOpts}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
   const[showDetail,setShowDetail]=useState(false);
@@ -335,8 +434,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
   ];
 
   /* ── DAILY TREND (combo: bars + lines) ── */
-  const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:false});
-  const[trendLines,setTrendLines]=useState({crPct:false,tacos:false});
+  const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:true});
+  const[trendLines,setTrendLines]=useState({crPct:true,tacos:false});
   const[trendZoom,setTrendZoom]=useState(0); // 0 = All
   const[showBrush,setShowBrush]=useState(false);
   const dailyChartData=fDaily.map(d=>({
@@ -413,10 +512,210 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
     return items;
   },[fAsin,fShop,t]);
 
+  /* ═══ ZONE A — TILE DRAWER STATE ═══ */
+  const[openTiles,setOpenTiles]=useState(new Set());
+  const[tileExpandedRows,setTileExpandedRows]=useState({});
+  const toggleTile=id=>setOpenTiles(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s});
+  const toggleTileRow=(tileId,rowId)=>setTileExpandedRows(prev=>{
+    const key=tileId+'_'+rowId;const s=new Set(prev[tileId]||[]);
+    s.has(rowId)?s.delete(rowId):s.add(rowId);
+    return{...prev,[tileId]:s};
+  });
+
+  /* ═══ ZONE A PRESET DROPDOWN ═══ */
+  const[presetOpen,setPresetOpen]=useState(false);
+  const presetRef=useRef(null);
+  useEffect(()=>{
+    if(!presetOpen)return;
+    const h=e=>{if(presetRef.current&&!presetRef.current.contains(e.target))setPresetOpen(false)};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[presetOpen]);
+
+  /* ═══ ZONE A STORE DROPDOWN ═══ */
+  const[zoneAStoreOpen,setZoneAStoreOpen]=useState(false);
+  const zoneAStoreRef=useRef(null);
+  useEffect(()=>{
+    if(!zoneAStoreOpen)return;
+    const h=e=>{if(zoneAStoreRef.current&&!zoneAStoreRef.current.contains(e.target))setZoneAStoreOpen(false)};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[zoneAStoreOpen]);
+
+  /* ═══ ZONE B STORE DROPDOWN ═══ */
+  const[zoneBStoreOpen,setZoneBStoreOpen]=useState(false);
+  const zoneBStoreRef=useRef(null);
+  useEffect(()=>{
+    if(!zoneBStoreOpen)return;
+    const h=e=>{if(zoneBStoreRef.current&&!zoneBStoreRef.current.contains(e.target))setZoneBStoreOpen(false)};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[zoneBStoreOpen]);
+
+  /* tile color palette */
+  const TILE_COLORS=['#3b82f6','#14b8a6','#10b981','#6366f1','#8b5cf6'];
+
   /* ═══ RENDER ═══ */
+  const S=t.textSec;const BD=t.cardBorder;const DIV=t.divider;
+  const selStyle={background:t.card,color:t.text,border:'1px solid '+t.inputBorder,borderRadius:8,padding:'6px 22px 6px 9px',fontSize:12,fontWeight:500,cursor:'pointer',outline:'none',appearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238892aa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C%2Fsvg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center'};
+  const inputStyle={border:'1px solid '+t.inputBorder,borderRadius:8,padding:'6px 9px',fontSize:12,fontWeight:500,fontFamily:"'DM Mono',monospace",color:t.text,background:t.card,outline:'none',width:96};
+
   return<div>
 
-    {/* ① SELLERBOARD SUMMARY — chip-based add/remove */}
+    {/* ══════════════════════════════════════════════════
+        ZONE A — PERIOD COMPARISON  (filter riêng trong header)
+    ══════════════════════════════════════════════════ */}
+    <div style={{border:'2px solid #fed7aa',borderRadius:14,marginBottom:18,overflow:'hidden',background:t.card,boxShadow:'0 1px 4px rgba(20,24,36,.07)'}}>
+
+      {/* Zone A header */}
+      <div style={{background:t.bg==='#0D0F1A'?'#1c1409':'linear-gradient(135deg,#fff7ed,#ffedd5)',borderBottom:'1px solid #fed7aa',padding:'11px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,padding:'3px 10px',borderRadius:20,border:'1.5px solid #fed7aa',background:'#fff7ed',color:'#9a3412'}}>Zone A</span>
+          <span style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,color:'#9a3412'}}>Period Comparison</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:10,fontWeight:700,color:'#9a3412'}}>Preset:</span>
+          {/* Preset picker */}
+          <div ref={presetRef} style={{position:'relative'}}>
+            <button onClick={()=>setPresetOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid #f97316',borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:'#c2410c',cursor:'pointer',whiteSpace:'nowrap',maxWidth:280,overflow:'hidden',textOverflow:'ellipsis'}}>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}}>{ZONE_A_PRESETS.find(p=>p.key===zoneAPreset)?.label||'Select preset'}</span>
+              <span style={{fontSize:9,color:'#f97316',flexShrink:0,transition:'transform .2s',transform:presetOpen?'rotate(180deg)':'none'}}>▾</span>
+            </button>
+            {presetOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:430}}>
+              {ZONE_A_PRESETS.map(p=><div key={p.key} onClick={()=>{setZoneAPreset(p.key);setPresetOpen(false)}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',cursor:'pointer',fontSize:12,color:zoneAPreset===p.key?t.primary:S,borderBottom:'1px solid '+DIV,background:zoneAPreset===p.key?t.primaryGhost:'transparent',fontWeight:zoneAPreset===p.key?700:400,transition:'background .1s'}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=zoneAPreset===p.key?t.primaryGhost:'transparent'}>
+                <span style={{width:13,flexShrink:0,fontSize:11,color:t.primary}}>{zoneAPreset===p.key?'✓':''}</span>
+                {p.label}
+              </div>)}
+            </div>}
+          </div>
+          {/* Zone A store filter */}
+          <select value={zoneAStore} onChange={e=>setZoneAStore(e.target.value)} style={{...selStyle,border:'1.5px solid #fed7aa',fontSize:11,padding:'5px 22px 5px 9px'}}>
+            <option value="All">All Shops</option>
+            {(zoneAStoreOpts||[]).map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Tiles row */}
+      <div style={{display:'flex',overflowX:'auto'}}>
+        {zoneALoading&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>Loading...</div>}
+        {!zoneALoading&&zoneATileData.map((tile,ti)=>{
+          const tileOpen=openTiles.has(tile.id);
+          const tileDR=buildDetailRows(tile.em, tile.detail||{});
+          const tileExpRows=tileExpandedRows[tile.id]||new Set();
+          const tileColor=TILE_COLORS[ti%TILE_COLORS.length];
+          const tileNP=tile.em?.netProfit||0;
+          const tileSales=tile.em?.sales||0;
+          const tileChg=tile.prevSales!=null&&tile.prevSales!==0?((tileSales-tile.prevSales)/Math.abs(tile.prevSales)*100):null;
+          return<div key={tile.id} style={{flex:1,minWidth:190,borderRight:ti<zoneATileData.length-1?'1px solid '+DIV:'none',display:'flex',flexDirection:'column'}}>
+            {/* Color bar */}
+            <div style={{height:4,background:tileColor}}/>
+            {/* Tile body */}
+            <div style={{padding:'14px 16px 10px',flex:1}}>
+              <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:2}}>{tile.label}</div>
+              <div style={{fontSize:10,color:t.textMuted,fontFamily:"'DM Mono',monospace",marginBottom:12}}>{tile.dateLabel}</div>
+              {/* Sales */}
+              <div style={{paddingBottom:8,marginBottom:8,borderBottom:'1px solid '+DIV}}>
+                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.6,marginBottom:2}}>Sales</div>
+                <div style={{fontSize:15,fontWeight:700,color:t.text,fontFamily:"'DM Mono',monospace"}}>{$2(tileSales)}</div>
+                {tileChg!=null&&<span style={{fontSize:10,fontWeight:600,color:tileChg>=0?t.green:t.red}}>{tileChg>=0?'↑':'↓'}{Math.abs(tileChg).toFixed(1)}%</span>}
+              </div>
+              {/* Orders/Units + Refunds */}
+              <div style={{display:'flex',gap:14,paddingBottom:8,marginBottom:8,borderBottom:'1px solid '+DIV}}>
+                <div style={{flex:1}}><div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5,marginBottom:2}}>Orders / Units</div><div style={{fontSize:12,fontWeight:700,color:t.text,fontFamily:"'DM Mono',monospace"}}>{N(tile.em?.orders||0)} / {N(tile.em?.units||0)}</div></div>
+                <div><div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5,marginBottom:2}}>Refunds</div><div style={{fontSize:12,fontWeight:700,color:(tile.em?.refunds||0)>5?t.orange:t.text,fontFamily:"'DM Mono',monospace"}}>{N(tile.em?.refunds||0)}</div></div>
+              </div>
+              {/* Adv. cost + Est. payout */}
+              <div style={{display:'flex',gap:14,paddingBottom:8,marginBottom:8,borderBottom:'1px solid '+DIV}}>
+                <div style={{flex:1}}><div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5,marginBottom:2}}>Adv. cost</div><div style={{fontSize:12,fontWeight:700,color:t.text,fontFamily:"'DM Mono',monospace"}}>{$2(Math.abs(tile.em?.advCost||0))}</div></div>
+                <div><div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5,marginBottom:2}}>Est. payout</div><div style={{fontSize:12,fontWeight:700,color:t.text,fontFamily:"'DM Mono',monospace"}}>{$2(tile.em?.estPayout||0)}</div></div>
+              </div>
+              {/* Net profit */}
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.5,marginBottom:2}}>Net profit</div>
+                <div style={{fontSize:14,fontWeight:700,color:tileNP>=0?t.green:t.red,fontFamily:"'DM Mono',monospace"}}>{$2(tileNP)}</div>
+                <div style={{fontSize:10,fontWeight:600,color:tileNP>=0?t.green:t.red}}>{tile.em?.margin!=null?((tile.em.margin||0).toFixed(1)+'%'):'—'} margin</div>
+              </div>
+            </div>
+            {/* More button */}
+            <button onClick={()=>toggleTile(tile.id)} style={{width:'100%',padding:'8px 0 6px',background:'transparent',border:'none',borderTop:'1px solid '+DIV,fontSize:11,fontWeight:600,color:t.primary,cursor:'pointer',fontFamily:'inherit'}}>
+              {tileOpen?'Less ▴':'More ▾'}
+            </button>
+            {/* Tile detail drawer */}
+            {tileOpen&&<div style={{background:t.tableBg,borderTop:'1px solid '+DIV}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                <tbody>{tileDR.map((row,ri)=>{
+                  const hasSub=row.sub&&row.sub.length>0;
+                  const isExp=tileExpRows.has(row.id);
+                  const isNpLike=(row.id==='np'||row.id==='grossProfit');
+                  const valCol=isNpLike?(row.val>=0?t.green:t.red):t.text;
+                  return<React.Fragment key={ri}>
+                    <tr onClick={()=>hasSub&&toggleTileRow(tile.id,row.id)} style={{cursor:hasSub?'pointer':'default',borderBottom:'1px solid '+DIV}}
+                      onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <td style={{padding:'7px 12px',color:S,fontSize:11,fontWeight:500,whiteSpace:'nowrap'}}>
+                        {hasSub&&<span style={{fontSize:9,color:t.primary,marginRight:4}}>{isExp?'▼':'▶'}</span>}
+                        {row.label}
+                      </td>
+                      <td style={{padding:'7px 12px',textAlign:'right',fontWeight:700,color:valCol,fontFamily:"'DM Mono',monospace",fontSize:11}}>{row.fmt(row.val)}</td>
+                    </tr>
+                    {isExp&&row.sub.map((s,si)=><tr key={'s'+si} style={{background:t.primaryGhost+'88',borderBottom:'1px solid '+DIV}}>
+                      <td style={{padding:'6px 12px 6px 26px',fontSize:10.5,color:t.textMuted}}>{s.l}</td>
+                      <td style={{padding:'6px 12px',textAlign:'right',fontSize:10.5,fontWeight:600,color:t.text,fontFamily:"'DM Mono',monospace"}}>{s.fmt(s.v)}</td>
+                    </tr>)}
+                  </React.Fragment>;
+                })}</tbody>
+              </table>
+            </div>}
+          </div>;
+        })}
+        {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data. Select preset above and ensure DB is connected.</div>}
+      </div>
+    </div>
+
+    {/* ══════════════════════════════════════════════════
+        ZONE B — ANALYTICS DASHBOARD  (filter trong header)
+    ══════════════════════════════════════════════════ */}
+    <div style={{border:'2px solid '+t.primary+'55',borderRadius:14,overflow:'visible',background:t.card,boxShadow:'0 1px 4px rgba(20,24,36,.07)',marginBottom:18}}>
+
+      {/* Zone B header with filter controls */}
+      <div style={{background:t.bg==='#0D0F1A'?'#0f1429':'linear-gradient(135deg,#eef1fd,#e0e7ff)',borderBottom:'1px solid '+t.primary+'44',borderRadius:'12px 12px 0 0',padding:'11px 18px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+          <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,padding:'3px 10px',borderRadius:20,border:'1.5px solid '+t.primary+'55',background:t.primaryGhost,color:t.primary}}>Zone B</span>
+          <span style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,color:t.primary}}>Analytics Dashboard</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:10,fontWeight:700,color:t.primary,textTransform:'uppercase',letterSpacing:.6}}>Start:</span>
+          <input type="date" value={sd} onChange={e=>{setSd(e.target.value)}} style={inputStyle}/>
+          <span style={{fontSize:10,fontWeight:700,color:t.primary,textTransform:'uppercase',letterSpacing:.6}}>End:</span>
+          <input type="date" value={ed} onChange={e=>{setEd(e.target.value)}} style={inputStyle}/>
+          <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
+          {/* Store multi-select (simple for now) */}
+          <div ref={zoneBStoreRef} style={{position:'relative'}}>
+            <button onClick={()=>setZoneBStoreOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(store!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:store!=='All'?t.primary:S,cursor:'pointer',whiteSpace:'nowrap'}}>
+              {store==='All'?'All Shops':'Shop: '+store}
+              <span style={{fontSize:9,color:t.textMuted,transition:'transform .2s',transform:zoneBStoreOpen?'rotate(180deg)':'none'}}>▾</span>
+            </button>
+            {zoneBStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:200}}>
+              <div onClick={()=>{setStore('All');setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store==='All'?t.primary:S,fontWeight:store==='All'?700:400,borderBottom:'1px solid '+DIV,background:store==='All'?t.primaryGhost:'transparent'}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store==='All'?t.primaryGhost:'transparent'}>
+                All Shops
+              </div>
+              {(storeOpts||[]).map(s=><div key={s} onClick={()=>{setStore(s);setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store===s?t.primary:S,fontWeight:store===s?700:400,borderBottom:'1px solid '+DIV,background:store===s?t.primaryGhost:'transparent'}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store===s?t.primaryGhost:'transparent'}>
+                {s}
+              </div>)}
+            </div>}
+          </div>
+          <select value={seller} onChange={e=>setSeller(e.target.value)} style={{...selStyle,border:'1.5px solid '+(seller!=='All'?t.primary:t.inputBorder),color:seller!=='All'?t.primary:S,fontWeight:seller!=='All'?600:500}}>
+            <option value="All">All Sellers</option>
+            {(sellerOpts||[]).map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <button onClick={onApplyZoneB} style={{background:t.primary,color:'#fff',border:'none',borderRadius:8,padding:'7px 18px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Apply</button>
+        </div>
+      </div>
+
+      {/* Zone B body — existing content */}
+      <div style={{padding:18}}>
+
+
     <Cd t={t} style={{borderLeft:'4px solid '+t.primary,marginBottom:showDetail?0:16,borderRadius:showDetail?'12px 12px 0 0':'12px',padding:'14px 18px'}}>
       {/* Header row */}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:12}}>
@@ -678,17 +977,21 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,prevEm,prevPeriod,pctChg,mob,on
     </Cd>
     </div>
 
-    {/* ⑦ RECOMMENDATIONS */}
+    {/* Recommendations */}
     <Cd t={t} style={{marginBottom:16}}>
       <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:12}}>Recommendations</div>
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {recs.map((r,i)=><div key={i} style={{display:'flex',alignItems:'flex-start',gap:12,padding:'10px 14px',borderRadius:10,background:r.color+'10',border:'1px solid '+r.color+'44'}}>
           <div style={{width:6,height:6,borderRadius:3,background:r.color,marginTop:5,flexShrink:0}}/>
           <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:t.text,marginBottom:3}}>{r.title}</div><div style={{fontSize:11,color:t.textSec,lineHeight:1.5}}>{r.desc}</div></div>
-          <button onClick={scrollToAsin} style={{padding:'4px 10px',borderRadius:7,border:'1px solid '+r.color+'66',background:'transparent',color:r.color,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>View →</button>
+          <button onClick={scrollToAsin} style={{padding:'4px 10px',borderRadius:7,border:'1px solid '+r.color+'66',background:'transparent',color:r.color,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>View</button>
         </div>)}
       </div>
     </Cd>
+
+      </div>{/* /Zone B body */}
+    </div>{/* /Zone B card */}
+
   </div>;
 }
 
@@ -2266,6 +2569,12 @@ export default function App(){
   const[shopExt,setShopExt]=useState([]);
   const[loading,setLoading]=useState(false);
 
+  // ═══ ZONE A STATE ═══
+  const[zoneAPreset,setZoneAPreset]=useState('tod_7_14_30');
+  const[zoneAStore,setZoneAStore]=useState('All');
+  const[zoneATileData,setZoneATileData]=useState([]);
+  const[zoneALoading,setZoneALoading]=useState(false);
+
   const opts=useBidirectionalFilters(store,seller,asinF,masterList);
   // ═══ Favicon + Tab Title ═══
   useEffect(()=>{
@@ -2395,6 +2704,39 @@ export default function App(){
     return()=>{cancelled=true};
   },[fetchTrigger]);
 
+  // ═══════════ ZONE A FETCH — exec/summary + exec/detail per tile ═══════════
+  const zoneAParamsRef=useRef({zoneAPreset,zoneAStore});
+  zoneAParamsRef.current={zoneAPreset,zoneAStore};
+  useEffect(()=>{
+    if(!live||dbConnecting)return;
+    let cancelled=false;
+    const{zoneAPreset:_preset,zoneAStore:_store}=zoneAParamsRef.current;
+    const periods=getZoneAPeriods(_preset, defaultEnd);
+    if(!periods.length)return;
+    setZoneALoading(true);
+    (async()=>{
+      try{
+        // Fetch summary + detail for every tile in parallel
+        const results=await Promise.allSettled(
+          periods.map(p=>Promise.all([
+            api('exec/summary',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}),
+            api('exec/detail',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}).catch(()=>({})),
+          ]))
+        );
+        if(cancelled)return;
+        const tiles=periods.map((p,i)=>{
+          const res=results[i];
+          const [emRaw,detailRaw]=res.status==='fulfilled'?res.value:[EMPTY_EM,{}];
+          const emData=emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM;
+          return{id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emData,detail:detailRaw||{}};
+        });
+        setZoneATileData(tiles);
+      }catch(e){console.error('Zone A fetch error:',e);}
+      if(!cancelled)setZoneALoading(false);
+    })();
+    return()=>{cancelled=true};
+  },[zoneAPreset,zoneAStore,live,dbConnecting]);
+
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
   const planParamsRef=useRef({planYear,store,seller,asinF});
@@ -2477,9 +2819,9 @@ export default function App(){
   // Filter visibility per page
   // Filter visibility: Exec=Brand+Seller, Plan=Brand+Seller+ASIN, Prod/Shop/Team/Daily=Store+Seller+ASIN, Inv=Store
   // "Brand" = same as Store (account.shop), just different label
-  const showShopFilter=["exec","prod","shops","team","daily","inv","plan","analytics"].includes(pg);
+  const showShopFilter=[/*exec removed*/"prod","shops","team","daily","inv","plan","analytics"].includes(pg);
   const shopLabel="All Shops";
-  const showSeller=["exec","prod","shops","team","plan","daily","analytics"].includes(pg);
+  const showSeller=[/*exec removed*/"prod","shops","team","plan","daily","analytics"].includes(pg);
   const showAsin=["plan","prod","shops","team","daily","analytics"].includes(pg);
 
   if(dbConnecting)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:t.bg}}><Spinner t={t} text="Connecting..."/></div>;
@@ -2503,9 +2845,9 @@ export default function App(){
             <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,color:t.textSec,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>{isDark?"Light":"Dark"}</button>
           </div>
         </div>
-        {/* FILTER BAR */}
+        {/* FILTER BAR — exec page has its own filters inside Zone B */}
         {(!mob||mobileFilters)&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {["exec","prod","shops","team","daily","analytics"].includes(pg)&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={defaultEnd}/><ClearBtn onClick={clearDates} t={t}/></>}
+          {["prod","shops","team","daily","analytics"].includes(pg)&&<><DateInput label="Start" value={sd} onChange={v=>{setSd(v);setActivePeriod(null)}} t={t}/><DateInput label="End" value={ed} onChange={v=>{setEd(v);setActivePeriod(null)}} t={t}/><PeriodBtns onSelect={(s,e,l)=>{setSd(s);setEd(e);setActivePeriod(l)}} active={activePeriod} t={t} refDate={defaultEnd}/></>}
           {pg==="plan"&&<><Sel value={planYear} onChange={setPlanYear} options={planYearOpts} label="All Years" t={t}/></>}
           {showShopFilter&&<Sel value={store} onChange={setStore} options={opts.stores} label={shopLabel} t={t}/>}
           {showSeller&&<Sel value={seller} onChange={setSeller} options={opts.sellers} label="All Sellers" t={t}/>}
@@ -2516,7 +2858,18 @@ export default function App(){
       {/* CONTENT */}
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
-        {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fShop={fShopRev} fDaily={fDaily} em={{...em,...execDetail}} sd={sd} ed={ed} prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob} splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}/>}
+        {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin}
+          fAsin={fAsin} fShop={fShopRev} fDaily={fDaily}
+          em={{...em,...execDetail}} sd={sd} ed={ed} setSd={setSd} setEd={setEd}
+          prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob}
+          splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}
+          store={store} seller={seller} setStore={setStore} setSeller={setSeller}
+          storeOpts={opts.stores} sellerOpts={opts.sellers}
+          onApplyZoneB={()=>setFetchTrigger(v=>v+1)}
+          zoneATileData={zoneATileData} zoneAPreset={zoneAPreset} setZoneAPreset={setZoneAPreset}
+          zoneAStore={zoneAStore} setZoneAStore={setZoneAStore}
+          zoneALoading={zoneALoading} zoneAStoreOpts={opts.stores}
+        />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
         {pg==="prod"&&<ProdPage t={t} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily}/>}
