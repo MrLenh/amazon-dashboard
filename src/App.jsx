@@ -500,15 +500,39 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   };
 
   /* ── RECOMMENDATIONS ── */
+  const asinRowRefs=useRef({});
+  const scrollToAsinRow=asin=>{
+    // Switch groupBy to ASIN first, then scroll
+    setGroupBy('ASIN');
+    setTimeout(()=>{
+      const el=asinRowRefs.current[asin];
+      if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}
+      else{asinRef.current?.scrollIntoView({behavior:'smooth',block:'start'});}
+    },120);
+  };
   const recs=useMemo(()=>{
     const items=[];
-    const hiAcos=fAsin.filter(a=>a.ac>40&&a.r>5000).sort((a,b)=>b.ac-a.ac).slice(0,1);
-    if(hiAcos.length)items.push({title:`Cut ads on ${hiAcos[0].a}`,desc:`ACoS ${hiAcos[0].ac.toFixed(1)}% — ads eating margin. Consider pausing or reducing bid by 30%.`,color:t.orange});
-    const topMargin=fAsin.filter(a=>a.m>25&&a.ac<25&&a.r>10000).sort((a,b)=>b.m-a.m).slice(0,1);
-    if(topMargin.length)items.push({title:`Scale up ${topMargin[0].a}`,desc:`Margin ${topMargin[0].m.toFixed(1)}%, ACoS ${topMargin[0].ac.toFixed(1)}% — high efficiency. Increase budget to capture more share.`,color:t.green});
-    const losers=fShop.filter(s=>(s.n||0)<0).slice(0,1);
-    if(losers.length)items.push({title:`Review ${losers[0].s}`,desc:`Shop is running at a loss (${$(losers[0].n||0)}). Audit COGS vs pricing strategy, consider pausing low-margin ASINs.`,color:t.red});
-    if(!items.length)items.push({title:'All shops profitable',desc:'Current period shows healthy margins across all tracked shops.',color:t.green});
+    // High ACoS (multiple)
+    fAsin.filter(a=>a.ac>40&&a.r>3000).sort((a,b)=>b.ac-a.ac).slice(0,3).forEach(a=>{
+      items.push({title:`Cut ads on ${a.a}`,desc:`ACoS ${a.ac.toFixed(1)}% — ads eating margin. Consider pausing or reducing bid by 30%.`,color:t.orange,asin:a.a});
+    });
+    // High efficiency / scale up (multiple)
+    fAsin.filter(a=>a.m>20&&a.ac<25&&a.r>5000).sort((a,b)=>b.m-a.m).slice(0,3).forEach(a=>{
+      items.push({title:`Scale up ${a.a}`,desc:`Margin ${a.m.toFixed(1)}%, ACoS ${a.ac.toFixed(1)}% — high efficiency. Increase budget to capture more share.`,color:t.green,asin:a.a});
+    });
+    // Negative net profit ASINs
+    fAsin.filter(a=>a.n<0&&a.r>1000).sort((a,b)=>a.n-b.n).slice(0,2).forEach(a=>{
+      items.push({title:`Review loss-maker ${a.a}`,desc:`Net Profit ${$(a.n)} — below breakeven. Audit COGS, pricing, or pause.`,color:t.red,asin:a.a});
+    });
+    // Losing shops
+    fShop.filter(s=>(s.n||0)<0).slice(0,2).forEach(s=>{
+      items.push({title:`Review shop: ${s.s}`,desc:`Shop running at loss (${$(s.n||0)}). Audit COGS vs pricing, consider pausing low-margin ASINs.`,color:t.red,asin:null});
+    });
+    // Low margin but high revenue
+    fAsin.filter(a=>a.m>0&&a.m<8&&a.r>10000).sort((a,b)=>b.r-a.r).slice(0,2).forEach(a=>{
+      items.push({title:`Margin alert: ${a.a}`,desc:`Revenue ${$(a.r)} but margin only ${a.m.toFixed(1)}%. Review fees and COGS to improve profitability.`,color:t.orange,asin:a.a});
+    });
+    if(!items.length)items.push({title:'All metrics look healthy',desc:'No critical alerts. Keep monitoring ACoS and margin trends.',color:t.green,asin:null});
     return items;
   },[fAsin,fShop,t]);
 
@@ -643,46 +667,68 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
         {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data. Select a preset above and ensure DB is connected.</div>}
       </div>
 
-      {/* Detail panels — render ALL open tiles stacked below the tile row */}
-      {zoneATileData.filter(tile=>openTiles.has(tile.id)).map((tile,pi)=>{
-        const tileDR=buildDetailRows(tile.em, tile.detail||{});
-        const tileExpRows=tileExpandedRows[tile.id]||new Set();
-        const tileIdx=zoneATileData.findIndex(t=>t.id===tile.id);
-        const tileColor=TILE_COLORS[tileIdx%TILE_COLORS.length];
-        return<div key={tile.id} style={{borderTop:(pi===0?'2px':'1px')+' solid '+tileColor,background:t.tableBg}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 18px 8px',borderBottom:'1px solid '+DIV}}>
-            <div style={{width:10,height:10,borderRadius:3,background:tileColor,flexShrink:0}}/>
-            <span style={{fontSize:12,fontWeight:700,color:t.text}}>{tile.label}</span>
-            <span style={{fontSize:10,color:t.textMuted}}>{tile.dateLabel}</span>
+      {/* Detail panels — side by side columns for all open tiles */}
+      {openTiles.size>0&&(()=>{
+        const openList=zoneATileData.filter(tile=>openTiles.has(tile.id));
+        if(!openList.length)return null;
+        const ROWS=buildDetailRows(openList[0].em,{}).map(r=>r); // get row labels from first tile
+        const allDR=openList.map(tile=>buildDetailRows(tile.em,tile.detail||{}));
+        return<div style={{borderTop:'2px solid '+DIV,background:t.tableBg,overflowX:'auto'}}>
+          {/* Header row — tile labels */}
+          <div style={{display:'flex',borderBottom:'2px solid '+DIV}}>
+            {/* Metric label column header */}
+            <div style={{minWidth:140,flexShrink:0,padding:'9px 14px',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:.8,borderRight:'1px solid '+DIV}}>Metric</div>
+            {openList.map((tile,ci)=>{
+              const tileIdx=zoneATileData.findIndex(t=>t.id===tile.id);
+              const tileColor=TILE_COLORS[tileIdx%TILE_COLORS.length];
+              return<div key={tile.id} style={{flex:1,minWidth:160,padding:'9px 14px',borderRight:ci<openList.length-1?'1px solid '+DIV:'none',background:tileColor+'10'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:1}}>
+                  <div style={{width:8,height:8,borderRadius:2,background:tileColor,flexShrink:0}}/>
+                  <span style={{fontSize:12,fontWeight:700,color:t.text}}>{tile.label}</span>
+                </div>
+                <div style={{fontSize:10,color:t.textMuted,marginLeft:14}}>{tile.dateLabel}</div>
+              </div>;
+            })}
           </div>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{borderBottom:'2px solid '+DIV}}>
-              <th style={{padding:'8px 18px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:.8,background:t.tableBg}}>Metric</th>
-              <th style={{padding:'8px 18px',textAlign:'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',letterSpacing:.8,background:t.tableBg}}>Value</th>
-            </tr></thead>
-            <tbody>{tileDR.map((row,ri)=>{
-              const hasSub=row.sub&&row.sub.length>0;
-              const isExp=tileExpRows.has(row.id);
-              const isNpLike=(row.id==='np'||row.id==='grossProfit');
-              const valCol=isNpLike?(row.val>=0?t.green:t.red):t.text;
-              return<React.Fragment key={ri}>
-                <tr onClick={()=>hasSub&&toggleTileRow(tile.id,row.id)} style={{cursor:hasSub?'pointer':'default',borderBottom:'1px solid '+DIV}}
-                  onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={{padding:'9px 18px',color:S,fontSize:12,fontWeight:500,whiteSpace:'nowrap'}}>
-                    {hasSub&&<span style={{fontSize:9,color:t.primary,marginRight:5}}>{isExp?'▼':'▶'}</span>}
-                    {row.label}
-                  </td>
-                  <td style={{padding:'9px 18px',textAlign:'right',fontWeight:700,color:valCol,fontSize:13}}>{row.fmt(row.val)}</td>
-                </tr>
-                {isExp&&row.sub.map((s,si)=><tr key={'s'+si} style={{background:t.primaryGhost+'88',borderBottom:'1px solid '+DIV}}>
-                  <td style={{padding:'7px 18px 7px 38px',fontSize:11,color:t.textMuted}}>{s.l}</td>
-                  <td style={{padding:'7px 18px',textAlign:'right',fontSize:12,fontWeight:600,color:t.text}}>{s.fmt(s.v)}</td>
-                </tr>)}
-              </React.Fragment>;
-            })}</tbody>
-          </table>
+          {/* Data rows */}
+          {ROWS.map((row,ri)=>{
+            const hasSub=row.sub&&row.sub.length>0;
+            const isAnyExp=openList.some(tile=>(tileExpandedRows[tile.id]||new Set()).has(row.id));
+            return<React.Fragment key={ri}>
+              <div style={{display:'flex',borderBottom:'1px solid '+DIV,cursor:hasSub?'pointer':'default'}}
+                onClick={()=>{if(hasSub)openList.forEach(tile=>toggleTileRow(tile.id,row.id))}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                {/* Metric name */}
+                <div style={{minWidth:140,flexShrink:0,padding:'9px 14px',fontSize:12,fontWeight:500,color:S,whiteSpace:'nowrap',borderRight:'1px solid '+DIV,display:'flex',alignItems:'center',gap:4}}>
+                  {hasSub&&<span style={{fontSize:9,color:t.primary}}>{isAnyExp?'▼':'▶'}</span>}
+                  {row.label}
+                </div>
+                {/* Values per tile */}
+                {allDR.map((dr,ci)=>{
+                  const cell=dr[ri];
+                  const isNpLike=(cell.id==='np'||cell.id==='grossProfit');
+                  const valCol=isNpLike?(cell.val>=0?t.green:t.red):t.text;
+                  return<div key={ci} style={{flex:1,minWidth:160,padding:'9px 14px',textAlign:'right',fontWeight:700,color:valCol,fontSize:13,borderRight:ci<allDR.length-1?'1px solid '+DIV:'none'}}>
+                    {cell.fmt(cell.val)}
+                  </div>;
+                })}
+              </div>
+              {/* Sub-rows — expand across all columns */}
+              {isAnyExp&&row.sub.map((sub,si)=><div key={'s'+si} style={{display:'flex',borderBottom:'1px solid '+DIV,background:t.primaryGhost+'88'}}>
+                <div style={{minWidth:140,flexShrink:0,padding:'7px 14px 7px 30px',fontSize:11,color:t.textMuted,borderRight:'1px solid '+DIV}}>{sub.l}</div>
+                {allDR.map((dr,ci)=>{
+                  const cell=dr[ri];
+                  const sv=cell.sub?.[si];
+                  return<div key={ci} style={{flex:1,minWidth:160,padding:'7px 14px',textAlign:'right',fontSize:11,fontWeight:600,color:t.text,borderRight:ci<allDR.length-1?'1px solid '+DIV:'none'}}>
+                    {sv?sv.fmt(sv.v):'—'}
+                  </div>;
+                })}
+              </div>)}
+            </React.Fragment>;
+          })}
         </div>;
-      })}
+      })()}
 
     </div>
 
@@ -976,7 +1022,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
             {[groupBy,'Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i>=2?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
           </tr></thead>
-          <tbody>{groupedAsins.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+          <tbody>{groupedAsins.map((r,i)=><tr key={i} ref={el=>{if(el&&r.a)asinRowRefs.current[r.a]=el}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(r.r)}</td>
@@ -995,12 +1041,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
 
     {/* Recommendations */}
     <Cd t={t} style={{marginBottom:16}}>
-      <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:12}}>Recommendations</div>
-      <div style={{display:'flex',flexDirection:'column',gap:10}}>
-        {recs.map((r,i)=><div key={i} style={{display:'flex',alignItems:'flex-start',gap:12,padding:'10px 14px',borderRadius:10,background:r.color+'10',border:'1px solid '+r.color+'44'}}>
+      <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:12}}>Recommendations <span style={{fontSize:10,fontWeight:500,color:t.textMuted}}>({recs.length})</span></div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:10}}>
+        {recs.map((r,i)=><div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 13px',borderRadius:10,background:r.color+'10',border:'1px solid '+r.color+'33'}}>
           <div style={{width:6,height:6,borderRadius:3,background:r.color,marginTop:5,flexShrink:0}}/>
-          <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:t.text,marginBottom:3}}>{r.title}</div><div style={{fontSize:11,color:t.textSec,lineHeight:1.5}}>{r.desc}</div></div>
-          <button onClick={scrollToAsin} style={{padding:'4px 10px',borderRadius:7,border:'1px solid '+r.color+'66',background:'transparent',color:r.color,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>View</button>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:700,color:t.text,marginBottom:2}}>{r.title}</div>
+            <div style={{fontSize:11,color:t.textSec,lineHeight:1.5}}>{r.desc}</div>
+          </div>
+          {r.asin&&<button onClick={()=>scrollToAsinRow(r.asin)} style={{padding:'3px 9px',borderRadius:7,border:'1px solid '+r.color+'66',background:'transparent',color:r.color,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>View</button>}
         </div>)}
       </div>
     </Cd>
