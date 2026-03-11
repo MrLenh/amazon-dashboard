@@ -2733,23 +2733,27 @@ export default function App(){
     const periods=getZoneAPeriods(_preset, defaultEnd);
     if(!periods.length)return;
     setZoneALoading(true);
+    setZoneATileData([]);
     (async()=>{
       try{
-        // Fetch summary + detail for every tile in parallel
-        const results=await Promise.allSettled(
-          periods.map(p=>Promise.all([
-            api('exec/summary',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}),
-            api('exec/detail',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}).catch(()=>({})),
-          ]))
-        );
-        if(cancelled)return;
-        const tiles=periods.map((p,i)=>{
-          const res=results[i];
-          const [emRaw,detailRaw]=res.status==='fulfilled'?res.value:[EMPTY_EM,{}];
-          const emData=emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM;
-          return{id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emData,detail:detailRaw||{}};
-        });
-        setZoneATileData(tiles);
+        // Fetch tiles sequentially to avoid overloading DB with 5+ parallel queries
+        const tiles=[];
+        for(const p of periods){
+          try{
+            const [emRaw,detailRaw]=await Promise.all([
+              api('exec/summary',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}),
+              api('exec/detail',{start:p.start,end:p.end,store:_store==='All'?undefined:_store}).catch(()=>({})),
+            ]);
+            const emData=emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM;
+            tiles.push({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emData,detail:detailRaw||{}});
+            // Update UI after each tile so user sees progress
+            if(!cancelled)setZoneATileData([...tiles]);
+          }catch(te){
+            tiles.push({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:{}});
+          }
+          if(cancelled)return;
+        }
+        if(!cancelled)setZoneATileData(tiles);
       }catch(e){console.error('Zone A fetch error:',e);}
       if(!cancelled)setZoneALoading(false);
     })();
