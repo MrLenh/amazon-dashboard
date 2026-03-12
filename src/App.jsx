@@ -2843,13 +2843,15 @@ export default function App(){
   },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
-  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
-  zoneAParamsRef.current={zoneAPreset,storeStr};
+  const zoneARefDate=dbRange?.today||dbRange?.maxDate||defaultEnd;
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr,zoneARefDate});
+  zoneAParamsRef.current={zoneAPreset,storeStr,zoneARefDate};
   useEffect(()=>{
     if(!live||dbConnecting)return;
     let cancelled=false;
-    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
-    const periods=getZoneAPeriods(_preset, dbRange?.today||dbRange?.maxDate||defaultEnd);
+    const{zoneAPreset:_preset,storeStr:_store,zoneARefDate:_refDate}=zoneAParamsRef.current;
+    if(!dbRange)return; // wait for dbRange to load before computing periods
+    const periods=getZoneAPeriods(_preset, _refDate);
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
@@ -2865,7 +2867,7 @@ export default function App(){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,storeStr,live,dbConnecting]);
+  },[zoneAPreset,storeStr,live,dbConnecting,dbRange]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
