@@ -302,66 +302,66 @@ app.get('/api/shops', async (req, res) => {
     const shopMap = await getShopMap();
     const { s, e } = defDates(start, end);
     const accId = await storeToAccId(store);
-    let rows;
-    if (useProduct(seller, af)) {
-      const f = pWhere(s, e, accId, seller, af);
-      rows = await qc(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
-        SUM(${P_UNITS}) as units, 0 as orders
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p);
-    } else {
-      const f = scWhere(s, e, accId);
-      rows = await qc(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
-        SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders
-        FROM ${salesFrom()} ${f.w} GROUP BY sc.accountId ORDER BY revenue DESC`, f.p, 45000);
-    }
-    let stockMap = {};
-    try {
-      // seller_board_stock is a snapshot table (no date column) — query all records
-      (await qc('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId'))
-        .forEach(s => { stockMap[s.accountId] = { fba: parseInt(s.fba)||0, sv: parseFloat(s.sv)||0 }; });
-    } catch (e) {
-      try { (await qc('SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as fba FROM fba_iventory_planning f JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate GROUP BY f.accountId')).forEach(s=>{stockMap[s.accountId]={ fba: parseInt(s.fba)||0, sv: 0 };}); } catch(e2){}
-    }
-    // Ads spend per shop from seller_board_product (always needed for shop-level ads)
-    let adsMap = {}; // { accountId: { ads, gp } }
-    try {
-      const pF2 = pWhere(s, e, accId, null, null);
-      const adsRows = await qc(`SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF2.w} GROUP BY p.accountId`, pF2.p, 45000);
-      adsRows.forEach(r => { adsMap[r.accountId] = { ads: parseFloat(r.ads)||0, gp: parseFloat(r.gp)||0 }; });
-    } catch(ea) { console.warn('shops ads query:', ea.message); }
 
-    // Plan data per shop: aggregate asin_plan → seller_board_product.accountId
-    let planMap = {}; // { accountId: { gp, rv, ad, un } }
-    try {
-      const yr = new Date().getFullYear();
-      const planRows = await qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
-        FROM asin_plan ap
-        JOIN (SELECT DISTINCT asin, accountId FROM seller_board_product WHERE YEAR(date)=?) p
-          ON ap.asin COLLATE utf8mb4_0900_ai_ci = p.asin
-        WHERE ap.year = ?
-        GROUP BY p.accountId, ap.metrics`, [yr, yr], 45000);
-      planRows.forEach(r => {
-        if (!planMap[r.accountId]) planMap[r.accountId] = { gp: 0, rv: 0, ad: 0, un: 0 };
-        const pm = planMap[r.accountId];
-        const mk = mapMetric(r.metrics);
-        const v = parseFloat(r.val) || 0;
-        if (mk === 'gp') pm.gp += v;
-        else if (mk === 'rv') pm.rv += v;
-        else if (mk === 'ad') pm.ad += v;
-        else if (mk === 'un') pm.un += v;
-      });
-    } catch (ep) { console.warn('shops plan aggregation failed:', ep.message); }
+    // ── Q1: main revenue (run in parallel with Q2 stock, Q3 ads, Q4 plan) ──
+    const q1 = useProduct(seller, af)
+      ? (()=>{ const f=pWhere(s,e,accId,seller,af);
+          return qc(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
+            SUM(${P_UNITS}) as units, 0 as orders
+            FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p); })()
+      : (()=>{ const f=scWhere(s,e,accId);
+          return qc(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
+            SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders
+            FROM ${salesFrom()} ${f.w} GROUP BY sc.accountId ORDER BY revenue DESC`, f.p, 45000); })();
 
-    res.json(rows.map(r => {
+    // ── Q2: stock (no date filter needed) ──
+    const q2 = qc('SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock GROUP BY accountId', [], 20000)
+      .catch(()=>qc('SELECT f.accountId, SUM(CAST(f.available AS SIGNED)) as fba FROM fba_iventory_planning f JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate GROUP BY f.accountId', [], 30000).catch(()=>[]));
+
+    // ── Q3: ads+GP from seller_board_product — NO asin JOIN needed ──
+    const pF2 = pWhere(s, e, accId, null, null);
+    // Remove LEFT JOIN asin — not needed unless filtering by seller
+    const adsSQL = seller && seller!=='All'
+      ? `SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
+         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF2.w} GROUP BY p.accountId`
+      : `SELECT p.accountId, SUM(ABS(${P_ADS})) as ads, SUM(COALESCE(p.grossProfit,0)) as gp
+         FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
+    const q3 = qc(adsSQL, pF2.p, 35000).catch(()=>[]);
+
+    // ── Q4: plan — use date range not YEAR() for index ──
+    const yr = new Date(s).getFullYear();
+    const q4 = qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
+      FROM asin_plan ap
+      JOIN (SELECT DISTINCT asin, accountId FROM seller_board_product WHERE date BETWEEN ? AND ?) p
+        ON ap.asin COLLATE utf8mb4_0900_ai_ci = p.asin
+      WHERE ap.year = ?
+      GROUP BY p.accountId, ap.metrics`, [s, e, yr], 35000).catch(()=>[]);
+
+    // Run all in parallel
+    const [rows, stockRows, adsRows, planRows] = await Promise.all([q1, q2, q3, q4]);
+
+    const stockMap = {};
+    (stockRows||[]).forEach(s=>{ stockMap[s.accountId]={ fba:parseInt(s.fba)||0, sv:parseFloat(s.sv)||0 }; });
+
+    const adsMap = {};
+    (adsRows||[]).forEach(r=>{ adsMap[r.accountId]={ ads:parseFloat(r.ads)||0, gp:parseFloat(r.gp)||0 }; });
+
+    const planMap = {};
+    (planRows||[]).forEach(r=>{
+      if(!planMap[r.accountId])planMap[r.accountId]={ gp:0, rv:0, ad:0, un:0 };
+      const pm=planMap[r.accountId], mk=mapMetric(r.metrics), v=parseFloat(r.val)||0;
+      if(mk==='gp')pm.gp+=v; else if(mk==='rv')pm.rv+=v; else if(mk==='ad')pm.ad+=v; else if(mk==='un')pm.un+=v;
+    });
+
+    res.json(rows.map(r=>{
       const rev=parseFloat(r.revenue)||0, np=parseFloat(r.netProfit)||0;
-      const stk = stockMap[r.accountId] || { fba: 0, sv: 0 };
-      const plan = planMap[r.accountId] || { gp: 0, rv: 0, ad: 0, un: 0 };
-      const ad = adsMap[r.accountId] || { ads: 0, gp: 0 };
-      const gp = ad.gp || np; // prefer GP from product table, fallback to NP
-      return { shop: shopMap[r.accountId]||`Account ${r.accountId}`, accountId: r.accountId, revenue: rev, grossProfit: gp, netProfit: np, ads: ad.ads, units: parseInt(r.units)||0, orders: parseInt(r.orders)||0, margin: rev>0?(gp/rev*100):0, fbaStock: stk.fba, stockValue: stk.sv, gpPlan: plan.gp, rvPlan: plan.rv, adPlan: plan.ad, unPlan: plan.un };
+      const stk=stockMap[r.accountId]||{fba:0,sv:0};
+      const plan=planMap[r.accountId]||{gp:0,rv:0,ad:0,un:0};
+      const ad=adsMap[r.accountId]||{ads:0,gp:0};
+      const gp=ad.gp||np;
+      return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId, revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads, units:parseInt(r.units)||0, orders:parseInt(r.orders)||0, margin:rev>0?(gp/rev*100):0, fbaStock:stk.fba, stockValue:stk.sv, gpPlan:plan.gp, rvPlan:plan.rv, adPlan:plan.ad, unPlan:plan.un };
     }));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 /* ═══════════ TEAM ═══════════ */
