@@ -788,8 +788,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             )}
           </div>;
         })}
-        {!zoneALoading&&zoneATileData.length===0&&zoneARefDate&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data. Select a preset above and ensure DB is connected.</div>}
-        {!zoneALoading&&zoneATileData.length===0&&!zoneARefDate&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>⏳ Loading date range...</div>}
+        {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data for this period.</div>}
       </div>
 
     </div>
