@@ -2767,7 +2767,6 @@ export default function App(){
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
-    setOpenTiles(new Set()); // close all drawers on refresh
     // Fetch ALL summaries in parallel — summary is light (1 query each)
     const storeParam=_store==='All'?undefined:_store;
     Promise.allSettled(periods.map(p=>
