@@ -1149,14 +1149,36 @@ YOUR ROLE:
 DASHBOARD DATA:
 ${JSON.stringify(context, null, 2)}`;
 
-    // Build messages with conversation history
+    // Build messages with conversation history (support image attachments)
     const messages = [];
     if (history && history.length > 0) {
       history.forEach(h => {
-        messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text });
+        const role = h.role === 'user' ? 'user' : 'assistant';
+        // If message has an image, build multi-part content block
+        if (h.image && role === 'user') {
+          const mediaType = h.imageType || 'image/jpeg';
+          const base64Data = h.image.replace(/^data:[^;]+;base64,/, '');
+          messages.push({ role, content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+            { type: 'text', text: h.text || '' }
+          ]});
+        } else {
+          messages.push({ role, content: h.text || '' });
+        }
       });
     }
-    messages.push({ role: 'user', content: question });
+    // Build current user message (may include image)
+    const { image: imgData, imageType } = req.body;
+    if (imgData) {
+      const base64Data = imgData.replace(/^data:[^;]+;base64,/, '');
+      const mediaType = imageType || 'image/jpeg';
+      messages.push({ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+        { type: 'text', text: question || '' }
+      ]});
+    } else {
+      messages.push({ role: 'user', content: question });
+    }
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
