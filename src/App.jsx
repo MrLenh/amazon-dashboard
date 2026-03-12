@@ -501,14 +501,17 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
 
   /* ── RECOMMENDATIONS ── */
   const asinRowRefs=useRef({});
+  const[highlightedAsin,setHighlightedAsin]=useState(null);
   const scrollToAsinRow=asin=>{
-    // Switch groupBy to ASIN first, then scroll
     setGroupBy('ASIN');
+    setHighlightedAsin(asin);
     setTimeout(()=>{
       const el=asinRowRefs.current[asin];
       if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}
       else{asinRef.current?.scrollIntoView({behavior:'smooth',block:'start'});}
     },120);
+    // Clear highlight after 3s
+    setTimeout(()=>setHighlightedAsin(null),3200);
   };
   const recs=useMemo(()=>{
     const items=[];
@@ -585,6 +588,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[zoneBStoreOpen]);
 
+  /* ═══ ZONE B SELLER DROPDOWN ═══ */
+  const[zoneBSellerOpen,setZoneBSellerOpen]=useState(false);
+  const zoneBSellerRef=useRef(null);
+  useEffect(()=>{
+    if(!zoneBSellerOpen)return;
+    const h=e=>{if(zoneBSellerRef.current&&!zoneBSellerRef.current.contains(e.target))setZoneBSellerOpen(false)};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[zoneBSellerOpen]);
+
   /* tile color palette */
   const TILE_COLORS=['#3b82f6','#14b8a6','#10b981','#6366f1','#8b5cf6'];
 
@@ -622,11 +634,28 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               </div>)}
             </div>}
           </div>
-          {/* Zone A store filter */}
-          <select value={zoneAStore} onChange={e=>setZoneAStore(e.target.value)} style={{...selStyle,border:'1.5px solid #fed7aa',fontSize:11,padding:'5px 22px 5px 9px'}}>
-            <option value="All">All Shops</option>
-            {(zoneAStoreOpts||[]).map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
+          {/* Zone A store filter — synced with Zone B, same custom dropdown UI */}
+          <div ref={zoneAStoreRef} style={{position:'relative'}}>
+            <button onClick={()=>setZoneAStoreOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(zoneAStore!=='All'?'#f97316':'#fed7aa'),borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:zoneAStore!=='All'?'#c2410c':'#92400e',cursor:'pointer',whiteSpace:'nowrap'}}>
+              {zoneAStore==='All'?'All Shops':zoneAStore}
+              <span style={{fontSize:9,color:'#f97316',transition:'transform .2s',transform:zoneAStoreOpen?'rotate(180deg)':'none'}}>▾</span>
+            </button>
+            {zoneAStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:600,overflow:'hidden',minWidth:200,maxHeight:320,overflowY:'auto'}}>
+              {['All Shops',...(zoneAStoreOpts||[])].map((s,i)=>{
+                const val=i===0?'All':s;
+                const active=zoneAStore===val;
+                return<div key={s} onClick={()=>{
+                  setZoneAStore(val);
+                  setStore(val); // sync Zone B
+                  setZoneAStoreOpen(false);
+                }} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:active?'#c2410c':S,fontWeight:active?700:400,borderBottom:'1px solid '+DIV,background:active?'#fff7ed':'transparent'}}
+                  onMouseEnter={e=>e.currentTarget.style.background=active?'#fff7ed':t.tableHover}
+                  onMouseLeave={e=>e.currentTarget.style.background=active?'#fff7ed':'transparent'}>
+                  {active&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
+                </div>;
+              })}
+            </div>}
+          </div>
         </div>
       </div>
 
@@ -736,27 +765,40 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <span style={{fontSize:10,fontWeight:700,color:t.primary,textTransform:'uppercase',letterSpacing:.6}}>End:</span>
           <input type="date" value={ed} onChange={e=>setEd(e.target.value)} style={{...inputStyle,width:130}}/>
           <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
-          {/* Store dropdown */}
+          {/* Store dropdown — synced with Zone A */}
           <div ref={zoneBStoreRef} style={{position:'relative'}}>
             <button onClick={()=>setZoneBStoreOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(store!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:store!=='All'?t.primary:S,cursor:'pointer',whiteSpace:'nowrap'}}>
               {store==='All'?'All Shops':'Shop: '+store}
               <span style={{fontSize:9,color:t.textMuted,transition:'transform .2s',transform:zoneBStoreOpen?'rotate(180deg)':'none'}}>▾</span>
             </button>
-            {zoneBStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:200}}>
-              <div onClick={()=>{setStore('All');setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store==='All'?t.primary:S,fontWeight:store==='All'?700:400,borderBottom:'1px solid '+DIV,background:store==='All'?t.primaryGhost:'transparent'}}
+            {zoneBStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:200,maxHeight:320,overflowY:'auto'}}>
+              <div onClick={()=>{setStore('All');setZoneAStore('All');setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store==='All'?t.primary:S,fontWeight:store==='All'?700:400,borderBottom:'1px solid '+DIV,background:store==='All'?t.primaryGhost:'transparent'}}
                 onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store==='All'?t.primaryGhost:'transparent'}>
-                All Shops
+                {store==='All'&&<span style={{marginRight:6,fontSize:10}}>✓</span>}All Shops
               </div>
-              {(storeOpts||[]).map(s=><div key={s} onClick={()=>{setStore(s);setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store===s?t.primary:S,fontWeight:store===s?700:400,borderBottom:'1px solid '+DIV,background:store===s?t.primaryGhost:'transparent'}}
+              {(storeOpts||[]).map(s=><div key={s} onClick={()=>{setStore(s);setZoneAStore(s);setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store===s?t.primary:S,fontWeight:store===s?700:400,borderBottom:'1px solid '+DIV,background:store===s?t.primaryGhost:'transparent'}}
                 onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store===s?t.primaryGhost:'transparent'}>
-                {s}
+                {store===s&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
               </div>)}
             </div>}
           </div>
-          <select value={seller} onChange={e=>setSeller(e.target.value)} style={{...selStyle,border:'1.5px solid '+(seller!=='All'?t.primary:t.inputBorder),color:seller!=='All'?t.primary:S,fontWeight:seller!=='All'?600:500}}>
-            <option value="All">All Sellers</option>
-            {(sellerOpts||[]).map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
+          {/* Seller dropdown — custom UI matching store dropdown */}
+          <div ref={zoneBSellerRef} style={{position:'relative'}}>
+            <button onClick={()=>setZoneBSellerOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(seller!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:seller!=='All'?t.primary:S,cursor:'pointer',whiteSpace:'nowrap'}}>
+              {seller==='All'?'All Sellers':'Seller: '+seller}
+              <span style={{fontSize:9,color:t.textMuted,transition:'transform .2s',transform:zoneBSellerOpen?'rotate(180deg)':'none'}}>▾</span>
+            </button>
+            {zoneBSellerOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:160,maxHeight:320,overflowY:'auto'}}>
+              <div onClick={()=>{setSeller('All');setZoneBSellerOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:seller==='All'?t.primary:S,fontWeight:seller==='All'?700:400,borderBottom:'1px solid '+DIV,background:seller==='All'?t.primaryGhost:'transparent'}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=seller==='All'?t.primaryGhost:'transparent'}>
+                {seller==='All'&&<span style={{marginRight:6,fontSize:10}}>✓</span>}All Sellers
+              </div>
+              {(sellerOpts||[]).map(s=><div key={s} onClick={()=>{setSeller(s);setZoneBSellerOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:seller===s?t.primary:S,fontWeight:seller===s?700:400,borderBottom:'1px solid '+DIV,background:seller===s?t.primaryGhost:'transparent'}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=seller===s?t.primaryGhost:'transparent'}>
+                {seller===s&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
+              </div>)}
+            </div>}
+          </div>
           <button onClick={onApplyZoneB} style={{background:t.primary,color:'#fff',border:'none',borderRadius:8,padding:'7px 18px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Apply</button>
         </div>
       </div>
@@ -1009,7 +1051,12 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
             {[groupBy,'Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i>=2?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
           </tr></thead>
-          <tbody>{groupedAsins.map((r,i)=><tr key={i} ref={el=>{if(el&&r.a)asinRowRefs.current[r.a]=el}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+          <tbody>{groupedAsins.map((r,i)=>{
+            const isHL=highlightedAsin===r.a;
+            return<tr key={i} ref={el=>{if(el&&r.a)asinRowRefs.current[r.a]=el}}
+              style={{background:isHL?t.primary+'22':'transparent',outline:isHL?'2px solid '+t.primary:'none',transition:'background .3s,outline .3s'}}
+              onMouseEnter={e=>{if(!isHL)e.currentTarget.style.background=t.tableHover}}
+              onMouseLeave={e=>{e.currentTarget.style.background=isHL?t.primary+'22':'transparent'}}>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(r.r)}</td>
@@ -1019,7 +1066,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.cr.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ac<30?t.green:r.ac<50?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ac.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
-          </tr>)}</tbody>
+          </tr>;
+          })}</tbody>
         </table>
       </div>
       <div style={{padding:'6px 12px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider}}>{groupedAsins.length} {groupBy==='ASIN'?'ASINs':'groups'}</div>
