@@ -1149,36 +1149,14 @@ YOUR ROLE:
 DASHBOARD DATA:
 ${JSON.stringify(context, null, 2)}`;
 
-    // Build messages with conversation history (support image attachments)
+    // Build messages with conversation history
     const messages = [];
     if (history && history.length > 0) {
       history.forEach(h => {
-        const role = h.role === 'user' ? 'user' : 'assistant';
-        // If message has an image, build multi-part content block
-        if (h.image && role === 'user') {
-          const mediaType = h.imageType || 'image/jpeg';
-          const base64Data = h.image.replace(/^data:[^;]+;base64,/, '');
-          messages.push({ role, content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-            { type: 'text', text: h.text || '' }
-          ]});
-        } else {
-          messages.push({ role, content: h.text || '' });
-        }
+        messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text });
       });
     }
-    // Build current user message (may include image)
-    const { image: imgData, imageType } = req.body;
-    if (imgData) {
-      const base64Data = imgData.replace(/^data:[^;]+;base64,/, '');
-      const mediaType = imageType || 'image/jpeg';
-      messages.push({ role: 'user', content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-        { type: 'text', text: question || '' }
-      ]});
-    } else {
-      messages.push({ role: 'user', content: question });
-    }
+    messages.push({ role: 'user', content: question });
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1209,7 +1187,7 @@ app.get('/api/exec/shop-extended', async (req, res) => {
       SUM(COALESCE(p.unitsOrganic,0)+COALESCE(p.unitsPPC,0)) as units,
       SUM(COALESCE(p.sessions,0)) as sessions,
       SUM(COALESCE(p.promoValue,0)) as promo,
-      SUM(COALESCE(p.estimatedStorageFee,0)) as storageFee
+      0 as storageFee
       FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
       ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p, 45000);
     // FBA Stock from snapshot
