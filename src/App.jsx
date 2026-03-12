@@ -320,9 +320,65 @@ function MiniDonut({slices,t,size=72}){
   </div>;
 }
 
+/* ══ StoreMultiSelect — shared checkbox dropdown for Zone A & Zone B ══ */
+function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,accentText,t,zIndex=500}){
+  const[open,setOpen]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{
+    if(!open)return;
+    const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[open]);
+  const toggle=s=>{
+    const next=new Set(selected);
+    if(next.has(s))next.delete(s); else next.add(s);
+    onChange(next);
+  };
+  const allSelected=selected.size===0;
+  const label=allSelected?'All Shops':selected.size===1?Array.from(selected)[0]:selected.size+' Shops';
+  const active=!allSelected;
+  const BD=t.cardBorder; const DIV=t.divider; const S=t.text;
+  return<div ref={ref} style={{position:'relative'}}>
+    <button onClick={()=>setOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(active?accentBorder:accentBorder+'88'),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:active?700:600,color:active?accentText:S,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s'}}>
+      <span style={{fontSize:10}}>{active?'🏪 ':''}{label}</span>
+      <span style={{fontSize:9,color:accentText,transition:'transform .2s',transform:open?'rotate(180deg)':'none'}}>▾</span>
+    </button>
+    {open&&<div style={{position:'absolute',top:'calc(100% + 6px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:13,boxShadow:'0 16px 48px rgba(20,24,36,.18)',zIndex,minWidth:220,overflow:'hidden'}}>
+      {/* All Shops row */}
+      <div onClick={()=>{onChange(new Set());setOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid '+DIV,background:allSelected?accentColor+'18':'transparent',transition:'background .1s'}}
+        onMouseEnter={e=>e.currentTarget.style.background=allSelected?accentColor+'28':t.tableHover}
+        onMouseLeave={e=>e.currentTarget.style.background=allSelected?accentColor+'18':'transparent'}>
+        <div style={{width:16,height:16,borderRadius:4,border:'2px solid '+(allSelected?accentColor:t.inputBorder),background:allSelected?accentColor:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all .12s'}}>
+          {allSelected&&<span style={{color:'#fff',fontSize:10,fontWeight:800,lineHeight:1}}>✓</span>}
+        </div>
+        <span style={{fontSize:12,fontWeight:allSelected?700:500,color:allSelected?accentText:S}}>All Shops</span>
+      </div>
+      {/* Divider + individual shops */}
+      <div style={{maxHeight:260,overflowY:'auto'}}>
+        {opts.map(s=>{
+          const checked=selected.has(s);
+          return<div key={s} onClick={()=>toggle(s)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',cursor:'pointer',borderBottom:'1px solid '+DIV,background:checked?accentColor+'12':'transparent',transition:'background .1s'}}
+            onMouseEnter={e=>e.currentTarget.style.background=checked?accentColor+'22':t.tableHover}
+            onMouseLeave={e=>e.currentTarget.style.background=checked?accentColor+'12':'transparent'}>
+            <div style={{width:16,height:16,borderRadius:4,border:'2px solid '+(checked?accentColor:t.inputBorder),background:checked?accentColor:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all .12s'}}>
+              {checked&&<span style={{color:'#fff',fontSize:10,fontWeight:800,lineHeight:1}}>✓</span>}
+            </div>
+            <span style={{fontSize:12,fontWeight:checked?600:400,color:checked?accentText:S}}>{s}</span>
+          </div>;
+        })}
+      </div>
+      {/* Footer: count + Clear */}
+      {!allSelected&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 14px',borderTop:'1px solid '+DIV,background:t.tableBg}}>
+        <span style={{fontSize:11,color:accentText,fontWeight:600}}>{selected.size} selected</span>
+        <button onClick={()=>{onChange(new Set());}} style={{fontSize:11,fontWeight:700,color:accentColor,background:'transparent',border:'none',cursor:'pointer',padding:'2px 8px',borderRadius:6}}>Clear all</button>
+      </div>}
+    </div>}
+  </div>;
+}
+
 function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt,
   store,seller,setStore,setSeller,storeOpts,sellerOpts,onApplyZoneB,
-  zoneATileData,zoneAPreset,setZoneAPreset,zoneAStore,setZoneAStore,zoneALoading,zoneAStoreOpts}){
+  zoneATileData,zoneAPreset,setZoneAPreset,zoneALoading,selectedStores,setSelectedStores}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
   const[showDetail,setShowDetail]=useState(false);
@@ -546,7 +602,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     setOpenTiles(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
     // Lazy-load detail when opening for the first time
     if(tile&&tile.detail===null){
-      const storeParam=tile.start&&zoneAStore!=='All'?zoneAStore:undefined;
+      const storeParam=tile.start&&store!=='All'?store:undefined;
       api('exec/detail',{start:tile.start,end:tile.end,store:storeParam})
         .then(d=>{
           setZoneATileData(prev=>prev.map(t=>t.id===id?{...t,detail:d||{}}:t));
@@ -569,24 +625,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     const h=e=>{if(presetRef.current&&!presetRef.current.contains(e.target))setPresetOpen(false)};
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[presetOpen]);
-
-  /* ═══ ZONE A STORE DROPDOWN ═══ */
-  const[zoneAStoreOpen,setZoneAStoreOpen]=useState(false);
-  const zoneAStoreRef=useRef(null);
-  useEffect(()=>{
-    if(!zoneAStoreOpen)return;
-    const h=e=>{if(zoneAStoreRef.current&&!zoneAStoreRef.current.contains(e.target))setZoneAStoreOpen(false)};
-    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
-  },[zoneAStoreOpen]);
-
-  /* ═══ ZONE B STORE DROPDOWN ═══ */
-  const[zoneBStoreOpen,setZoneBStoreOpen]=useState(false);
-  const zoneBStoreRef=useRef(null);
-  useEffect(()=>{
-    if(!zoneBStoreOpen)return;
-    const h=e=>{if(zoneBStoreRef.current&&!zoneBStoreRef.current.contains(e.target))setZoneBStoreOpen(false)};
-    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
-  },[zoneBStoreOpen]);
 
   /* ═══ ZONE B SELLER DROPDOWN ═══ */
   const[zoneBSellerOpen,setZoneBSellerOpen]=useState(false);
@@ -634,28 +672,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               </div>)}
             </div>}
           </div>
-          {/* Zone A store filter — synced with Zone B, same custom dropdown UI */}
-          <div ref={zoneAStoreRef} style={{position:'relative'}}>
-            <button onClick={()=>setZoneAStoreOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(zoneAStore!=='All'?'#f97316':'#fed7aa'),borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:zoneAStore!=='All'?'#c2410c':'#92400e',cursor:'pointer',whiteSpace:'nowrap'}}>
-              {zoneAStore==='All'?'All Shops':zoneAStore}
-              <span style={{fontSize:9,color:'#f97316',transition:'transform .2s',transform:zoneAStoreOpen?'rotate(180deg)':'none'}}>▾</span>
-            </button>
-            {zoneAStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:600,overflow:'hidden',minWidth:200,maxHeight:320,overflowY:'auto'}}>
-              {['All Shops',...(zoneAStoreOpts||[])].map((s,i)=>{
-                const val=i===0?'All':s;
-                const active=zoneAStore===val;
-                return<div key={s} onClick={()=>{
-                  setZoneAStore(val);
-                  setStore(val); // sync Zone B
-                  setZoneAStoreOpen(false);
-                }} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:active?'#c2410c':S,fontWeight:active?700:400,borderBottom:'1px solid '+DIV,background:active?'#fff7ed':'transparent'}}
-                  onMouseEnter={e=>e.currentTarget.style.background=active?'#fff7ed':t.tableHover}
-                  onMouseLeave={e=>e.currentTarget.style.background=active?'#fff7ed':'transparent'}>
-                  {active&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
-                </div>;
-              })}
-            </div>}
-          </div>
+          {/* Zone A store filter — shared selectedStores, synced with Zone B */}
+          <StoreMultiSelect selected={selectedStores} onChange={setSelectedStores} opts={storeOpts||[]}
+            accentColor="#f97316" accentBorder="#f97316" accentText="#c2410c" t={t} zIndex={600}/>
         </div>
       </div>
 
@@ -765,38 +784,24 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <span style={{fontSize:10,fontWeight:700,color:t.primary,textTransform:'uppercase',letterSpacing:.6}}>End:</span>
           <input type="date" value={ed} onChange={e=>setEd(e.target.value)} style={{...inputStyle,width:130}}/>
           <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
-          {/* Store dropdown — synced with Zone A */}
-          <div ref={zoneBStoreRef} style={{position:'relative'}}>
-            <button onClick={()=>setZoneBStoreOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(store!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:store!=='All'?t.primary:S,cursor:'pointer',whiteSpace:'nowrap'}}>
-              {store==='All'?'All Shops':'Shop: '+store}
-              <span style={{fontSize:9,color:t.textMuted,transition:'transform .2s',transform:zoneBStoreOpen?'rotate(180deg)':'none'}}>▾</span>
-            </button>
-            {zoneBStoreOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:200,maxHeight:320,overflowY:'auto'}}>
-              <div onClick={()=>{setStore('All');setZoneAStore('All');setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store==='All'?t.primary:S,fontWeight:store==='All'?700:400,borderBottom:'1px solid '+DIV,background:store==='All'?t.primaryGhost:'transparent'}}
-                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store==='All'?t.primaryGhost:'transparent'}>
-                {store==='All'&&<span style={{marginRight:6,fontSize:10}}>✓</span>}All Shops
-              </div>
-              {(storeOpts||[]).map(s=><div key={s} onClick={()=>{setStore(s);setZoneAStore(s);setZoneBStoreOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:store===s?t.primary:S,fontWeight:store===s?700:400,borderBottom:'1px solid '+DIV,background:store===s?t.primaryGhost:'transparent'}}
-                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=store===s?t.primaryGhost:'transparent'}>
-                {store===s&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
-              </div>)}
-            </div>}
-          </div>
-          {/* Seller dropdown — custom UI matching store dropdown */}
+          {/* Store dropdown — shared selectedStores, synced with Zone A */}
+          <StoreMultiSelect selected={selectedStores} onChange={setSelectedStores} opts={storeOpts||[]}
+            accentColor={t.primary} accentBorder={t.primary} accentText={t.primary} t={t} zIndex={500}/>
+          {/* Seller dropdown — custom UI */}
           <div ref={zoneBSellerRef} style={{position:'relative'}}>
-            <button onClick={()=>setZoneBSellerOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(seller!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:seller!=='All'?t.primary:S,cursor:'pointer',whiteSpace:'nowrap'}}>
+            <button onClick={()=>setZoneBSellerOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(seller!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:600,color:seller!=='All'?t.primary:t.text,cursor:'pointer',whiteSpace:'nowrap'}}>
               {seller==='All'?'All Sellers':'Seller: '+seller}
               <span style={{fontSize:9,color:t.textMuted,transition:'transform .2s',transform:zoneBSellerOpen?'rotate(180deg)':'none'}}>▾</span>
             </button>
-            {zoneBSellerOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:160,maxHeight:320,overflowY:'auto'}}>
-              <div onClick={()=>{setSeller('All');setZoneBSellerOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:seller==='All'?t.primary:S,fontWeight:seller==='All'?700:400,borderBottom:'1px solid '+DIV,background:seller==='All'?t.primaryGhost:'transparent'}}
-                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=seller==='All'?t.primaryGhost:'transparent'}>
-                {seller==='All'&&<span style={{marginRight:6,fontSize:10}}>✓</span>}All Sellers
-              </div>
-              {(sellerOpts||[]).map(s=><div key={s} onClick={()=>{setSeller(s);setZoneBSellerOpen(false)}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:seller===s?t.primary:S,fontWeight:seller===s?700:400,borderBottom:'1px solid '+DIV,background:seller===s?t.primaryGhost:'transparent'}}
-                onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=seller===s?t.primaryGhost:'transparent'}>
-                {seller===s&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
-              </div>)}
+            {zoneBSellerOpen&&<div style={{position:'absolute',top:'calc(100% + 5px)',left:0,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:500,overflow:'hidden',minWidth:160,maxHeight:320,overflowY:'auto'}}>
+              {['All Sellers',...(sellerOpts||[])].map((s,i)=>{
+                const val=i===0?'All':s; const active=seller===val;
+                return<div key={s} onClick={()=>{setSeller(val);setZoneBSellerOpen(false);}} style={{padding:'9px 14px',cursor:'pointer',fontSize:12,color:active?t.primary:t.text,fontWeight:active?700:400,borderBottom:'1px solid '+t.divider,background:active?t.primaryGhost:'transparent'}}
+                  onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+                  onMouseLeave={e=>e.currentTarget.style.background=active?t.primaryGhost:'transparent'}>
+                  {active&&<span style={{marginRight:6,fontSize:10}}>✓</span>}{s}
+                </div>;
+              })}
             </div>}
           </div>
           <button onClick={onApplyZoneB} style={{background:t.primary,color:'#fff',border:'none',borderRadius:8,padding:'7px 18px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Apply</button>
@@ -2639,8 +2644,12 @@ export default function App(){
   const defaultStart=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
   const[sd,setSd]=useState(defaultStart);const[ed,setEd]=useState(defaultEnd);
   const[activePeriod,setActivePeriod]=useState(null);
-  const[store,setStore]=useState("All");const[seller,setSeller]=useState("All");
+  const[selectedStores,setSelectedStores]=useState(()=>new Set());
+  const[seller,setSeller]=useState("All");
   const[asinF,setAsinF]=useState("All");
+  const storeStr=Array.from(selectedStores).join(',') || 'All';
+  const store=storeStr;
+  const setStore=str=>setSelectedStores(str==='All'||!str?new Set():new Set(str.split(',').map(s=>s.trim()).filter(Boolean)));
   const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));
   const planYearOpts=useMemo(()=>{const c=new Date().getFullYear();return[String(c-1),String(c),String(c+1)]},[]);
   const clearDates=()=>{if(dbRange?.defaultStart)setSd(dbRange.defaultStart);else setSd(defaultStart);setEd(defaultEnd);setActivePeriod(null)};
@@ -2671,7 +2680,7 @@ export default function App(){
 
   // ═══ ZONE A STATE ═══
   const[zoneAPreset,setZoneAPreset]=useState('tod_7_14_30');
-  const[zoneAStore,setZoneAStore]=useState('All');
+  // zoneAStore is derived from selectedStores (shared with Zone B)
   const[zoneATileData,setZoneATileData]=useState([]);
   const[zoneALoading,setZoneALoading]=useState(false);
 
@@ -2805,12 +2814,12 @@ export default function App(){
   },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
-  const zoneAParamsRef=useRef({zoneAPreset,zoneAStore});
-  zoneAParamsRef.current={zoneAPreset,zoneAStore};
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
+  zoneAParamsRef.current={zoneAPreset,storeStr};
   useEffect(()=>{
     if(!live||dbConnecting)return;
     let cancelled=false;
-    const{zoneAPreset:_preset,zoneAStore:_store}=zoneAParamsRef.current;
+    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
     const periods=getZoneAPeriods(_preset, defaultEnd);
     if(!periods.length)return;
     setZoneALoading(true);
@@ -2827,7 +2836,7 @@ export default function App(){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,zoneAStore,live,dbConnecting]);
+  },[zoneAPreset,storeStr,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
@@ -2957,10 +2966,10 @@ export default function App(){
           splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}
           store={store} seller={seller} setStore={setStore} setSeller={setSeller}
           storeOpts={opts.stores} sellerOpts={opts.sellers}
+          selectedStores={selectedStores} setSelectedStores={setSelectedStores}
           onApplyZoneB={()=>setFetchTrigger(v=>v+1)}
           zoneATileData={zoneATileData} zoneAPreset={zoneAPreset} setZoneAPreset={setZoneAPreset}
-          zoneAStore={zoneAStore} setZoneAStore={setZoneAStore}
-          zoneALoading={zoneALoading} zoneAStoreOpts={opts.stores}
+          zoneALoading={zoneALoading}
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
