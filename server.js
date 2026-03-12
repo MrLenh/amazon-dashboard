@@ -66,41 +66,64 @@ async function q(sql, params = [], timeoutMs = 45000) {
 /* ═══════════ BOOT: create indexes if missing ═══════════ */
 async function ensureIndexes() {
   if (!pool) return;
-  const idxSQL = [
-    // seller_board_sales — main table for exec/summary
-    `ALTER TABLE seller_board_sales ADD INDEX IF NOT EXISTS idx_sbs_date_acc (date, accountId)`,
-    `ALTER TABLE seller_board_sales ADD INDEX IF NOT EXISTS idx_sbs_acc_date (accountId, date)`,
-    // seller_board_product — used for ASIN/team/shops queries
-    `ALTER TABLE seller_board_product ADD INDEX IF NOT EXISTS idx_sbp_date_acc (date, accountId)`,
-    `ALTER TABLE seller_board_product ADD INDEX IF NOT EXISTS idx_sbp_asin (asin)`,
-    // fba_iventory_planning — inventory queries
-    `ALTER TABLE fba_iventory_planning ADD INDEX IF NOT EXISTS idx_inv_date_acc (date, accountId)`,
-  ];
-  for (const sql of idxSQL) {
-    try { await q(sql, [], 30000); console.log('✅ Index:', sql.match(/idx_\w+/)?.[0]); }
-    catch(e) { console.warn('⚠️ Index skip:', sql.match(/idx_\w+/)?.[0], '-', e.message.slice(0,60)); }
-  }
+  // Check existing indexes first to avoid ALTER on already-indexed tables
+  try {
+    const existingIdx = await q(`SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME LIKE 'idx_%'`, [], 10000);
+    const existing = new Set(existingIdx.map(r=>r.INDEX_NAME));
+
+    const idxSQL = [
+      ['idx_sbs_date',     `ALTER TABLE seller_board_sales ADD INDEX idx_sbs_date (date)`],
+      ['idx_sbs_date_acc', `ALTER TABLE seller_board_sales ADD INDEX idx_sbs_date_acc (date, accountId)`],
+      ['idx_sbp_date',     `ALTER TABLE seller_board_product ADD INDEX idx_sbp_date (date)`],
+      ['idx_sbp_date_acc', `ALTER TABLE seller_board_product ADD INDEX idx_sbp_date_acc (date, accountId)`],
+      ['idx_sbp_asin',     `ALTER TABLE seller_board_product ADD INDEX idx_sbp_asin (asin(20))`],
+      ['idx_inv_date_acc', `ALTER TABLE fba_iventory_planning ADD INDEX idx_inv_date_acc (date, accountId)`],
+    ];
+    for (const [name, sql] of idxSQL) {
+      if (existing.has(name)) { console.log('✓ Index exists:', name); continue; }
+      try { await q(sql, [], 60000); console.log('✅ Index created:', name); }
+      catch(e) { console.warn('⚠️ Index skip:', name, '-', e.message.slice(0,80)); }
+    }
+  } catch(e) { console.warn('ensureIndexes failed:', e.message); }
 }
-// Run index creation in background after startup
-setTimeout(() => ensureIndexes(), 3000);
+setTimeout(() => ensureIndexes(), 5000);
 
 /* ═══════════ SALES TABLE ═══════════ */
 function salesFrom(alias = 'sc') { return `seller_board_sales ${alias}`; }
 
 /* ═══════════ HELPERS ═══════════ */
+// In-memory shop map cache — refreshed every 5 min, avoids repeated DB hits
+let _shopMapCache = null;
+let _shopMapTs = 0;
 async function getShopMap() {
+  if (_shopMapCache && Date.now() - _shopMapTs < 5*60*1000) return _shopMapCache;
   const rows = await q('SELECT id, shop FROM accounts WHERE deleted_at IS NULL');
-  const m = {}; rows.forEach(r => { m[r.id] = r.shop; }); return m;
+  _shopMapCache = {}; rows.forEach(r => { _shopMapCache[r.id] = r.shop; });
+  _shopMapTs = Date.now();
+  return _shopMapCache;
 }
 async function getShopReverseMap() {
-  const rows = await q('SELECT id, shop FROM accounts WHERE deleted_at IS NULL');
-  const m = {}; rows.forEach(r => { m[r.shop] = r.id; }); return m;
+  const m = await getShopMap();
+  const rev = {}; Object.entries(m).forEach(([id,shop])=>{ rev[shop]=parseInt(id); }); return rev;
 }
 async function storeToAccId(storeName) {
   if (!storeName || storeName === 'All') return null;
   const rm = await getShopReverseMap();
   return rm[storeName] || null;
 }
+
+// Concurrency limiter — at most N simultaneous heavy queries
+function makeLimiter(n) {
+  let running = 0; const queue = [];
+  return fn => new Promise((res, rej) => {
+    const run = () => { running++; fn().then(v=>{running--;next();res(v)}).catch(e=>{running--;next();rej(e)}); };
+    const next = () => { if (queue.length && running < n) queue.shift()(); };
+    if (running < n) run(); else queue.push(run);
+  });
+}
+const execLimiter = makeLimiter(2); // max 2 exec/summary queries at once
+
 function defDates(start, end) {
   return {
     s: start || new Date(Date.now()-30*86400000).toISOString().slice(0,10),
@@ -153,6 +176,21 @@ app.get('/api/debug/filters', async (req, res) => {
     } catch(e) { R.steps.salesRange = e.message; }
     R.steps.planMetrics = (await q('SELECT DISTINCT metrics FROM asin_plan LIMIT 20').catch(()=>[])).map(m=>`${m.metrics}→${mapMetric(m.metrics)}`);
     try { R.steps.analyticsCols = (await q('SHOW COLUMNS FROM analytics_search_catalog_performance')).map(c=>c.Field); } catch(e) { R.steps.analyticsCols = e.message; }
+    // Check indexes
+    try {
+      const idxRows = await q(`SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('seller_board_sales','seller_board_product')
+        AND INDEX_NAME != 'PRIMARY' ORDER BY TABLE_NAME, INDEX_NAME`, [], 10000);
+      R.steps.indexes = idxRows.map(r=>`${r.TABLE_NAME}.${r.INDEX_NAME}(${r.COLUMN_NAME})`);
+    } catch(e) { R.steps.indexes = e.message; }
+    // Quick query timing test
+    try {
+      const t0=Date.now();
+      const ed=new Date().toISOString().slice(0,10);
+      const sd=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+      await q(`SELECT SUM(COALESCE(salesOrganic,0)+COALESCE(salesPPC,0)) as s FROM seller_board_sales WHERE date BETWEEN ? AND ?`,[sd,ed],20000);
+      R.steps.queryMs = Date.now()-t0;
+    } catch(e) { R.steps.queryMs = 'error:'+e.message; }
   } catch (e) { R.globalError = e.message; }
   res.json(R);
 });
@@ -193,29 +231,32 @@ app.get('/api/exec/summary', async (req, res) => {
     const { s, e } = defDates(start, end);
     const accId = await storeToAccId(store);
     let rows, cogsVal = 0;
+
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
-      rows = await qc(`SELECT SUM(${P_SALES}) as sales, SUM(${P_UNITS}) as units, 0 as orders,
+      const sql = `SELECT SUM(${P_SALES}) as sales, SUM(${P_UNITS}) as units, 0 as orders,
         SUM(COALESCE(p.refunds,0)) as refunds, SUM(${P_ADS}) as advCost,
         0 as shippingCost, 0 as refundCost,
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(COALESCE(p.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`, f.p, 45000);
+        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`;
+      rows = await execLimiter(()=>qc(sql, f.p, 55000));
     } else {
       const f = scWhere(s, e, accId);
-      rows = await qc(`SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
+      const sql = `SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
         SUM(COALESCE(sc.refunds,0)) as refunds, SUM(${SC_ADS}) as advCost,
         SUM(COALESCE(sc.shipping,0)) as shippingCost, SUM(COALESCE(sc.refundCost,0)) as refundCost,
         SUM(COALESCE(sc.amazonFees,0)) as amazonFees,
         SUM(COALESCE(sc.netProfit,0)) as netProfit, SUM(COALESCE(sc.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(sc.sessions,0)) as sessions, SUM(COALESCE(sc.grossProfit,0)) as grossProfit
-        FROM ${salesFrom()} ${f.w}`, f.p, 45000);
+        FROM ${salesFrom()} ${f.w}`;
+      rows = await execLimiter(()=>qc(sql, f.p, 55000));
       // COGS from seller_board_product (not in sales tables)
       try {
         let cw = 'WHERE p.date BETWEEN ? AND ?'; const cp = [s, e];
         if (accId) { cw += ' AND p.accountId = ?'; cp.push(accId); }
-        const cr = await qc(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp);
+        const cr = await qc(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp, 30000);
         cogsVal = parseFloat(cr[0]?.cogs) || 0;
       } catch(ce) {}
     }
