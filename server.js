@@ -481,12 +481,36 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       SUM(COALESCE(f.invAge0To90Days,0)) as a0,
       SUM(COALESCE(f.invAge91To180Days,0)) as a91, SUM(COALESCE(f.invAge181To270Days,0)) as a181,
       SUM(COALESCE(f.invAge271To365Days,0)) as a271, SUM(COALESCE(f.invAge365PlusDays,0)) as a365,
-      SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee,
       AVG(COALESCE(f.sellThrough,0)) as avgSellThrough
       FROM fba_iventory_planning f
       JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest
         ON f.accountId = latest.aid AND f.date = latest.maxDate
       WHERE 1=1${extra}`, params);
+
+    // Storage fee: use the LAST snapshot date of the CURRENT month only
+    // (sum per-SKU on one day = correct estimate; summing across dates = inflated)
+    let storageFee = 0;
+    try {
+      let sfExtra = ''; const sfParams = [];
+      { const _ac=accIdClauseRaw(accId); sfExtra=_ac.w; sfParams.push(..._ac.p); }
+      const sfRows = await qc(`
+        SELECT SUM(COALESCE(estimatedStorageCostNextMonth,0)) as fee
+        FROM fba_iventory_planning
+        WHERE date = (
+          SELECT MAX(date) FROM fba_iventory_planning
+          WHERE DATE_FORMAT(date,'%Y-%m') = DATE_FORMAT(CURDATE(),'%Y-%m')
+        )${sfExtra}`, sfParams, 15000);
+      storageFee = parseFloat(sfRows[0]?.fee) || 0;
+      // Fallback: if no data this month, use latest available snapshot date
+      if (!storageFee) {
+        const sfFb = await qc(`
+          SELECT SUM(COALESCE(estimatedStorageCostNextMonth,0)) as fee
+          FROM fba_iventory_planning
+          WHERE date = (SELECT MAX(date) FROM fba_iventory_planning)${sfExtra}`, sfParams, 15000);
+        storageFee = parseFloat(sfFb[0]?.fee) || 0;
+      }
+    } catch(e) { /* fallback to 0 */ }
+
     const r = rows[0]||{};
     const avail=parseInt(r.availableInv)||0;
     const reserved=parseInt(r.reserved)||0;
