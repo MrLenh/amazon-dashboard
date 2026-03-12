@@ -144,32 +144,13 @@ function makeLimiter(n) {
     if (running < n) run(); else queue.push(run);
   });
 }
-const summaryLimiter = makeLimiter(2);
-const detailLimiter  = makeLimiter(3);
+const summaryLimiter = makeLimiter(2); // max 2 concurrent exec/summary (heavy, full-scan)
+const detailLimiter  = makeLimiter(3); // max 3 concurrent exec/detail (single merged query, faster)
 
-/* ═══ LATEST DB DATE CACHE ═══
-   Railway = UTC. Vietnam = UTC+7. Sellerboard lags 1-3 days.
-   Never trust CURDATE() or new Date() as "today".
-   Always use MAX(date) from seller_board_product as reference.
-   Cached 5 min. ═══════════════ */
-let _latestDateCache = { date: null, ts: 0 };
-async function getLatestDbDate() {
-  const now = Date.now();
-  if (_latestDateCache.date && now - _latestDateCache.ts < 5*60*1000) return _latestDateCache.date;
-  try {
-    const rows = await q('SELECT MAX(date) as md FROM seller_board_product');
-    const d = rows[0]?.md ? String(rows[0].md).slice(0,10) : null;
-    if (d) { _latestDateCache = { date: d, ts: now }; return d; }
-  } catch(e) { /* fallback */ }
-  // Fallback: Vietnam time (UTC+7)
-  return new Date(Date.now()+7*3600000).toISOString().slice(0,10);
-}
-
-function defDates(start, end, latestDate) {
-  const ref = latestDate || new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+function defDates(start, end) {
   return {
-    s: start || new Date(new Date(ref+'T12:00:00').getTime()-30*86400000).toISOString().slice(0,10),
-    e: end   || ref,
+    s: start || new Date(Date.now()-30*86400000).toISOString().slice(0,10),
+    e: end || new Date().toISOString().slice(0,10),
   };
 }
 
@@ -228,8 +209,8 @@ app.get('/api/debug/filters', async (req, res) => {
     // Quick query timing test
     try {
       const t0=Date.now();
-      const ed=await getLatestDbDate();
-      const sd=new Date(new Date(ed+'T12:00:00').getTime()-7*86400000).toISOString().slice(0,10);
+      const ed=new Date().toISOString().slice(0,10);
+      const sd=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
       await q(`SELECT SUM(COALESCE(salesOrganic,0)+COALESCE(salesPPC,0)) as s FROM seller_board_sales WHERE date BETWEEN ? AND ?`,[sd,ed],20000);
       R.steps.queryMs = Date.now()-t0;
     } catch(e) { R.steps.queryMs = 'error:'+e.message; }
@@ -242,13 +223,13 @@ app.get('/api/date-range', async (req, res) => {
   try {
     const rows = await q(`SELECT MIN(sc.date) as minDate, MAX(sc.date) as maxDate FROM ${salesFrom()}`);
     const r = rows[0] || {};
-    const maxDate = r.maxDate ? String(r.maxDate).slice(0,10) : null;
-    const minDate = r.minDate ? String(r.minDate).slice(0,10) : null;
-    // defaultEnd = latest date in DB (not server clock — Sellerboard lags 1-3 days)
-    const defaultEnd = maxDate || new Date(Date.now()+7*3600000).toISOString().slice(0,10);
-    let defaultStart = new Date(new Date(defaultEnd+'T12:00:00').getTime()-29*86400000).toISOString().slice(0,10);
+    const maxDate = r.maxDate ? new Date(r.maxDate).toISOString().slice(0,10) : null;
+    const minDate = r.minDate ? new Date(r.minDate).toISOString().slice(0,10) : null;
+    const today = new Date().toISOString().slice(0,10);
+    let defaultStart = new Date(Date.now()-29*86400000).toISOString().slice(0,10);
     if (minDate && defaultStart < minDate) defaultStart = minDate;
-    res.json({ minDate, maxDate, defaultStart, defaultEnd, today: defaultEnd });
+    // End date = today always
+    res.json({ minDate, maxDate, defaultStart, defaultEnd: today });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -257,7 +238,7 @@ app.get('/api/filters', async (req, res) => {
   try {
     const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
     const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
-    const asinShops = await q("SELECT DISTINCT p.asin, p.accountId FROM seller_board_product p WHERE p.date >= DATE_SUB((SELECT MAX(date) FROM seller_board_product), INTERVAL 365 DAY)");
+    const asinShops = await q("SELECT DISTINCT p.asin, p.accountId FROM seller_board_product p WHERE p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)");
     const sm = {}; shops.forEach(s => { sm[s.id] = s.name; });
     const asm = {};
     asinShops.forEach(r => { if (!asm[r.asin]) asm[r.asin] = []; const sn = sm[r.accountId]; if (sn && !asm[r.asin].includes(sn)) asm[r.asin].push(sn); });
@@ -551,7 +532,7 @@ app.get('/api/inventory/stock-trend', async (req, res) => {
     const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
     { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
-    res.json(await q(`SELECT date, SUM(FBAStock) as fbaStock, SUM(GREATEST(FBAStock - COALESCE(reserved,0), 0)) as available FROM seller_board_stock_daily WHERE date>=DATE_SUB((SELECT MAX(date) FROM seller_board_stock_daily), INTERVAL 60 DAY)${extra} GROUP BY date ORDER BY date`, params));
+    res.json(await q(`SELECT date, SUM(FBAStock) as fbaStock, SUM(GREATEST(FBAStock - COALESCE(reserved,0), 0)) as available FROM seller_board_stock_daily WHERE date>=DATE_SUB(CURDATE(), INTERVAL 60 DAY)${extra} GROUP BY date ORDER BY date`, params));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -564,7 +545,7 @@ app.get('/api/stock/history', async (req, res) => {
     const rows = await q(`SELECT d.date, SUM(d.FBAStock) as fba, AVG(d.estimatedSalesVelocity) as velocity,
       MIN(d.daysOfStockLeft) as daysLeft, SUM(d.reserved) as reserved, SUM(d.sentToFBA) as sentToFBA
       FROM seller_board_stock_daily d WHERE d.asin=?
-      AND d.date>=DATE_SUB((SELECT MAX(date) FROM seller_board_stock_daily), INTERVAL 365 DAY)
+      AND d.date>=DATE_SUB(CURDATE(), INTERVAL 365 DAY)
       GROUP BY d.date ORDER BY d.date`, [asin], 15000);
     // Snapshot: aggregate all accounts for this ASIN
     const snap = await q(`SELECT
@@ -636,7 +617,7 @@ app.get('/api/inventory/by-shop', async (req, res) => {
     let unitsMap = {}; // { accountId: { units, days } }
     try {
       const salesRows = await q(`SELECT p.accountId, SUM(${P_UNITS}) as units, DATEDIFF(MAX(p.date),MIN(p.date))+1 as days
-        FROM seller_board_product p WHERE p.date >= DATE_SUB((SELECT MAX(date) FROM seller_board_product), INTERVAL 30 DAY)${accFilter}
+        FROM seller_board_product p WHERE p.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)${accFilter}
         GROUP BY p.accountId`, accParams, 15000);
       salesRows.forEach(r => { unitsMap[r.accountId] = { units: parseInt(r.units)||0, days: parseInt(r.days)||1 }; });
     } catch(e) { /* ok */ }
@@ -897,7 +878,7 @@ app.get('/api/plan/data', async (req, res) => {
       if (accIds2 && accIds2.length) {
         // Pre-fetch ASINs for this store (faster than subquery)
         const ph2 = accIds2.map(()=>'?').join(',');
-        const storeAsins = (await q(`SELECT DISTINCT asin FROM seller_board_product WHERE accountId IN (${ph2}) AND date >= DATE_SUB((SELECT MAX(date) FROM seller_board_product), INTERVAL 365 DAY) LIMIT 2000`, accIds2, 15000).catch(()=>[])).map(r=>r.asin);
+        const storeAsins = (await q(`SELECT DISTINCT asin FROM seller_board_product WHERE accountId IN (${ph2}) AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) LIMIT 2000`, accIds2, 15000).catch(()=>[])).map(r=>r.asin);
         if (storeAsins.length) {
           const placeholders = storeAsins.map(()=>'?').join(',');
           where += ` AND ap.asin IN (${placeholders})`;
