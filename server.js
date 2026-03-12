@@ -107,10 +107,32 @@ async function getShopReverseMap() {
   const m = await getShopMap();
   const rev = {}; Object.entries(m).forEach(([id,shop])=>{ rev[shop]=parseInt(id); }); return rev;
 }
-async function storeToAccId(storeName) {
-  if (!storeName || storeName === 'All') return null;
+// storeToAccIds: accepts "All", "Shop1", or "Shop1,Shop2,Shop3"
+// Returns null (= no filter) or array of integers
+async function storeToAccIds(storeParam) {
+  if (!storeParam || storeParam === 'All') return null;
   const rm = await getShopReverseMap();
-  return rm[storeName] || null;
+  const names = storeParam.split(',').map(s=>s.trim()).filter(Boolean);
+  const ids = names.map(n=>rm[n]).filter(Boolean);
+  return ids.length ? ids : null;
+}
+// Legacy single-id helper (still used in some endpoints)
+async function storeToAccId(storeParam) {
+  const ids = await storeToAccIds(storeParam);
+  return ids ? ids[0] : null;
+}
+
+// Build accountId WHERE fragment supporting single or multi
+function accIdClause(alias, accIds) {
+  if (!accIds || !accIds.length) return { w: '', p: [] };
+  if (accIds.length === 1) return { w: ` AND ${alias}.accountId = ?`, p: [accIds[0]] };
+  return { w: ` AND ${alias}.accountId IN (${accIds.map(()=>'?').join(',')})`, p: accIds };
+}
+// Unqualified version (no alias)
+function accIdClauseRaw(accIds) {
+  if (!accIds || !accIds.length) return { w: '', p: [] };
+  if (accIds.length === 1) return { w: ` AND accountId = ?`, p: [accIds[0]] };
+  return { w: ` AND accountId IN (${accIds.map(()=>'?').join(',')})`, p: accIds };
 }
 
 // Concurrency limiter — at most N simultaneous heavy queries
@@ -139,16 +161,16 @@ const P_SALES  = 'COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)';
 const P_UNITS  = 'COALESCE(p.unitsOrganic,0)+COALESCE(p.unitsPPC,0)';
 const P_ADS    = 'COALESCE(p.sponsoredProducts,0)+COALESCE(p.sponsoredDisplay,0)+COALESCE(p.sponsoredBrands,0)+COALESCE(p.sponsoredBrandsVideo,0)+COALESCE(p.googleAds,0)+COALESCE(p.facebookAds,0)';
 
-function pWhere(sd, ed, accId, seller, af) {
+function pWhere(sd, ed, accIds, seller, af) {
   let w = 'WHERE p.date BETWEEN ? AND ?'; const p = [sd, ed];
-  if (accId) { w += ' AND p.accountId = ?'; p.push(accId); }
+  const ac = accIdClause('p', accIds); w += ac.w; p.push(...ac.p);
   if (seller && seller !== 'All') { w += ' AND a.seller = ?'; p.push(seller); }
   if (af && af !== 'All') { w += ' AND p.asin = ?'; p.push(af); }
   return { w, p };
 }
-function scWhere(sd, ed, accId) {
+function scWhere(sd, ed, accIds) {
   let w = 'WHERE sc.date BETWEEN ? AND ?'; const p = [sd, ed];
-  if (accId) { w += ' AND sc.accountId = ?'; p.push(accId); }
+  const ac = accIdClause('sc', accIds); w += ac.w; p.push(...ac.p);
   return { w, p };
 }
 function useProduct(seller, af) {
@@ -229,7 +251,7 @@ app.get('/api/exec/summary', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     let rows, cogsVal = 0;
 
     if (useProduct(seller, af)) {
@@ -255,7 +277,7 @@ app.get('/api/exec/summary', async (req, res) => {
       // COGS from seller_board_product (not in sales tables)
       try {
         let cw = 'WHERE p.date BETWEEN ? AND ?'; const cp = [s, e];
-        if (accId) { cw += ' AND p.accountId = ?'; cp.push(accId); }
+        { const _ac=accIdClause('p',accId); cw+=_ac.w; cp.push(..._ac.p); }
         const cr = await qc(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp, 30000);
         cogsVal = parseFloat(cr[0]?.cogs) || 0;
       } catch(ce) {}
@@ -280,7 +302,7 @@ app.get('/api/exec/daily', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     let rows;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
@@ -318,7 +340,7 @@ app.get('/api/product/asins', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     const f = pWhere(s, e, accId, seller, af);
     const shopMap = await getShopMap();
     const rows = await qc(`SELECT p.asin, p.accountId, a.seller,
@@ -342,7 +364,7 @@ app.get('/api/shops', async (req, res) => {
     const { start, end, store, seller, asin: af } = req.query;
     const shopMap = await getShopMap();
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
 
     // ── Q1: main revenue (run in parallel with Q2 stock, Q3 ads, Q4 plan) ──
     const q1 = useProduct(seller, af)
@@ -410,10 +432,10 @@ app.get('/api/team', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     let w = 'WHERE p.date BETWEEN ? AND ?'; const params = [s, e];
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
-    if (accId) { w += ' AND p.accountId = ?'; params.push(accId); }
+    { const _ac=accIdClause('p',accId); w+=_ac.w; params.push(..._ac.p); }
     if (seller && seller !== 'All') { w += " AND COALESCE(NULLIF(a.seller,''),'Unassigned') = ?"; params.push(seller); }
     const rows = await qc(`SELECT COALESCE(NULLIF(a.seller,''),'Unassigned') as seller,
       SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue,
@@ -434,16 +456,16 @@ app.get('/api/team', async (req, res) => {
 /* ═══════════ INVENTORY ═══════════ */
 app.get('/api/inventory/snapshot', async (req, res) => {
   try {
-    const accId = await storeToAccId(req.query.store);
+    const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
-    if (accId) { extra = ' AND f.accountId = ?'; params.push(accId); }
+    { const _ac=accIdClause('f',accId); extra=_ac.w; params.push(..._ac.p); }
 
     // FBA Stock from seller_board_stock (snapshot table, no date column)
     let fbaFromStock = 0;
     try {
       let sw = 'WHERE 1=1';
       const sp = [];
-      if (accId) { sw += ' AND accountId = ?'; sp.push(accId); }
+      { const _ac=accIdClauseRaw(accId); sw+=_ac.w; sp.push(..._ac.p); }
       const sr = await qc(`SELECT SUM(FBAStock) as fba FROM seller_board_stock ${sw}`, sp);
       fbaFromStock = parseInt(sr[0]?.fba) || 0;
     } catch (e) { /* seller_board_stock may not exist */ }
@@ -487,9 +509,9 @@ app.get('/api/inventory/snapshot', async (req, res) => {
 
 app.get('/api/inventory/stock-trend', async (req, res) => {
   try {
-    const accId = await storeToAccId(req.query.store);
+    const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
-    if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
+    { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
     res.json(await q(`SELECT date, SUM(FBAStock) as fbaStock, SUM(GREATEST(FBAStock - COALESCE(reserved,0), 0)) as available FROM seller_board_stock_daily WHERE date>=DATE_SUB(CURDATE(), INTERVAL 60 DAY)${extra} GROUP BY date ORDER BY date`, params));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -536,9 +558,9 @@ app.get('/api/stock/history', async (req, res) => {
 
 app.get('/api/inventory/storage-monthly', async (req, res) => {
   try {
-    const accId = await storeToAccId(req.query.store);
+    const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
-    if (accId) { extra = ' AND accountId = ?'; params.push(accId); }
+    { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
     // Get last snapshot of each month (most accurate monthly fee)
     const rows = await q(`
       SELECT DATE_FORMAT(date,'%Y-%m') as ym,
@@ -558,12 +580,11 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
 app.get('/api/inventory/by-shop', async (req, res) => {
   try {
     const shopMap = await getShopMap();
-    const accId = await storeToAccId(req.query.store);
+    const accId = await storeToAccIds(req.query.store);
     let accFilter = ''; const accParams = [];
-    if (accId) { accFilter = ' AND accountId = ?'; accParams.push(accId); }
+    { const _ac=accIdClauseRaw(accId); accFilter=_ac.w; accParams.push(..._ac.p); }
     // Separate qualified filter for JOIN queries on fba_iventory_planning (alias f)
-    const invFilter = accId ? ' AND f.accountId = ?' : '';
-    const invParams = accId ? [accId] : [];
+    const { w: invFilter, p: invParams } = accIdClause('f', accId);
 
     // FBA Stock per shop from seller_board_stock (snapshot)
     let stockMap = {};
@@ -622,14 +643,14 @@ app.get('/api/inventory/by-asin', async (req, res) => {
   try {
     const { store, seller } = req.query;
     const shopMap = await getShopMap();
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
 
     // Build filters
     let stockWhere = 'WHERE 1=1'; const stockParams = [];
-    if (accId) { stockWhere += ' AND s.accountId = ?'; stockParams.push(accId); }
+    { const _ac=accIdClause('s',accId); stockWhere+=_ac.w; stockParams.push(..._ac.p); }
 
     let planWhere = 'JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate WHERE 1=1'; const planParams = [];
-    if (accId) { planWhere += ' AND f.accountId = ?'; planParams.push(accId); }
+    { const _ac=accIdClause('f',accId); planWhere+=_ac.w; planParams.push(..._ac.p); }
 
     // Seller filter via asin table
     let sellerJoin = '', sellerWhere = '';
@@ -833,16 +854,15 @@ app.get('/api/plan/data', async (req, res) => {
     else { where = 'WHERE 1=1'; params = []; }
     if (month && month !== 'All') { const mn=parseInt(month); if(mn>=1&&mn<=12){where+=' AND ap.month_num = ?';params.push(mn);} }
     if (store && store !== 'All') {
-      const accId2 = await storeToAccId(store);
-      if (accId2) {
+      const accIds2 = await storeToAccIds(store);
+      if (accIds2 && accIds2.length) {
         // Pre-fetch ASINs for this store (faster than subquery)
-        const storeAsins = (await q('SELECT DISTINCT asin FROM seller_board_product WHERE accountId = ? AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) LIMIT 2000', [accId2], 15000).catch(()=>[])).map(r=>r.asin);
+        const ph2 = accIds2.map(()=>'?').join(',');
+        const storeAsins = (await q(`SELECT DISTINCT asin FROM seller_board_product WHERE accountId IN (${ph2}) AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) LIMIT 2000`, accIds2, 15000).catch(()=>[])).map(r=>r.asin);
         if (storeAsins.length) {
           const placeholders = storeAsins.map(()=>'?').join(',');
-          where += ` AND (ap.brand_name = ? OR ap.asin IN (${placeholders}))`;
-          params.push(store, ...storeAsins);
-        } else {
-          where += ' AND ap.brand_name = ?'; params.push(store);
+          where += ` AND ap.asin IN (${placeholders})`;
+          params.push(...storeAsins);
         }
       } else { where += ' AND ap.brand_name = ?'; params.push(store); }
     }
@@ -904,7 +924,7 @@ app.get('/api/plan/actuals', async (req, res) => {
   try {
     const { year, store, seller, asin: af } = req.query;
     const yr = parseInt(year) || new Date().getFullYear();
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     const debug = { yr, accId, seller, af, useProduct: useProduct(seller,af) };
     const pF = pWhere(`${yr}-01-01`,`${yr}-12-31`,accId,seller,af);
 
@@ -917,7 +937,7 @@ app.get('/api/plan/actuals', async (req, res) => {
     // ═══ BATCH 1: Run main queries in PARALLEL (was sequential → ~3x faster) ═══
     const impWhere=(prefix)=>{
       let iw=`WHERE YEAR(${prefix}.startDate)=?`; const ip=[yr];
-      if(accId){iw+=` AND ${prefix}.accountId=?`;ip.push(accId);}
+      { const _ac=accIdClause(prefix,accId); iw+=_ac.w; ip.push(..._ac.p); }
       if(af && af!=='All'){iw+=` AND ${prefix}.asin=?`;ip.push(af);}
       else if(selAsins.length){iw+=` AND ${prefix}.asin IN (${selAsins.map(()=>'?').join(',')})`;ip.push(...selAsins);}
       return{iw,ip};
@@ -974,7 +994,7 @@ app.get('/api/plan/actuals', async (req, res) => {
       // Q6: Stock Value snapshot (seller_board_stock — giá trị tại thời điểm hiện tại)
       (async()=>{
         let ucw='WHERE FBAStock>0'; const ucp=[];
-        if(accId){ucw+=' AND s.accountId=?';ucp.push(accId);}
+        { const _ac=accIdClause('s',accId); ucw+=_ac.w; ucp.push(..._ac.p); }
         if(af && af!=='All'){ucw+=' AND s.asin=?';ucp.push(af);}
         else if(seller && seller!=='All'){
           ucw+=' AND s.asin IN (SELECT asin FROM asin WHERE seller=?)';ucp.push(seller);
@@ -1066,7 +1086,7 @@ app.get('/api/ops/daily', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     let rows;
     if (useProduct(seller, af)) {
       const f = pWhere(s, e, accId, seller, af);
@@ -1135,7 +1155,7 @@ app.get('/api/exec/shop-extended', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     const shopMap = await getShopMap();
     const f = pWhere(s, e, accId, seller, af);
     // Main P&L per shop
@@ -1153,7 +1173,7 @@ app.get('/api/exec/shop-extended', async (req, res) => {
     // FBA Stock from snapshot
     let stockMap = {};
     try {
-      const sp = accId ? ['WHERE accountId=?', [accId]] : ['WHERE 1=1', []];
+      const { w: _spw, p: _spp } = accIdClauseRaw(accId); const sp = ['WHERE 1=1'+_spw, _spp];
       (await q(`SELECT accountId, SUM(FBAStock) as fba, SUM(COALESCE(stockValue,0)) as sv FROM seller_board_stock ${sp[0]} GROUP BY accountId`, sp[1]))
         .forEach(s => { stockMap[s.accountId] = { fba: parseInt(s.fba)||0, sv: parseFloat(s.sv)||0 }; });
     } catch(e) {}
@@ -1183,11 +1203,11 @@ app.get('/api/exec/detail', async (req, res) => {
   try {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
-    const accId = await storeToAccId(store);
+    const accId = await storeToAccIds(store);
     const fp = pWhere(s, e, accId, seller, af);   // seller_board_product filter
     // seller_board_sales uses sc alias
     let sw = 'WHERE sc.date BETWEEN ? AND ?'; const sp = [s, e];
-    if (accId) { sw += ' AND sc.accountId = ?'; sp.push(accId); }
+    { const _ac=accIdClause('sc',accId); sw+=_ac.w; sp.push(..._ac.p); }
 
     // ── Q1: ADS BREAKDOWN (SP / SB / SBV / SD) ──
     // DAX: seller_board_product[sponsoredProducts/Brands/BrandsVideo/Display]
@@ -1250,7 +1270,7 @@ app.get('/api/exec/detail', async (req, res) => {
     let browserSessions=0, mobileSessions=0;
     try {
       let tw='WHERE date BETWEEN ? AND ?'; const tp=[s,e];
-      if(accId){tw+=' AND accountId=?';tp.push(accId);}
+      { const _ac=accIdClauseRaw(accId); tw+=_ac.w; tp.push(..._ac.p); }
       const r=await q(`SELECT
         SUM(COALESCE(browserSessions,0))   as bs,
         SUM(COALESCE(mobileAppSessions,0)) as ms
