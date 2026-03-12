@@ -788,7 +788,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             )}
           </div>;
         })}
-        {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data for this period.</div>}
+        {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data. Select a preset above and ensure DB is connected.</div>}
       </div>
 
     </div>
@@ -2666,11 +2666,9 @@ export default function App(){
   const[live,setLive]=useState(false);
   const[dbRange,setDbRange]=useState(null);const[dbConnecting,setDbConnecting]=useState(true);
   const[mobileFilters,setMobileFilters]=useState(false);
-  const vnToday=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
-  const defaultEnd=vnToday;
-  const defaultStart=new Date(Date.now()+7*3600000-30*86400000).toISOString().slice(0,10);
+  const defaultEnd=new Date().toISOString().slice(0,10);
+  const defaultStart=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
   const[sd,setSd]=useState(defaultStart);const[ed,setEd]=useState(defaultEnd);
-  const[dbRangeLoaded,setDbRangeLoaded]=useState(false); // true after dbRange sets real dates
   const[activePeriod,setActivePeriod]=useState(null);
   const[selectedStores,setSelectedStores]=useState(()=>new Set());
   const[seller,setSeller]=useState("All");
@@ -2678,9 +2676,9 @@ export default function App(){
   const storeStr=Array.from(selectedStores).join(',') || 'All';
   const store=storeStr;
   const setStore=str=>setSelectedStores(str==='All'||!str?new Set():new Set(str.split(',').map(s=>s.trim()).filter(Boolean)));
-  const[planYear,setPlanYear]=useState(String(new Date(Date.now()+7*3600000).getFullYear()));
-  const planYearOpts=useMemo(()=>{const c=dbRange?.maxDate?parseInt(dbRange.maxDate.slice(0,4)):new Date(Date.now()+7*3600000).getFullYear();return[String(c-1),String(c),String(c+1)]},[dbRange]);
-  const clearDates=()=>{setSd(dbRange?.defaultStart||defaultStart);setEd(dbRange?.defaultEnd||defaultEnd);setActivePeriod(null)};
+  const[planYear,setPlanYear]=useState(String(new Date().getFullYear()));
+  const planYearOpts=useMemo(()=>{const c=new Date().getFullYear();return[String(c-1),String(c),String(c+1)]},[]);
+  const clearDates=()=>{if(dbRange?.defaultStart)setSd(dbRange.defaultStart);else setSd(defaultStart);setEd(defaultEnd);setActivePeriod(null)};
 
   // ═══════════ LIVE DATA STATE ═══════════
   const[em,setEm]=useState(EMPTY_EM);
@@ -2761,12 +2759,12 @@ export default function App(){
           const dr=await api("date-range").catch(()=>null);
           if(dr){
             setDbRange(dr);
-            const _refDate=dr.today||dr.maxDate||dr.defaultEnd;
-            setSd(dr.defaultStart||defaultStart);
-            setEd(dr.defaultEnd||defaultEnd);
-            setDbRangeLoaded(true);
-// Zone A fetches itself via its own useEffect below
-            console.log("DB date range loaded: refDate=",_refDate);
+            // End date = always today, start = 30 days ago (or dr.defaultStart)
+            if(dr.defaultStart){
+              console.log("Setting dates: start=",dr.defaultStart,"end=today (DB min:",dr.minDate,"max:",dr.maxDate,")");
+              setSd(dr.defaultStart);
+              // ed stays as today (defaultEnd)
+            }
           }
           api("inventory/snapshot",{store}).then(d=>setInvData(d||{})).catch(()=>{});
           api("inventory/by-shop",{store}).then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
@@ -2785,10 +2783,10 @@ export default function App(){
   const fetchParamsRef=useRef({sd,ed,store,seller,asinF});
   fetchParamsRef.current={sd,ed,store,seller,asinF};
   useEffect(()=>{
-    if(!live||dbConnecting||!dbRangeLoaded)return; // wait for dbRange to set real dates
+    if(!live||dbConnecting)return;
     const timer=setTimeout(()=>setFetchTrigger(t=>t+1),400);
     return()=>clearTimeout(timer);
-  },[sd,ed,store,seller,asinF,live,dbConnecting,dbRangeLoaded]);
+  },[sd,ed,store,seller,asinF,live,dbConnecting]);
   useEffect(()=>{
     if(!live||dbConnecting||fetchTrigger===0)return;
     let cancelled=false;
@@ -2841,16 +2839,19 @@ export default function App(){
     return()=>{cancelled=true};
   },[fetchTrigger]);
 
-  // ═══════════ ZONE A FETCH — runs after dbRangeLoaded, reads refDate from dbRange state ═══════════
+  // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
+  zoneAParamsRef.current={zoneAPreset,storeStr};
   useEffect(()=>{
-    if(!live||!dbRangeLoaded||!dbRange)return;
-    const refDate=dbRange.today||dbRange.maxDate||dbRange.defaultEnd;
-    if(!refDate)return;
+    if(!live||dbConnecting)return;
     let cancelled=false;
+    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
+    const periods=getZoneAPeriods(_preset, defaultEnd);
+    if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
-    const storeParam=storeStr==='All'?undefined:storeStr;
-    const periods=getZoneAPeriods(zoneAPreset,refDate);
+    // Fetch ALL summaries in parallel — summary is light (1 query each)
+    const storeParam=_store==='All'?undefined:_store;
     Promise.allSettled(periods.map(p=>
       api('exec/summary',{start:p.start,end:p.end,store:storeParam})
         .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
@@ -2861,7 +2862,7 @@ export default function App(){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[live,dbRangeLoaded,dbRange,zoneAPreset,storeStr]);
+  },[zoneAPreset,storeStr,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
@@ -2967,7 +2968,7 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:10}}>{mob&&<button onClick={()=>setMobileFilters(!mobileFilters)} style={{background:t.primaryLight,border:"1px solid "+t.primary+"33",borderRadius:10,padding:"7px 12px",cursor:"pointer",fontSize:12,color:t.primary,fontWeight:700}}>☰</button>}<span style={{fontSize:mob?17:20,fontWeight:800,color:t.text,letterSpacing:-.4}}>{cn?.l}</span></div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {loading&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⏳</span>}
-            <span style={{fontSize:9.5,fontWeight:700,padding:"4px 12px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"● Live DB":"○ No DB"}</span>{live&&dbRange?.maxDate&&<span style={{fontSize:9,color:t.textMuted,marginLeft:4,fontWeight:600,background:t.tableBg,padding:"3px 8px",borderRadius:8,border:"1px solid "+t.cardBorder}} title="Latest date available in database">📅 Data as of {dbRange.maxDate}</span>}<span style={{fontSize:9,color:t.textMuted,marginLeft:4,fontWeight:600}}>v4.5</span>
+            <span style={{fontSize:9.5,fontWeight:700,padding:"4px 12px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"● Live DB":"○ No DB"}</span><span style={{fontSize:9,color:t.textMuted,marginLeft:4,fontWeight:600}}>v4.4</span>
             <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,color:t.textSec,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>{isDark?"Light":"Dark"}</button>
           </div>
         </div>
