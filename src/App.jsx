@@ -2672,9 +2672,11 @@ export default function App(){
   const[live,setLive]=useState(false);
   const[dbRange,setDbRange]=useState(null);const[dbConnecting,setDbConnecting]=useState(true);
   const[mobileFilters,setMobileFilters]=useState(false);
-  const defaultEnd=new Date().toISOString().slice(0,10);
-  const defaultStart=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
-  const[sd,setSd]=useState(defaultStart);const[ed,setEd]=useState(defaultEnd);
+  // defaultEnd = ngày mới nhất trong DB (set lại sau khi load date-range), fallback tạm là hôm nay
+  const[dbToday,setDbToday]=useState(new Date().toISOString().slice(0,10));
+  const defaultEnd=dbToday;
+  const defaultStart=new Date(new Date(dbToday+'T00:00:00').getTime()-30*86400000).toISOString().slice(0,10);
+  const[sd,setSd]=useState(()=>new Date(Date.now()-30*86400000).toISOString().slice(0,10));const[ed,setEd]=useState(()=>new Date().toISOString().slice(0,10));
   const[activePeriod,setActivePeriod]=useState(null);
   const[selectedStores,setSelectedStores]=useState(()=>new Set());
   const[seller,setSeller]=useState("All");
@@ -2765,12 +2767,10 @@ export default function App(){
           const dr=await api("date-range").catch(()=>null);
           if(dr){
             setDbRange(dr);
-            // End date = always today, start = 30 days ago (or dr.defaultStart)
-            if(dr.defaultStart){
-              console.log("Setting dates: start=",dr.defaultStart,"end=today (DB min:",dr.minDate,"max:",dr.maxDate,")");
-              setSd(dr.defaultStart);
-              // ed stays as today (defaultEnd)
-            }
+            // today = ngày mới nhất trong DB, không dùng đồng hồ client/server
+            const dbT=dr.today||dr.maxDate||dr.defaultEnd;
+            if(dbT){setDbToday(dbT);setEd(dbT);}
+            if(dr.defaultStart)setSd(dr.defaultStart);
           }
           api("inventory/snapshot",{store}).then(d=>setInvData(d||{})).catch(()=>{});
           api("inventory/by-shop",{store}).then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
@@ -2852,7 +2852,7 @@ export default function App(){
     if(!live||dbConnecting)return;
     let cancelled=false;
     const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
-    const periods=getZoneAPeriods(_preset, defaultEnd);
+    const periods=getZoneAPeriods(_preset, dbToday);
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
