@@ -1916,8 +1916,10 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed}){
   const shops=useMemo(()=>['All',...new Set(fAsin.map(a=>a.b).filter(Boolean))]
     .filter((v,i,arr)=>arr.indexOf(v)===i),[fAsin]);
 
+  const drillRef=useRef(null);
   const selectAsin=async(row)=>{
     setSelAsin(row);setDrillData([]);setDrillLoading(true);
+    setTimeout(()=>{drillRef.current?.scrollIntoView({behavior:'smooth',block:'nearest'});},80);
     try{const d=await api('product/asin-daily',{start:sd,end:ed,asin:row.a});setDrillData(Array.isArray(d)?d:[]);}catch(e){}
     setDrillLoading(false);
   };
@@ -2015,7 +2017,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed}){
                     <span style={{background:hb.bg,color:hb.c,padding:'2px 9px',borderRadius:10,fontSize:10,fontWeight:700}}>{hb.lbl}</span>
                   </td>
                 </tr>
-                {isSel&&<tr><td colSpan={12} style={{padding:0,border:'none'}}>
+                {isSel&&<tr ref={drillRef}><td colSpan={12} style={{padding:0,border:'none'}}>
                   <div style={{background:isDark?'linear-gradient(135deg,#111830,#151D38)':'linear-gradient(135deg,#F6F8FE,#EEF2FB)',borderTop:'2px solid '+(isDark?'#2E3A6B':'#C5D0F0'),borderBottom:'2px solid '+(isDark?'#2E3A6B':'#C5D0F0'),padding:'16px 20px'}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
