@@ -199,6 +199,7 @@ app.get('/api/debug/filters', async (req, res) => {
     } catch(e) { R.steps.salesRange = e.message; }
     R.steps.planMetrics = (await q('SELECT DISTINCT metrics FROM asin_plan LIMIT 20').catch(()=>[])).map(m=>`${m.metrics}→${mapMetric(m.metrics)}`);
     try { R.steps.analyticsCols = (await q('SHOW COLUMNS FROM analytics_search_catalog_performance')).map(c=>c.Field); } catch(e) { R.steps.analyticsCols = e.message; }
+    try { R.steps.traffiecCols = (await q('SHOW COLUMNS FROM analytics_sale_traffiec_by_asin_date')).map(c=>c.Field); } catch(e) { R.steps.traffiecCols = e.message; }
     // Check indexes
     try {
       const idxRows = await q(`SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
@@ -348,16 +349,58 @@ app.get('/api/product/asins', async (req, res) => {
     const rows = await qc(`SELECT p.asin, p.accountId, a.seller,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
-      SUM(COALESCE(p.sessions,0)) as sessions, AVG(COALESCE(p.unitSessionPercentage,0)) as cr
-      FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
+      SUM(COALESCE(t.sessions,0)) as sessions,
+      AVG(CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END) as cr,
+      AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox
+      FROM seller_board_product p
+      LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
+      LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY'
       ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC LIMIT 500`, f.p, 45000);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
-      const acos=Math.round((parseFloat(r.acos)||0)*100)/100, cr=Math.round((parseFloat(r.cr)||0)*100)/100;
+      const acos=Math.round((parseFloat(r.acos)||0)*100)/100;
+      const cr=Math.round((parseFloat(r.cr)||0)*100)/100;
+      const buyBox=Math.round((parseFloat(r.buyBox)||0)*100)/100;
       return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'', revenue: rev, netProfit: np, units: parseInt(r.units)||0,
-        margin: rev>0?Math.round(np/rev*1000)/10:0, acos, roas: acos>0?Math.round(100/acos*100)/100:0, cr };
+        margin: rev>0?Math.round(np/rev*1000)/10:0, acos, roas: acos>0?Math.round(100/acos*100)/100:0,
+        cr, buyBox, sessions: parseInt(r.sessions)||0 };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ═══════════ PRODUCT ASIN DAILY (drill-down) ═══════════ */
+app.get('/api/product/asin-daily', async (req, res) => {
+  try {
+    const { start, end, asin } = req.query;
+    if (!asin) return res.json([]);
+    const { s, e } = defDates(start, end);
+    const rows = await q(
+      `SELECT p.date,
+         SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
+         SUM(${P_UNITS}) as units,
+         SUM(COALESCE(t.sessions,0)) as sessions,
+         AVG(CASE WHEN t.unitSessionPercentage>0 THEN t.unitSessionPercentage END) as cr,
+         AVG(CASE WHEN t.buyBoxPercentage>0 THEN t.buyBoxPercentage END) as buyBox
+       FROM seller_board_product p
+       LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY'
+       WHERE p.date BETWEEN ? AND ? AND p.asin=?
+       GROUP BY p.date ORDER BY p.date`, [s, e, asin]);
+    const MS2=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    res.json(rows.map(r=>{
+      const ds=String(r.date).slice(0,10);
+      const dt=new Date(ds+'T12:00:00');
+      return{
+        date:ds,
+        label:isNaN(dt)?ds:MS2[dt.getMonth()]+' '+dt.getDate(),
+        revenue:parseFloat(r.revenue)||0,
+        netProfit:parseFloat(r.netProfit)||0,
+        units:parseInt(r.units)||0,
+        sessions:parseInt(r.sessions)||0,
+        cr:Math.round((parseFloat(r.cr)||0)*100)/100,
+        buyBox:Math.round((parseFloat(r.buyBox)||0)*100)/100,
+      };
+    }));
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 /* ═══════════ SHOPS ═══════════ */
