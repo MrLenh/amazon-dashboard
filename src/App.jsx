@@ -3087,10 +3087,11 @@ function AdminUsersPanel({ t, onClose }) {
     setError(''); setSuccess('');
     try {
       await authCreateUser(form.email, form.name, form.password, form.role);
-      setSuccess('User created');
+      setSuccess('User created successfully');
       setForm({ email: '', name: '', password: '', role: 'viewer' });
       setShowAdd(false);
       load();
+      setTimeout(()=>setSuccess(''),3000);
     } catch (e) { setError(e.message); }
   };
 
@@ -3104,60 +3105,106 @@ function AdminUsersPanel({ t, onClose }) {
   };
 
   const handleRole = async (id, currentRole) => {
-    const newRole = currentRole === 'admin' ? 'viewer' : 'admin';
-    try { await authUpdateUser(id, { role: newRole }); load(); } catch (e) { setError(e.message); }
+    try { await authUpdateUser(id, { role: currentRole === 'admin' ? 'viewer' : 'admin' }); load(); } catch (e) { setError(e.message); }
   };
 
-  const sInput = { padding: '10px 12px', background: t.inputBg, border: '1px solid ' + t.inputBorder, borderRadius: 8, color: t.text, fontSize: 13, outline: 'none', boxSizing: 'border-box', width: '100%' };
+  const sInput = { padding: '10px 14px', background: t.inputBg, border: '1px solid ' + t.inputBorder, borderRadius: 10, color: t.text, fontSize: 13, outline: 'none', boxSizing: 'border-box', width: '100%', transition: 'border .2s' };
+  const colors = ['#3B4A8A','#1B8553','#C67D1A','#8B5CF6','#D4380D','#0891B2','#7C3AED','#059669'];
+  const getAvColor = (i) => colors[i % colors.length];
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}}>
-    <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)'}}/>
-    <div style={{position:'relative',width:'100%',maxWidth:640,maxHeight:'80vh',overflow:'auto',background:t.card,borderRadius:16,border:'1px solid '+t.cardBorder,padding:24,boxShadow:'0 20px 60px '+t.shadow}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-        <div>
-          <div style={{fontSize:18,fontWeight:800,color:t.text}}>User Management</div>
-          <div style={{fontSize:12,color:t.textMuted,marginTop:2}}>Admin only · {users.length} users</div>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+    <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.4)',backdropFilter:'blur(4px)'}}/>
+    <div style={{position:'relative',width:'100%',maxWidth:520,maxHeight:'85vh',display:'flex',flexDirection:'column',background:t.card,borderRadius:20,border:'1px solid '+t.cardBorder,boxShadow:'0 24px 80px '+t.shadow,overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{padding:'20px 24px 16px',borderBottom:'1px solid '+t.divider,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:800,color:t.text,letterSpacing:'-0.3px'}}>Team Access</div>
+            <div style={{fontSize:11,color:t.textMuted,marginTop:3}}>{users.length} member{users.length!==1?'s':''} · Admin only</div>
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>{setShowAdd(!showAdd);setError('');setSuccess('')}}
+              style={{padding:'7px 14px',background:showAdd?t.tableBg:'linear-gradient(135deg,'+t.primary+',#5A6BC5)',color:showAdd?t.textSec:'#fff',border:showAdd?'1px solid '+t.cardBorder:'none',borderRadius:10,fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+              {showAdd?'Cancel':'+ Invite'}
+            </button>
+            <button onClick={onClose} style={{width:32,height:32,borderRadius:10,background:t.tableBg,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'background .15s'}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.tableBg}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>setShowAdd(!showAdd)} style={{padding:'8px 16px',background:t.primary,color:'#fff',border:'none',borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer'}}>{showAdd?'Cancel':'+ Add User'}</button>
-          <button onClick={onClose} style={{padding:'8px 12px',background:t.tableBg,border:'1px solid '+t.cardBorder,borderRadius:8,color:t.textSec,fontSize:12,cursor:'pointer'}}>Close</button>
-        </div>
+
+        {/* Alerts */}
+        {error&&<div style={{marginTop:12,padding:'9px 14px',background:t.redBg,borderRadius:10,color:t.red,fontSize:12,fontWeight:500,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{flexShrink:0}}>⚠</span>{error}
+          <button onClick={()=>setError('')} style={{marginLeft:'auto',background:'none',border:'none',color:t.red,cursor:'pointer',fontSize:14,padding:0}}>×</button>
+        </div>}
+        {success&&<div style={{marginTop:12,padding:'9px 14px',background:t.greenBg,borderRadius:10,color:t.green,fontSize:12,fontWeight:500}}>✓ {success}</div>}
+
+        {/* Add form */}
+        {showAdd&&<div style={{marginTop:14,padding:16,background:t.tableBg,borderRadius:14,display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <input placeholder="Email address" type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} style={sInput}/>
+            <input placeholder="Display name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={sInput}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <input placeholder="Password (min 6)" type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} style={sInput}/>
+            <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))} style={{...sInput,appearance:'auto'}}>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button onClick={handleAdd} disabled={!form.email||!form.name||!form.password}
+            style={{padding:'10px',background:(!form.email||!form.name||!form.password)?t.inputBorder:'linear-gradient(135deg,'+t.primary+',#5A6BC5)',color:'#fff',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:(!form.email||!form.name||!form.password)?'not-allowed':'pointer',opacity:(!form.email||!form.name||!form.password)?0.5:1,transition:'opacity .15s'}}>
+            Create Account
+          </button>
+        </div>}
       </div>
 
-      {error && <div style={{padding:'10px 14px',background:t.redBg,borderRadius:8,color:t.red,fontSize:12,marginBottom:12}}>{error}</div>}
-      {success && <div style={{padding:'10px 14px',background:t.greenBg,borderRadius:8,color:t.green,fontSize:12,marginBottom:12}}>{success}</div>}
-
-      {showAdd && <div style={{padding:16,background:t.tableBg,borderRadius:12,marginBottom:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        <input placeholder="Email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} style={sInput}/>
-        <input placeholder="Full Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={sInput}/>
-        <input placeholder="Password (min 6)" type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} style={sInput}/>
-        <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))} style={sInput}>
-          <option value="viewer">Viewer</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button onClick={handleAdd} style={{gridColumn:'span 2',padding:'10px',background:t.green,color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Create User</button>
-      </div>}
-
-      {loading ? <div style={{textAlign:'center',padding:40,color:t.textMuted}}>Loading...</div> :
-      <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
-        <thead><tr>{['Email','Name','Role','Status','Last Login','Actions'].map((h,i)=>
-          <th key={i} style={{padding:'10px 12px',textAlign:'left',color:t.textMuted,fontWeight:700,fontSize:10,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg}}>{h}</th>
-        )}</tr></thead>
-        <tbody>{users.map(u=><tr key={u.id} style={{borderBottom:'1px solid '+t.divider}}>
-          <td style={{padding:'10px 12px',fontWeight:600,color:t.text}}>{u.email}</td>
-          <td style={{padding:'10px 12px',color:t.textSec}}>{u.name}</td>
-          <td style={{padding:'10px 12px'}}><span style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,background:u.role==='admin'?t.primaryLight:t.tableBg,color:u.role==='admin'?t.primary:t.textMuted}}>{u.role}</span></td>
-          <td style={{padding:'10px 12px'}}><span style={{color:u.active?t.green:t.red,fontWeight:600}}>{u.active?'Active':'Disabled'}</span></td>
-          <td style={{padding:'10px 12px',color:t.textMuted,fontSize:11}}>{u.last_login?new Date(u.last_login).toLocaleDateString():'Never'}</td>
-          <td style={{padding:'10px 12px'}}>
-            <div style={{display:'flex',gap:6}}>
-              <button onClick={()=>handleRole(u.id,u.role)} title="Toggle role" style={{padding:'4px 8px',background:t.tableBg,border:'1px solid '+t.cardBorder,borderRadius:6,fontSize:10,cursor:'pointer',color:t.textSec}}>{u.role==='admin'?'→ Viewer':'→ Admin'}</button>
-              <button onClick={()=>handleToggle(u.id,u.active)} title="Toggle active" style={{padding:'4px 8px',background:u.active?t.redBg:t.greenBg,border:'none',borderRadius:6,fontSize:10,cursor:'pointer',color:u.active?t.red:t.green}}>{u.active?'Disable':'Enable'}</button>
-              <button onClick={()=>handleDelete(u.id,u.email)} title="Delete" style={{padding:'4px 8px',background:t.redBg,border:'none',borderRadius:6,fontSize:10,cursor:'pointer',color:t.red}}>Delete</button>
+      {/* User list */}
+      <div style={{overflow:'auto',padding:'8px 16px 16px',flex:1}}>
+        {loading?<div style={{textAlign:'center',padding:40,color:t.textMuted,fontSize:13}}>Loading team...</div>:
+        users.map((u,i)=><div key={u.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:i<users.length-1?'1px solid '+t.divider:'none'}}>
+          {/* Avatar */}
+          <div style={{width:36,height:36,borderRadius:10,background:u.active?getAvColor(i):(t.inputBorder),display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:'#fff',flexShrink:0,opacity:u.active?1:0.5}}>
+            {(u.name||u.email).charAt(0).toUpperCase()}
+          </div>
+          {/* Info */}
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:13,fontWeight:700,color:u.active?t.text:t.textMuted}}>{u.name}</span>
+              <span style={{padding:'2px 7px',borderRadius:6,fontSize:9,fontWeight:700,letterSpacing:.5,textTransform:'uppercase',
+                background:u.role==='admin'?t.primaryLight:t.tableBg,
+                color:u.role==='admin'?t.primary:t.textMuted}}>{u.role}</span>
+              {!u.active&&<span style={{padding:'2px 7px',borderRadius:6,fontSize:9,fontWeight:700,background:t.redBg,color:t.red}}>disabled</span>}
             </div>
-          </td>
-        </tr>)}</tbody>
-      </table>}
+            <div style={{fontSize:11,color:t.textMuted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.email}{u.last_login?' · Last login '+new Date(u.last_login).toLocaleDateString():''}</div>
+          </div>
+          {/* Actions */}
+          <div style={{display:'flex',gap:4,flexShrink:0}}>
+            <button onClick={()=>handleRole(u.id,u.role)} title={u.role==='admin'?'Demote to viewer':'Promote to admin'}
+              style={{width:30,height:30,borderRadius:8,background:t.tableBg,border:'1px solid '+t.cardBorder,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s'}}
+              onMouseEnter={e=>{e.currentTarget.style.background=t.primaryLight;e.currentTarget.style.borderColor=t.primary+'44'}}
+              onMouseLeave={e=>{e.currentTarget.style.background=t.tableBg;e.currentTarget.style.borderColor=t.cardBorder}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.primary} strokeWidth="2" strokeLinecap="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26Z"/></svg>
+            </button>
+            <button onClick={()=>handleToggle(u.id,u.active)} title={u.active?'Disable access':'Enable access'}
+              style={{width:30,height:30,borderRadius:8,background:u.active?t.tableBg:t.greenBg,border:'1px solid '+(u.active?t.cardBorder:t.green+'33'),cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s'}}
+              onMouseEnter={e=>e.currentTarget.style.background=u.active?t.redBg:t.greenBg}
+              onMouseLeave={e=>e.currentTarget.style.background=u.active?t.tableBg:t.greenBg}>
+              {u.active
+                ?<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.red} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                :<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.green} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+            </button>
+            <button onClick={()=>handleDelete(u.id,u.email)} title="Delete permanently"
+              style={{width:30,height:30,borderRadius:8,background:t.tableBg,border:'1px solid '+t.cardBorder,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s'}}
+              onMouseEnter={e=>{e.currentTarget.style.background=t.redBg;e.currentTarget.style.borderColor=t.red+'33'}}
+              onMouseLeave={e=>{e.currentTarget.style.background=t.tableBg;e.currentTarget.style.borderColor=t.cardBorder}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.red} strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>)}
+      </div>
     </div>
   </div>;
 }
@@ -3502,10 +3549,13 @@ function Dashboard({authUser,onLogout}){
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {loading&&<span style={{fontSize:9,color:t.orange,fontWeight:600}}>⏳</span>}
             <span style={{fontSize:9.5,fontWeight:700,padding:"4px 12px",borderRadius:10,background:live?"#EAFAF1":"#FFF8EC",color:live?"#1B8553":"#C67D1A",letterSpacing:.5}}>{live?"● Live DB":"○ No DB"}</span><span style={{fontSize:9,color:t.textMuted,marginLeft:4,fontWeight:600}}>v4.4</span>
-            <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,color:t.textSec,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>{isDark?"Light":"Dark"}</button>
-            {authUser?.role==="admin"&&<button onClick={()=>setShowAdmin(true)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:11,color:t.primary,fontWeight:600,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>Users</button>}
-            <span style={{fontSize:10,color:t.textMuted,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={authUser?.email}>{authUser?.name||authUser?.email}</span>
-            <button onClick={onLogout} style={{background:t.redBg,border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:11,color:t.red,fontWeight:600}}>Logout</button>
+            <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,color:t.textSec,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>{isDark?"☀":"☾"}</button>
+            <div style={{display:"flex",alignItems:"center",gap:0,background:t.tableBg,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"3px 4px",marginLeft:2}}>
+              <div style={{width:28,height:28,borderRadius:9,background:"linear-gradient(135deg,"+t.primary+",#5A6BC5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",flexShrink:0}} title={authUser?.email}>{(authUser?.name||authUser?.email||"U").charAt(0).toUpperCase()}</div>
+              <span style={{fontSize:11,fontWeight:600,color:t.text,padding:"0 8px",maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser?.name||"User"}</span>
+              {authUser?.role==="admin"&&<button onClick={()=>setShowAdmin(true)} title="Manage users" style={{width:28,height:28,borderRadius:8,background:t.primaryLight,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.primary+"22"} onMouseLeave={e=>e.currentTarget.style.background=t.primaryLight}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.primary} strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>}
+              <button onClick={onLogout} title="Sign out" style={{width:28,height:28,borderRadius:8,background:"transparent",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.redBg} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.red} strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+            </div>
           </div>
         </div>
         {/* FILTER BAR — exec page has its own filters inside Zone B */}
