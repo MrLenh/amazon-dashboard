@@ -239,6 +239,20 @@ async function ensureUsersTable() {
     )`, [], 10000);
     console.log('✅ dashboard_users table ready');
 
+    // Invites table
+    await q(`CREATE TABLE IF NOT EXISTS dashboard_invites (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      token VARCHAR(64) NOT NULL UNIQUE,
+      email VARCHAR(255) NOT NULL,
+      name VARCHAR(255) DEFAULT '',
+      role ENUM('admin','viewer') NOT NULL DEFAULT 'viewer',
+      invited_by INT,
+      expires_at TIMESTAMP NOT NULL,
+      accepted_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`, [], 10000);
+    console.log('✅ dashboard_invites table ready');
+
     // Seed default admin if table is empty
     const count = await q('SELECT COUNT(*) as c FROM dashboard_users');
     if (count[0]?.c === 0) {
@@ -367,10 +381,100 @@ app.delete('/api/auth/users/:id', (req, res) => {
     .catch(e => res.status(500).json({ error: e.message }));
 });
 
+/* ═══════════ INVITE FLOW ═══════════ */
+// Admin: create invite
+app.post('/api/auth/invite', async (req, res) => {
+  const authToken = (req.headers.authorization || '').replace('Bearer ', '');
+  const payload = verifyToken(authToken);
+  if (!payload || payload.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const { email, role } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    // Check if user already exists
+    const existing = await q('SELECT id FROM dashboard_users WHERE email = ?', [email.trim().toLowerCase()]);
+    if (existing.length) return res.status(409).json({ error: 'User with this email already exists' });
+    // Check if pending invite exists
+    const pendingInv = await q('SELECT id FROM dashboard_invites WHERE email = ? AND accepted_at IS NULL AND expires_at > NOW()', [email.trim().toLowerCase()]);
+    if (pendingInv.length) return res.status(409).json({ error: 'Pending invite already exists for this email' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const validRole = (role === 'admin' || role === 'viewer') ? role : 'viewer';
+    await q('INSERT INTO dashboard_invites (token, email, role, invited_by, expires_at) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR))',
+      [token, email.trim().toLowerCase(), validRole, payload.id]);
+
+    // Build invite URL
+    const baseUrl = process.env.APP_URL || req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    const inviteUrl = `${baseUrl}?invite=${token}`;
+
+    res.json({ ok: true, inviteUrl, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Public: verify invite token
+app.get('/api/auth/invite/:token', async (req, res) => {
+  try {
+    const rows = await q('SELECT * FROM dashboard_invites WHERE token = ? AND accepted_at IS NULL AND expires_at > NOW()', [req.params.token]);
+    if (!rows.length) return res.status(404).json({ error: 'Invalid or expired invite' });
+    const inv = rows[0];
+    res.json({ email: inv.email, role: inv.role, expires_at: inv.expires_at });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Public: accept invite — user sets password + name
+app.post('/api/auth/invite/:token/accept', async (req, res) => {
+  try {
+    const { name, password } = req.body;
+    if (!name || !password) return res.status(400).json({ error: 'Name and password required' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const rows = await q('SELECT * FROM dashboard_invites WHERE token = ? AND accepted_at IS NULL AND expires_at > NOW()', [req.params.token]);
+    if (!rows.length) return res.status(404).json({ error: 'Invalid or expired invite' });
+    const inv = rows[0];
+    // Check if user was already created
+    const existing = await q('SELECT id FROM dashboard_users WHERE email = ?', [inv.email]);
+    if (existing.length) return res.status(409).json({ error: 'Account already exists. Please login.' });
+    // Create user
+    const { hash, salt } = hashPassword(password);
+    await q('INSERT INTO dashboard_users (email, name, password_hash, password_salt, role) VALUES (?, ?, ?, ?, ?)',
+      [inv.email, name.trim(), hash, salt, inv.role]);
+    // Mark invite as accepted
+    await q('UPDATE dashboard_invites SET accepted_at = NOW() WHERE id = ?', [inv.id]);
+    // Auto-login: return token
+    const user = (await q('SELECT * FROM dashboard_users WHERE email = ?', [inv.email]))[0];
+    const authTk = signToken({ id: user.id, email: user.email, role: user.role, name: user.name });
+    await q('UPDATE dashboard_users SET last_login = NOW() WHERE id = ?', [user.id]).catch(() => {});
+    res.json({ token: authTk, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Account already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: list pending invites
+app.get('/api/auth/invites', (req, res) => {
+  const authToken = (req.headers.authorization || '').replace('Bearer ', '');
+  const payload = verifyToken(authToken);
+  if (!payload || payload.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  q('SELECT id, email, role, expires_at, accepted_at, created_at FROM dashboard_invites ORDER BY created_at DESC LIMIT 50')
+    .then(rows => res.json(rows))
+    .catch(e => res.status(500).json({ error: e.message }));
+});
+
+// Admin: revoke invite
+app.delete('/api/auth/invite/:id', (req, res) => {
+  const authToken = (req.headers.authorization || '').replace('Bearer ', '');
+  const payload = verifyToken(authToken);
+  if (!payload || payload.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  q('DELETE FROM dashboard_invites WHERE id = ? AND accepted_at IS NULL', [parseInt(req.params.id)])
+    .then(() => res.json({ ok: true }))
+    .catch(e => res.status(500).json({ error: e.message }));
+});
+
 /* ═══════════ AUTH MIDDLEWARE — protects all /api/* below ═══════════ */
 app.use('/api', (req, res, next) => {
-  // Skip auth for login and health (already handled above)
+  // Skip auth for public endpoints (already handled above)
   if (req.path === '/auth/login' || req.path === '/health') return next();
+  if (req.path.match(/^\/auth\/invite\/[a-f0-9]+$/)) return next(); // GET verify invite
+  if (req.path.match(/^\/auth\/invite\/[a-f0-9]+\/accept$/)) return next(); // POST accept invite
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Authentication required' });
