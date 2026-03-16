@@ -2981,8 +2981,11 @@ const NavIco=({d,size=18,color})=><svg width={size} height={size} viewBox="0 0 2
 
 /* ═══════════ LOGIN PAGE ═══════════ */
 function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('');
+  const sysDark = window.matchMedia?.('(prefers-color-scheme:dark)').matches;
+  const dk = sysDark; // follow system
+  const [email, setEmail] = useState(()=>localStorage.getItem('dashboard_remember_email')||'');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(()=>!!localStorage.getItem('dashboard_remember_email'));
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
@@ -2991,14 +2994,31 @@ function LoginPage({ onLogin }) {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
+      if(remember) localStorage.setItem('dashboard_remember_email',email.trim());
+      else localStorage.removeItem('dashboard_remember_email');
       const data = await authLogin(email, password);
       onLogin(data.user);
     } catch (err) { setError(err.message); }
     setLoading(false);
   };
 
-  return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#0D0F1A 0%,#1A1D35 50%,#2A2D4A 100%)',fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif"}}>
-    <div style={{width:'100%',maxWidth:400,padding:40,background:'#181B2E',borderRadius:20,border:'1px solid #2E3350',boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}}>
+  // Theme tokens
+  const bg = dk ? 'linear-gradient(135deg,#0D0F1A 0%,#1A1D35 50%,#2A2D4A 100%)' : 'linear-gradient(135deg,#E8ECF5 0%,#F0F2F8 50%,#F5F6FA 100%)';
+  const cardBg = dk ? '#181B2E' : '#FFFFFF';
+  const cardBorder = dk ? '#2E3350' : '#D0D5E0';
+  const cardShadow = dk ? '0 20px 60px rgba(0,0,0,0.5)' : '0 20px 60px rgba(59,74,138,0.12)';
+  const inputBg = dk ? '#1A1D30' : '#F5F6FA';
+  const inputBorder = dk ? '#363B58' : '#D0D5E0';
+  const inputFocus = dk ? '#8B9EF0' : '#3B4A8A';
+  const textMain = dk ? '#F0F2FA' : '#1A1D26';
+  const textSec = dk ? '#9099BE' : '#4A5068';
+  const textMuted = dk ? '#6B7294' : '#8890A8';
+  const errBg = dk ? '#2D1414' : '#FFF1EC';
+  const errBorder = dk ? '#5C2020' : '#FFCCC0';
+  const errColor = dk ? '#FF6B6B' : '#D4380D';
+
+  return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:bg,fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif"}}>
+    <div style={{width:'100%',maxWidth:400,padding:40,background:cardBg,borderRadius:20,border:'1px solid '+cardBorder,boxShadow:cardShadow}}>
       <div style={{textAlign:'center',marginBottom:32}}>
         <div style={{width:56,height:56,margin:'0 auto 16px',borderRadius:14,background:'linear-gradient(135deg,#3B4A8A,#5A6BC5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -3007,38 +3027,44 @@ function LoginPage({ onLogin }) {
             <circle cx="16" cy="8" r="1.5" fill="white"/>
           </svg>
         </div>
-        <div style={{fontSize:22,fontWeight:800,color:'#F0F2FA',letterSpacing:'-0.5px'}}>Amazon FBA Dashboard</div>
-        <div style={{fontSize:13,color:'#9099BE',marginTop:6}}>Sign in to continue</div>
+        <div style={{fontSize:22,fontWeight:800,color:textMain,letterSpacing:'-0.5px'}}>Amazon FBA Dashboard</div>
+        <div style={{fontSize:13,color:textSec,marginTop:6}}>Sign in to continue</div>
       </div>
 
       <form onSubmit={handleSubmit}>
         <div style={{marginBottom:16}}>
-          <label style={{display:'block',fontSize:11,fontWeight:600,color:'#9099BE',marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>Email</label>
+          <label style={{display:'block',fontSize:11,fontWeight:600,color:textSec,marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>Email</label>
           <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoFocus
             placeholder="your@email.com"
-            style={{width:'100%',padding:'12px 14px',background:'#1A1D30',border:'1px solid #363B58',borderRadius:10,color:'#F0F2FA',fontSize:14,outline:'none',boxSizing:'border-box',transition:'border .2s'}}
-            onFocus={e=>e.target.style.borderColor='#8B9EF0'} onBlur={e=>e.target.style.borderColor='#363B58'}/>
+            style={{width:'100%',padding:'12px 14px',background:inputBg,border:'1px solid '+inputBorder,borderRadius:10,color:textMain,fontSize:14,outline:'none',boxSizing:'border-box',transition:'border .2s'}}
+            onFocus={e=>e.target.style.borderColor=inputFocus} onBlur={e=>e.target.style.borderColor=inputBorder}/>
         </div>
-        <div style={{marginBottom:20}}>
-          <label style={{display:'block',fontSize:11,fontWeight:600,color:'#9099BE',marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>Password</label>
+        <div style={{marginBottom:14}}>
+          <label style={{display:'block',fontSize:11,fontWeight:600,color:textSec,marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>Password</label>
           <div style={{position:'relative'}}>
             <input type={showPw?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} required
               placeholder="••••••••"
-              style={{width:'100%',padding:'12px 40px 12px 14px',background:'#1A1D30',border:'1px solid #363B58',borderRadius:10,color:'#F0F2FA',fontSize:14,outline:'none',boxSizing:'border-box',transition:'border .2s'}}
-              onFocus={e=>e.target.style.borderColor='#8B9EF0'} onBlur={e=>e.target.style.borderColor='#363B58'}/>
-            <button type="button" onClick={()=>setShowPw(!showPw)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#9099BE',cursor:'pointer',fontSize:12}}>{showPw?'Hide':'Show'}</button>
+              style={{width:'100%',padding:'12px 40px 12px 14px',background:inputBg,border:'1px solid '+inputBorder,borderRadius:10,color:textMain,fontSize:14,outline:'none',boxSizing:'border-box',transition:'border .2s'}}
+              onFocus={e=>e.target.style.borderColor=inputFocus} onBlur={e=>e.target.style.borderColor=inputBorder}/>
+            <button type="button" onClick={()=>setShowPw(!showPw)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:textSec,cursor:'pointer',fontSize:12}}>{showPw?'Hide':'Show'}</button>
           </div>
         </div>
 
-        {error && <div style={{padding:'10px 14px',background:'#2D1414',border:'1px solid #5C2020',borderRadius:8,color:'#FF6B6B',fontSize:12,marginBottom:16,fontWeight:500}}>{error}</div>}
+        <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,cursor:'pointer',fontSize:12,color:textSec}}>
+          <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}
+            style={{width:16,height:16,accentColor:'#3B4A8A',cursor:'pointer'}}/>
+          Remember this account
+        </label>
+
+        {error && <div style={{padding:'10px 14px',background:errBg,border:'1px solid '+errBorder,borderRadius:8,color:errColor,fontSize:12,marginBottom:16,fontWeight:500}}>{error}</div>}
 
         <button type="submit" disabled={loading}
-          style={{width:'100%',padding:'13px',background:loading?'#2E3350':'linear-gradient(135deg,#3B4A8A,#5A6BC5)',color:'#fff',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',transition:'opacity .2s',opacity:loading?0.7:1}}>
+          style={{width:'100%',padding:'13px',background:loading?cardBorder:'linear-gradient(135deg,#3B4A8A,#5A6BC5)',color:'#fff',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',transition:'opacity .2s',opacity:loading?0.7:1}}>
           {loading ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
 
-      <div style={{textAlign:'center',marginTop:20,fontSize:11,color:'#6B7294'}}>
+      <div style={{textAlign:'center',marginTop:20,fontSize:11,color:textMuted}}>
         Contact admin to get an account
       </div>
     </div>
@@ -3136,11 +3162,10 @@ function AdminUsersPanel({ t, onClose }) {
   </div>;
 }
 
+/* ═══════════ AUTH GATE (wraps Dashboard) ═══════════ */
 export default function App(){
-  // ═══ AUTH STATE ═══
   const[authUser,setAuthUser]=useState(()=>{try{const u=localStorage.getItem('dashboard_user');return u?JSON.parse(u):null}catch{return null}});
   const[authChecking,setAuthChecking]=useState(true);
-  const[showAdmin,setShowAdmin]=useState(false);
 
   useEffect(()=>{
     if(!getToken()){setAuthChecking(false);return;}
@@ -3153,12 +3178,16 @@ export default function App(){
   const handleLogin=(user)=>{setAuthUser(user);};
   const handleLogout=()=>{clearAuth();setAuthUser(null);};
 
-  // Show loading while checking token
-  if(authChecking)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0D0F1A',color:'#9099BE',fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:14}}>Verifying session...</div>;
+  if(authChecking)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:window.matchMedia?.('(prefers-color-scheme:dark)').matches?'#0D0F1A':'#F0F2F8',color:'#9099BE',fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:14}}>Verifying session...</div>;
 
-  // Show login if not authenticated
   if(!authUser)return<LoginPage onLogin={handleLogin}/>;
 
+  return<Dashboard authUser={authUser} onLogout={handleLogout}/>;
+}
+
+/* ═══════════ MAIN DASHBOARD ═══════════ */
+function Dashboard({authUser,onLogout}){
+  const[showAdmin,setShowAdmin]=useState(false);
   const{mob,tab}=useResp();
   const[pg,setPg]=useState("exec");const[sb,setSb]=useState(true);const[isDark,setDark]=useState(false);
   const t=isDark?TH.dark:TH.light;const cn=NAV.find(n=>n.id===pg);
@@ -3476,7 +3505,7 @@ export default function App(){
             <button onClick={()=>setDark(!isDark)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,color:t.textSec,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>{isDark?"Light":"Dark"}</button>
             {authUser?.role==="admin"&&<button onClick={()=>setShowAdmin(true)} style={{background:t.card,border:"1px solid "+t.inputBorder,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:11,color:t.primary,fontWeight:600,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=t.card}>Users</button>}
             <span style={{fontSize:10,color:t.textMuted,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={authUser?.email}>{authUser?.name||authUser?.email}</span>
-            <button onClick={handleLogout} style={{background:t.redBg,border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:11,color:t.red,fontWeight:600}}>Logout</button>
+            <button onClick={onLogout} style={{background:t.redBg,border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:11,color:t.red,fontWeight:600}}>Logout</button>
           </div>
         </div>
         {/* FILTER BAR — exec page has its own filters inside Zone B */}
