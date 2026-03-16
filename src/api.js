@@ -95,3 +95,33 @@ export async function authDeleteUser(id) {
   if (!r.ok) throw new Error(d.error || 'Delete failed');
   return d;
 }
+
+// Invite flow
+export async function authSendInvite(email, role) {
+  return apiPost('auth/invite', { email, role });
+}
+export async function authVerifyInvite(token) {
+  const r = await fetch(`${BASE}/auth/invite/${token}`);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Invalid invite');
+  return d;
+}
+export async function authAcceptInvite(token, name, password) {
+  const r = await fetch(`${BASE}/auth/invite/${token}/accept`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Failed to accept invite');
+  if (d.token) { setToken(d.token); localStorage.setItem('dashboard_user', JSON.stringify(d.user)); }
+  return d;
+}
+export async function authGetInvites() { return api('auth/invites'); }
+export async function authRevokeInvite(id) {
+  const r = await fetch(`${BASE}/auth/invite/${id}`, {
+    method: 'DELETE', headers: authHeaders(),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Revoke failed');
+  return d;
+}
