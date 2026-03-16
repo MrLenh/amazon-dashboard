@@ -2643,14 +2643,17 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
     {layer==="predictive"&&<div>
       <Cd2>
         <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:1,fontWeight:600}}>Forecast Engine</div>
-        <div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:6}}>Revenue Forecast: {$(forecast.find(f=>f.forecast)?.forecast)||"Calculating..."}</div>
+        {(()=>{const fcMonths=forecast.filter(f=>f.forecast);
+          const total=fcMonths.reduce((s,f)=>s+(f.forecast||0),0);
+          return<div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:6}}>Revenue Forecast: {total>0?$(total):"Calculating..."}</div>;
+        })()}
         <div style={{fontSize:12,color:t.textSec,marginTop:4}}>Method: {fcMethodLabel} | {monthly.length} months of data | Forecasting: {forecast.filter(f=>f.forecast).map(f=>f.m).join(", ")||"—"}</div>
         <div style={{marginTop:8,padding:"8px 12px",background:t.primaryLight,borderRadius:8,fontSize:11,color:t.primary}}>
           Forecast uses last-year same-month revenue as anchor, scaled by YoY growth ratio. Falls back to WMA when LY data unavailable.
         </div>
       </Cd2>
 
-      <Note text={"Confidence range shown as shaded area (±18%). Forecast = LY same-month × YoY growth ratio (fallback: WMA). Click metric tabs to switch."} color={t.primary}/>
+      <Note text={"Confidence range: peak months (May–Jul, Nov–Dec) ±30%, off-peak ±18%. Forecast = LY same-month × YoY growth ratio (fallback: WMA). Click metric tabs to switch."} color={t.primary}/>
 
       <div style={{display:"flex",gap:6,marginBottom:16}}>
         {[{id:"revenue",l:"Revenue"},{id:"gp",l:"Gross Profit"},{id:"units",l:"Units"},{id:"sessions",l:"Sessions"}].map(m=>
@@ -2659,7 +2662,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
       </div>
 
       <Cd2>
-        <SH2 title="Actual vs Forecast" sub="Basis months = actual data. Future months = forecast with ±18% confidence range."/>
+        <SH2 title="Actual vs Forecast" sub="Basis months = actual data. Future months = forecast (peak ±30%, off-peak ±18%)."/>
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={forecast}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
@@ -2668,16 +2671,16 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
             <Tooltip content={({active,payload,label})=>{
               if(!active||!payload?.length)return null;
               const d=payload[0]?.payload||{};
-              return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow,maxWidth:260}}>
+              return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow,maxWidth:300}}>
                 <div style={{fontSize:12,color:t.text,fontWeight:700,marginBottom:6}}>{label}</div>
                 {payload.filter(p=>p.value!=null&&!isNaN(p.value)&&p.value!==0).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,marginTop:3}}>
                   <div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/>
                   <span style={{color:t.textSec}}>{p.name}:</span>
-                  <span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?$s(p.value):p.value}</span>
+                  <span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?(pMetric==="units"||pMetric==="sessions"?N(p.value):$(p.value)):p.value}</span>
                 </div>)}
                 {d.forecast&&d._src&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px solid "+t.divider,fontSize:10,color:t.textMuted,lineHeight:1.6}}>
-                  {d._src==="LY"&&<div>Anchor: LY same month ({$s(d._anchorRev)}) × {d._ratio}x</div>}
-                  {d._src==="TY"&&<div>Anchor: TY same month ({$s(d._anchorRev)}) × {d._ratio}x</div>}
+                  {d._src==="LY"&&<div>Anchor: LY same month ({$(d._anchorRev)}) × {d._ratio}x</div>}
+                  {d._src==="TY"&&<div>Anchor: TY same month ({$(d._anchorRev)}) × {d._ratio}x</div>}
                   {d._src==="WMA"&&<div>Source: WMA fallback (no anchor data)</div>}
                   {d._isPeak&&<div>Peak month · confidence ±{d._ci}%</div>}
                 </div>}
@@ -2699,29 +2702,55 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
         </div>
       </Cd2>
 
-      {/* Scenario Cards */}
-      {forecast.length>0&&(()=>{const fc=forecast.find(f=>f.forecast);if(!fc)return null;return<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
-        {[{l:"Worst Case",v:fc.lo,c:t.red,bg:t.redBg,desc:"If growth stalls + market headwinds"},{l:"Base Case",v:fc.forecast,c:t.primary,bg:t.primaryLight,desc:"Based on last-year pattern × YoY growth"},{l:"Best Case",v:fc.hi,c:t.green,bg:t.greenBg,desc:"If current growth momentum continues"}].map((s,i)=>
+      {/* Scenario Cards — aggregated across ALL forecast months */}
+      {forecast.length>0&&(()=>{
+        const fcMonths=forecast.filter(f=>f.forecast);
+        if(!fcMonths.length)return null;
+        const totalLo=fcMonths.reduce((s,f)=>s+(f.lo||0),0);
+        const totalBase=fcMonths.reduce((s,f)=>s+(f.forecast||0),0);
+        const totalHi=fcMonths.reduce((s,f)=>s+(f.hi||0),0);
+        const monthNames=fcMonths.map(f=>f.m).join(", ");
+        return<div style={{marginBottom:16}}>
+        <div style={{fontSize:11,color:t.textMuted,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>Forecast Total — {monthNames} ({fcMonths.length} months)</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {[{l:"Worst Case",v:totalLo,c:t.red,bg:t.redBg,desc:"If growth stalls + market headwinds"},{l:"Base Case",v:totalBase,c:t.primary,bg:t.primaryLight,desc:"Based on last-year pattern × YoY growth"},{l:"Best Case",v:totalHi,c:t.green,bg:t.greenBg,desc:"If current growth momentum continues"}].map((s,i)=>
           <div key={i} style={{background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"16px",borderTop:"3px solid "+s.c}}>
             <div style={{fontSize:10,color:t.textMuted,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{s.l}</div>
             <div style={{fontSize:22,fontWeight:800,color:s.c,marginTop:6}}>{$(s.v)}</div>
             <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>{s.desc}</div>
           </div>
         )}
+      </div>
+      {/* Per-month breakdown */}
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(fcMonths.length,4)},1fr)`,gap:8,marginTop:8}}>
+        {fcMonths.map((f,i)=><div key={i} style={{background:t.tableBg,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+          <div style={{fontSize:10,fontWeight:700,color:t.textMuted,textTransform:"uppercase"}}>{f.m}{f._isPeak?" ⚡":""}</div>
+          <div style={{fontSize:15,fontWeight:800,color:t.primary,marginTop:3}}>{$(f.forecast)}</div>
+          <div style={{fontSize:9,color:t.textMuted,marginTop:2}}>{$(f.lo)} – {$(f.hi)}</div>
+        </div>)}
+      </div>
       </div>})()}
 
-      {/* Forecast all metrics summary */}
+      {/* Forecast all metrics summary — total across all forecast months */}
       {forecast.length>0&&<Cd2>
-        <SH2 title="Forecast Summary — Next Month" sub={"Predicted values for "+(forecast.find(f=>f.forecast)?.m||"—")}/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
-          {(()=>{const fc=forecast.find(f=>f.forecast);if(!fc)return null;return[{l:"Revenue",v:$(fc.forecast)},{l:"Gross Profit",v:$(fc.gpF)},{l:"Units",v:N(fc.unitsF)},{l:"Sessions",v:N(fc.sessF)}].map((k,i)=>
+        {(()=>{
+          const fcMonths=forecast.filter(f=>f.forecast);
+          if(!fcMonths.length)return null;
+          const totRv=fcMonths.reduce((s,f)=>s+(f.forecast||0),0);
+          const totGp=fcMonths.reduce((s,f)=>s+(f.gpF||0),0);
+          const totUn=fcMonths.reduce((s,f)=>s+(f.unitsF||0),0);
+          const totSe=fcMonths.reduce((s,f)=>s+(f.sessF||0),0);
+          return<>
+          <SH2 title={"Forecast Summary — "+fcMonths.map(f=>f.m).join(", ")} sub={fcMonths.length+" months total forecast"}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+            {[{l:"Revenue",v:$(totRv)},{l:"Gross Profit",v:$(totGp)},{l:"Units",v:N(totUn)},{l:"Sessions",v:N(totSe)}].map((k,i)=>
             <div key={i} style={{textAlign:"center",padding:"12px",background:t.tableBg,borderRadius:10}}>
               <div style={{fontSize:9,color:t.textMuted,fontWeight:600,textTransform:"uppercase"}}>{k.l}</div>
               <div style={{fontSize:18,fontWeight:800,color:t.primary,marginTop:4}}>{k.v}</div>
-              <div style={{fontSize:9,color:t.textMuted,marginTop:2}}>forecast</div>
-            </div>
-          )})()}
-        </div>
+              <div style={{fontSize:9,color:t.textMuted,marginTop:2}}>total forecast</div>
+            </div>)}
+          </div></>;
+        })()}
       </Cd2>}
 
       <SH2 title="Stock Depletion Forecast" sub="Estimated days until stockout based on current velocity"/>
