@@ -2282,7 +2282,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
     const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
     const avgRev=(last.ra+prev.ra)/2;
     const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const seasonal=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
+    const HARDCODED_SEASONAL=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
     const gpMargin=last.gpa>0&&last.ra>0?(last.gpa/last.ra):0.15;
 
     // ── Build LY lookup: { monthIndex(0-based): { revenue, gp, units, sessions } } ──
@@ -2292,71 +2292,87 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
         if(m.mn) lyMap[m.mn-1]={revenue:m.revenue||0,gp:m.gp||0,units:m.units||0,sessions:m.sessions||0};
       });
     }
+    const hasLY=Object.keys(lyMap).length>=6;
+
+    // ── Compute LY-derived seasonal factors (replaces hardcode when LY data available) ──
+    // seasonal[mi] = LY_month_revenue / LY_avg_revenue
+    let seasonal=HARDCODED_SEASONAL;
+    if(hasLY){
+      const lyRevs=Object.values(lyMap).map(v=>v.revenue).filter(v=>v>0);
+      const lyAvg=lyRevs.length>0?lyRevs.reduce((s,v)=>s+v,0)/lyRevs.length:0;
+      if(lyAvg>0){
+        seasonal=Array.from({length:12},(_,mi)=>{
+          const lyM=lyMap[mi];
+          return lyM&&lyM.revenue>0?lyM.revenue/lyAvg:HARDCODED_SEASONAL[mi];
+        });
+      }
+    }
+
     // Detect LY month-over-month spikes (>80% jump vs prior LY month)
     const lySpike={};
     for(let mi=0;mi<12;mi++){
       const cur=lyMap[mi],prv=lyMap[(mi+11)%12];
       if(cur&&prv&&prv.revenue>0){
-        const jump=(cur.revenue-prv.revenue)/prv.revenue;
-        lySpike[mi]=jump>0.8; // true if >80% spike
+        lySpike[mi]=(cur.revenue-prv.revenue)/prv.revenue>0.8;
       }
     }
-    const hasLY=Object.keys(lyMap).length>=6; // need at least 6 months LY data to be useful
 
-    // Build forecast map for future months
+    // ── YoY growth factor: how much bigger is TY vs LY (based on latest 2 months) ──
+    let yoyGrowth=1.0;
+    if(hasLY){
+      const lyM1=lyMap[(last.mn-1)%12], lyM2=lyMap[(prev.mn-1)%12];
+      if(lyM1&&lyM2&&(lyM1.revenue+lyM2.revenue)>0){
+        yoyGrowth=(last.ra+prev.ra)/(lyM1.revenue+lyM2.revenue);
+        yoyGrowth=Math.min(Math.max(yoyGrowth,0.3),5.0);
+      }
+    }
+
+    // ── Build forecast map for future months ──
     const fcMap={};
     let usedYoY=false;
     for(let i=1;i<=4;i++){
       const mi=(last.mn-1+i)%12;
-      // ── Source 1: WMA (existing logic) ──
+      // Source 1: WMA with seasonal (LY-derived or hardcoded)
       const wmaRev=Math.round(avgRev*growthRate*seasonal[mi]*(0.95+i*0.02));
 
-      // ── Source 2: YoY growth from same month last year ──
-      let blendedRev=wmaRev;
-      let w1=1.0, w2=0.0; // default: 100% WMA
-
+      // Source 2: YoY = LY same-month × yoyGrowth
+      let yoyRev=wmaRev; // fallback
+      let w1=1.0, w2=0.0;
       if(hasLY && lyMap[mi] && lyMap[mi].revenue>0){
-        // YoY-based forecast: LY same-month revenue × current year growth factor
-        // growth factor = avg of last 2 complete months / avg of same 2 LY months
-        const lyM1=lyMap[(last.mn-1)%12], lyM2=lyMap[(prev.mn-1)%12];
-        let yoyGrowth=1.0;
-        if(lyM1&&lyM2&&(lyM1.revenue+lyM2.revenue)>0){
-          yoyGrowth=(last.ra+prev.ra)/(lyM1.revenue+lyM2.revenue);
-          yoyGrowth=Math.min(Math.max(yoyGrowth,0.3),5.0); // clamp
-        }
-        const yoyRev=Math.round(lyMap[mi].revenue*yoyGrowth);
-
-        // ── Dynamic weighting: spike month → boost YoY weight ──
-        if(lySpike[mi]){
-          w1=0.40; w2=0.60; // spike: trust LY pattern more
-        } else {
-          w1=0.60; w2=0.40; // normal: 60% WMA + 40% YoY
-        }
-        blendedRev=Math.round(w1*wmaRev + w2*yoyRev);
+        yoyRev=Math.round(lyMap[mi].revenue*yoyGrowth);
+        // Dynamic weight: spike month → trust LY pattern more
+        if(lySpike[mi]){ w1=0.35; w2=0.65; }
+        else { w1=0.60; w2=0.40; }
         usedYoY=true;
       }
+      const rv=Math.round(w1*wmaRev + w2*yoyRev);
 
-      const rv=blendedRev;
       fcMap[MS[mi]]={forecast:rv,gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
         unitsF:Math.round(last.ua*(rv/Math.max(last.ra,1))),sessF:Math.round(last.sa*(rv/Math.max(last.ra,1))*0.95),
         lo:Math.round(rv*0.82),hi:Math.round(rv*1.18),
         gpLo:Math.round(rv*gpMargin*(0.9+i*0.03)*0.75),gpHi:Math.round(rv*gpMargin*(0.9+i*0.03)*1.25),
         unitsLo:Math.round(last.ua*(rv/Math.max(last.ra,1))*0.82),unitsHi:Math.round(last.ua*(rv/Math.max(last.ra,1))*1.18),
         sessLo:Math.round(last.sa*(rv/Math.max(last.ra,1))*0.85),sessHi:Math.round(last.sa*(rv/Math.max(last.ra,1))*1.15),
-        _w1:w1,_w2:w2};
+        _w1:w1,_w2:w2,_wma:wmaRev,_yoy:yoyRev,_sf:Math.round(seasonal[mi]*100)/100};
     }
 
     // Update method label
     setTimeout(()=>setFcMethodLabel(usedYoY?"WMA + YoY":"WMA (no LY data)"),0);
 
-    // Build result: actual months + merge forecast into existing + add future months
+    // Build result: actual months + merge forecast + add LY revenue line
     const result=monthly.map(m=>{
       const fc=fcMap[m.m];
-      return{m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa,...(fc||{})};
+      const mi=MS.indexOf(m.m);
+      const lyRev=mi>=0&&lyMap[mi]?lyMap[mi].revenue:null;
+      return{m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa,lyRevenue:lyRev,...(fc||{})};
     });
     // Add pure forecast months not in actuals
     Object.entries(fcMap).forEach(([month,fc])=>{
-      if(!result.find(r=>r.m===month)) result.push({m:month,...fc});
+      if(!result.find(r=>r.m===month)){
+        const mi=MS.indexOf(month);
+        const lyRev=mi>=0&&lyMap[mi]?lyMap[mi].revenue:null;
+        result.push({m:month,lyRevenue:lyRev,...fc});
+      }
     });
     return result;
   },[monthly,monthlyLY]);
@@ -2627,16 +2643,32 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
       </div>
 
       <Cd2>
-        <SH2 title="Actual vs Forecast" sub="Jan-Feb = basis months (actual data used to calculate forecast). Mar onwards = forecast with ±18% confidence range."/>
+        <SH2 title="Actual vs Forecast" sub="Basis months = actual data. Future months = forecast with ±18% confidence range."/>
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={forecast}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="m" tick={{fill:t.textSec,fontSize:11}}/>
             <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>pMetric==="units"||pMetric==="sessions"?N(v):$s(v)}/>
-            <Tooltip content={<CT t={t}/>}/>
+            <Tooltip content={({active,payload,label})=>{
+              if(!active||!payload?.length)return null;
+              const d=payload[0]?.payload||{};
+              return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow,maxWidth:260}}>
+                <div style={{fontSize:12,color:t.text,fontWeight:700,marginBottom:6}}>{label}</div>
+                {payload.filter(p=>p.value!=null&&!isNaN(p.value)&&p.value!==0).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,marginTop:3}}>
+                  <div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/>
+                  <span style={{color:t.textSec}}>{p.name}:</span>
+                  <span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?$s(p.value):p.value}</span>
+                </div>)}
+                {d.forecast&&d._wma!=null&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px solid "+t.divider,fontSize:10,color:t.textMuted,lineHeight:1.6}}>
+                  <div>WMA: {$s(d._wma)} × {Math.round((d._w1||1)*100)}%</div>
+                  {d._w2>0&&<div>YoY: {$s(d._yoy)} × {Math.round(d._w2*100)}%</div>}
+                  {d._sf!=null&&<div>Seasonal: {d._sf}{d._sf>1.5?" ⚡":""}</div>}
+                </div>}
+              </div>;
+            }}/>
             <Legend wrapperStyle={{fontSize:10}}/>
-            <Area dataKey={pMetric==="revenue"?"hi":pMetric==="gp"?"gpHi":pMetric==="units"?"unitsHi":"sessHi"} name="Best Case" stroke={t.green} strokeWidth={1.5} strokeDasharray="5 3" fill={t.green} fillOpacity={0.10}/>
-            <Area dataKey={pMetric==="revenue"?"lo":pMetric==="gp"?"gpLo":pMetric==="units"?"unitsLo":"sessLo"} name="Worst Case" stroke={t.red} strokeWidth={1.5} strokeDasharray="5 3" fill={t.red} fillOpacity={0.10}/>
+            <Area dataKey={pMetric==="revenue"?"hi":pMetric==="gp"?"gpHi":pMetric==="units"?"unitsHi":"sessHi"} name="Best Case" stroke={t.green} strokeWidth={1.5} strokeDasharray="5 3" fill={t.green} fillOpacity={0.08}/>
+            <Area dataKey={pMetric==="revenue"?"lo":pMetric==="gp"?"gpLo":pMetric==="units"?"unitsLo":"sessLo"} name="Worst Case" stroke={t.red} strokeWidth={1.5} strokeDasharray="5 3" fill={t.red} fillOpacity={0.08}/>
             <Bar dataKey={pMetric==="revenue"?"actual":pMetric} name="Actual" fill={t.primary} radius={[4,4,0,0]}/>
             <Bar dataKey={pMetric==="revenue"?"forecast":pMetric==="gp"?"gpF":pMetric==="units"?"unitsF":"sessF"} name="Forecast" fill={t.orange} fillOpacity={0.75} radius={[4,4,0,0]}/>
           </ComposedChart>
