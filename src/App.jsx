@@ -2268,111 +2268,127 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
   },[mom]);
 
   // ═══ PREDICTIVE DATA ═══
-  // ═══ Forecast method label (for display) ═══
   const [fcMethodLabel, setFcMethodLabel] = useState("WMA");
+
+  // FBA peak months (0-indexed): May, Jun, Jul, Nov, Dec
+  const PEAK_MONTHS=new Set([4,5,6,10,11]);
 
   const forecast=useMemo(()=>{
     if(!monthly.length)return[];
     const now=new Date();const curMn=now.getMonth()+1;const curDay=now.getDate();
-    // Complete months = exclude current month if < 20 days in
     const complete=monthly.filter(m=>!(m.mn===curMn&&curDay<20));
     if(complete.length<2)return monthly.map(m=>({m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa}));
 
     const last=complete[complete.length-1],prev=complete[complete.length-2];
-    const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
-    const avgRev=(last.ra+prev.ra)/2;
     const MS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const HARDCODED_SEASONAL=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
     const gpMargin=last.gpa>0&&last.ra>0?(last.gpa/last.ra):0.15;
 
-    // ── Build LY lookup: { monthIndex(0-based): { revenue, gp, units, sessions } } ──
+    // ── Build LY lookup (năm trước) ──
     const lyMap={};
     if(monthlyLY&&monthlyLY.length){
       monthlyLY.forEach(m=>{
         if(m.mn) lyMap[m.mn-1]={revenue:m.revenue||0,gp:m.gp||0,units:m.units||0,sessions:m.sessions||0};
       });
     }
-    const hasLY=Object.keys(lyMap).length>=6;
 
-    // ── Compute LY-derived seasonal factors (replaces hardcode when LY data available) ──
-    // seasonal[mi] = LY_month_revenue / LY_avg_revenue
-    let seasonal=HARDCODED_SEASONAL;
-    if(hasLY){
-      const lyRevs=Object.values(lyMap).map(v=>v.revenue).filter(v=>v>0);
-      const lyAvg=lyRevs.length>0?lyRevs.reduce((s,v)=>s+v,0)/lyRevs.length:0;
-      if(lyAvg>0){
-        seasonal=Array.from({length:12},(_,mi)=>{
-          const lyM=lyMap[mi];
-          return lyM&&lyM.revenue>0?lyM.revenue/lyAvg:HARDCODED_SEASONAL[mi];
-        });
+    // ── Build TY lookup (năm hiện tại, từ monthly actuals) ──
+    const tyMap={};
+    complete.forEach(m=>{
+      const mi=(m.mn||0)-1;
+      if(mi>=0&&m.ra>0) tyMap[mi]={revenue:m.ra,gp:m.gpa||0,units:m.ua||0,sessions:m.sa||0};
+    });
+
+    // ── YoY ratio tính RIÊNG cho peak vs off-peak ──
+    let peakTY=0,peakLY=0,peakN=0;
+    let offTY=0,offLY=0,offN=0;
+    complete.forEach(m=>{
+      const mi=(m.mn||0)-1;
+      if(lyMap[mi]&&lyMap[mi].revenue>0&&m.ra>0){
+        if(PEAK_MONTHS.has(mi)){ peakTY+=m.ra; peakLY+=lyMap[mi].revenue; peakN++; }
+        else { offTY+=m.ra; offLY+=lyMap[mi].revenue; offN++; }
       }
-    }
+    });
+    // Compute per-season ratio, fallback to combined if not enough data
+    const combinedRatio=(peakTY+offTY)>0&&(peakLY+offLY)>0
+      ?Math.min(Math.max((peakTY+offTY)/(peakLY+offLY),0.3),5.0) : 1.0;
+    const peakRatio=peakN>=1&&peakLY>0
+      ?Math.min(Math.max(peakTY/peakLY,0.3),5.0) : combinedRatio;
+    const offRatio=offN>=1&&offLY>0
+      ?Math.min(Math.max(offTY/offLY,0.3),5.0) : combinedRatio;
+    const hasLY=(peakN+offN)>=2;
 
-    // Detect LY month-over-month spikes (>80% jump vs prior LY month)
-    const lySpike={};
-    for(let mi=0;mi<12;mi++){
-      const cur=lyMap[mi],prv=lyMap[(mi+11)%12];
-      if(cur&&prv&&prv.revenue>0){
-        lySpike[mi]=(cur.revenue-prv.revenue)/prv.revenue>0.8;
-      }
-    }
+    // ── WMA fallback ──
+    const growthRate=prev.ra>0?Math.min(Math.max(last.ra/prev.ra,0.5),3.0):1;
+    const avgRev=(last.ra+prev.ra)/2;
+    const SEASONAL=[1.0,1.1,0.95,0.9,0.85,1.05,1.15,1.1,0.95,1.2,1.3,1.0];
 
-    // ── YoY growth factor: how much bigger is TY vs LY (based on latest 2 months) ──
-    let yoyGrowth=1.0;
-    if(hasLY){
-      const lyM1=lyMap[(last.mn-1)%12], lyM2=lyMap[(prev.mn-1)%12];
-      if(lyM1&&lyM2&&(lyM1.revenue+lyM2.revenue)>0){
-        yoyGrowth=(last.ra+prev.ra)/(lyM1.revenue+lyM2.revenue);
-        yoyGrowth=Math.min(Math.max(yoyGrowth,0.3),5.0);
-      }
-    }
+    // ── Detect wrap: forecast tháng thuộc năm sau? ──
+    // Nếu last.mn = 11 (Nov), forecast i=3 → mi=1 (Feb) → wrap
+    const lastMn=last.mn; // 1-indexed
 
-    // ── Build forecast map for future months ──
+    // ── Build forecast ──
     const fcMap={};
-    let usedYoY=false;
+    let method="WMA";
     for(let i=1;i<=4;i++){
-      const mi=(last.mn-1+i)%12;
-      // Source 1: WMA with seasonal (LY-derived or hardcoded)
-      const wmaRev=Math.round(avgRev*growthRate*seasonal[mi]*(0.95+i*0.02));
+      const mi=(lastMn-1+i)%12;
+      const isWrap=(lastMn-1+i)>=12; // tháng forecast thuộc năm sau
+      const isPeak=PEAK_MONTHS.has(mi);
+      const ratio=isPeak?peakRatio:offRatio;
+      let rv, src, anchorRev=null;
 
-      // Source 2: YoY = LY same-month × yoyGrowth
-      let yoyRev=wmaRev; // fallback
-      let w1=1.0, w2=0.0;
-      if(hasLY && lyMap[mi] && lyMap[mi].revenue>0){
-        yoyRev=Math.round(lyMap[mi].revenue*yoyGrowth);
-        // Dynamic weight: spike month → trust LY pattern more
-        if(lySpike[mi]){ w1=0.35; w2=0.65; }
-        else { w1=0.60; w2=0.40; }
-        usedYoY=true;
+      if(isWrap && tyMap[mi] && tyMap[mi].revenue>0){
+        // ★ WRAP: tháng năm sau → dùng TY cùng tháng (năm hiện tại) làm anchor
+        anchorRev=tyMap[mi].revenue;
+        rv=Math.round(anchorRev * ratio);
+        src="TY";
+        method="LY Anchor";
+      } else if(hasLY && lyMap[mi] && lyMap[mi].revenue>0){
+        // ★ LY ANCHOR: cùng tháng năm ngoái × seasonal yoyRatio
+        anchorRev=lyMap[mi].revenue;
+        rv=Math.round(anchorRev * ratio);
+        src="LY";
+        method="LY Anchor";
+      } else {
+        // Fallback: WMA
+        rv=Math.round(avgRev*growthRate*SEASONAL[mi]*(0.95+i*0.02));
+        src="WMA";
       }
-      const rv=Math.round(w1*wmaRev + w2*yoyRev);
 
-      fcMap[MS[mi]]={forecast:rv,gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
-        unitsF:Math.round(last.ua*(rv/Math.max(last.ra,1))),sessF:Math.round(last.sa*(rv/Math.max(last.ra,1))*0.95),
-        lo:Math.round(rv*0.82),hi:Math.round(rv*1.18),
-        gpLo:Math.round(rv*gpMargin*(0.9+i*0.03)*0.75),gpHi:Math.round(rv*gpMargin*(0.9+i*0.03)*1.25),
-        unitsLo:Math.round(last.ua*(rv/Math.max(last.ra,1))*0.82),unitsHi:Math.round(last.ua*(rv/Math.max(last.ra,1))*1.18),
-        sessLo:Math.round(last.sa*(rv/Math.max(last.ra,1))*0.85),sessHi:Math.round(last.sa*(rv/Math.max(last.ra,1))*1.15),
-        _w1:w1,_w2:w2,_wma:wmaRev,_yoy:yoyRev,_sf:Math.round(seasonal[mi]*100)/100};
+      // ── Confidence range: ±30% peak, ±18% off-peak ──
+      const ci=isPeak?0.30:0.18;
+      const rvRatio=rv/Math.max(last.ra,1);
+      fcMap[MS[mi]]={forecast:rv,
+        gpF:Math.round(rv*gpMargin*(0.9+i*0.03)),
+        unitsF:Math.round(last.ua*rvRatio),
+        sessF:Math.round(last.sa*rvRatio*0.95),
+        lo:Math.round(rv*(1-ci)),hi:Math.round(rv*(1+ci)),
+        gpLo:Math.round(rv*gpMargin*(0.9+i*0.03)*(1-ci)),
+        gpHi:Math.round(rv*gpMargin*(0.9+i*0.03)*(1+ci)),
+        unitsLo:Math.round(last.ua*rvRatio*(1-ci)),unitsHi:Math.round(last.ua*rvRatio*(1+ci)),
+        sessLo:Math.round(last.sa*rvRatio*(1-ci*0.8)),sessHi:Math.round(last.sa*rvRatio*(1+ci*0.8)),
+        _src:src,
+        _anchorRev:anchorRev,
+        _ratio:Math.round(ratio*100)/100,
+        _isPeak:isPeak,
+        _ci:Math.round(ci*100)};
     }
 
-    // Update method label
-    setTimeout(()=>setFcMethodLabel(usedYoY?"WMA + YoY":"WMA (no LY data)"),0);
+    setTimeout(()=>{
+      if(method==="LY Anchor"){
+        const parts=[];
+        if(peakN>=1) parts.push(`peak ${peakRatio.toFixed(2)}x`);
+        if(offN>=1) parts.push(`off-peak ${offRatio.toFixed(2)}x`);
+        setFcMethodLabel(`LY Anchor (${parts.join(", ")||combinedRatio.toFixed(2)+"x"}) · ${peakN+offN}mo overlap`);
+      } else setFcMethodLabel("WMA (no LY data)");
+    },0);
 
-    // Build result: actual months + merge forecast + add LY revenue line
+    // Build result
     const result=monthly.map(m=>{
       const fc=fcMap[m.m];
-      const mi=MS.indexOf(m.m);
-      const lyRev=mi>=0&&lyMap[mi]?lyMap[mi].revenue:null;
-      return{m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa,lyRevenue:lyRev,...(fc||{})};
+      return{m:m.m,actual:m.ra,gp:m.gpa,units:m.ua,sessions:m.sa,...(fc||{})};
     });
-    // Add pure forecast months not in actuals
     Object.entries(fcMap).forEach(([month,fc])=>{
-      if(!result.find(r=>r.m===month)){
-        const mi=MS.indexOf(month);
-        const lyRev=mi>=0&&lyMap[mi]?lyMap[mi].revenue:null;
-        result.push({m:month,lyRevenue:lyRev,...fc});
-      }
+      if(!result.find(r=>r.m===month)) result.push({m:month,...fc});
     });
     return result;
   },[monthly,monthlyLY]);
@@ -2630,11 +2646,11 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
         <div style={{fontSize:18,fontWeight:800,color:t.text,marginTop:6}}>Revenue Forecast: {$(forecast.find(f=>f.forecast)?.forecast)||"Calculating..."}</div>
         <div style={{fontSize:12,color:t.textSec,marginTop:4}}>Method: {fcMethodLabel} | {monthly.length} months of data | Forecasting: {forecast.filter(f=>f.forecast).map(f=>f.m).join(", ")||"—"}</div>
         <div style={{marginTop:8,padding:"8px 12px",background:t.primaryLight,borderRadius:8,fontSize:11,color:t.primary}}>
-          Forecast accuracy improves with more data. YoY blending active when 6+ months of last-year data available.
+          Forecast uses last-year same-month revenue as anchor, scaled by YoY growth ratio. Falls back to WMA when LY data unavailable.
         </div>
       </Cd2>
 
-      <Note text={"Confidence range shown as shaded area (±18%). Forecast blends WMA + YoY when last-year data is available. Click metric tabs to switch between Revenue, GP, Units, Sessions."} color={t.primary}/>
+      <Note text={"Confidence range shown as shaded area (±18%). Forecast = LY same-month × YoY growth ratio (fallback: WMA). Click metric tabs to switch."} color={t.primary}/>
 
       <div style={{display:"flex",gap:6,marginBottom:16}}>
         {[{id:"revenue",l:"Revenue"},{id:"gp",l:"Gross Profit"},{id:"units",l:"Units"},{id:"sessions",l:"Sessions"}].map(m=>
@@ -2659,10 +2675,11 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
                   <span style={{color:t.textSec}}>{p.name}:</span>
                   <span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?$s(p.value):p.value}</span>
                 </div>)}
-                {d.forecast&&d._wma!=null&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px solid "+t.divider,fontSize:10,color:t.textMuted,lineHeight:1.6}}>
-                  <div>WMA: {$s(d._wma)} × {Math.round((d._w1||1)*100)}%</div>
-                  {d._w2>0&&<div>YoY: {$s(d._yoy)} × {Math.round(d._w2*100)}%</div>}
-                  {d._sf!=null&&<div>Seasonal: {d._sf}{d._sf>1.5?" ⚡":""}</div>}
+                {d.forecast&&d._src&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px solid "+t.divider,fontSize:10,color:t.textMuted,lineHeight:1.6}}>
+                  {d._src==="LY"&&<div>Anchor: LY same month ({$s(d._anchorRev)}) × {d._ratio}x</div>}
+                  {d._src==="TY"&&<div>Anchor: TY same month ({$s(d._anchorRev)}) × {d._ratio}x</div>}
+                  {d._src==="WMA"&&<div>Source: WMA fallback (no anchor data)</div>}
+                  {d._isPeak&&<div>Peak month · confidence ±{d._ci}%</div>}
                 </div>}
               </div>;
             }}/>
@@ -2675,16 +2692,16 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
         </ResponsiveContainer>
         {/* Forecast method annotation */}
         <div style={{marginTop:8,padding:"6px 12px",background:t.tableBg,borderRadius:8,fontSize:10,color:t.textMuted,lineHeight:1.5}}>
-          {fcMethodLabel==="WMA (no LY data)"
-            ?"Forecast: Weighted Moving Average (2-month basis × seasonal factor). No last-year data available — add LY data for YoY blending."
-            :(()=>{const fc=forecast.find(f=>f._w2>0);const w1=fc?Math.round(fc._w1*100):60;const w2=fc?Math.round(fc._w2*100):40;const spike=forecast.some(f=>f._w2>=0.6);return`Forecast: WMA ${w1}% + YoY ${w2}%${spike?" (spike months: YoY weight boosted to 60%)":""}. LY data: ${monthlyLY?.length||0} months.`;})()
+          {fcMethodLabel.startsWith("WMA")
+            ?"Forecast: Weighted Moving Average (2-month basis × seasonal factor). No last-year data available."
+            :`Forecast: ${fcMethodLabel}. Peak months (May–Jul, Nov–Dec): ±30% range. Off-peak: ±18%.`
           }
         </div>
       </Cd2>
 
       {/* Scenario Cards */}
       {forecast.length>0&&(()=>{const fc=forecast.find(f=>f.forecast);if(!fc)return null;return<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
-        {[{l:"Worst Case",v:fc.lo,c:t.red,bg:t.redBg,desc:"If growth stalls + market headwinds"},{l:"Base Case",v:fc.forecast,c:t.primary,bg:t.primaryLight,desc:"Based on WMA + YoY blended trend"},{l:"Best Case",v:fc.hi,c:t.green,bg:t.greenBg,desc:"If current growth momentum continues"}].map((s,i)=>
+        {[{l:"Worst Case",v:fc.lo,c:t.red,bg:t.redBg,desc:"If growth stalls + market headwinds"},{l:"Base Case",v:fc.forecast,c:t.primary,bg:t.primaryLight,desc:"Based on last-year pattern × YoY growth"},{l:"Best Case",v:fc.hi,c:t.green,bg:t.greenBg,desc:"If current growth momentum continues"}].map((s,i)=>
           <div key={i} style={{background:t.card,borderRadius:12,border:"1px solid "+t.cardBorder,padding:"16px",borderTop:"3px solid "+s.c}}>
             <div style={{fontSize:10,color:t.textMuted,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{s.l}</div>
             <div style={{fontSize:22,fontWeight:800,color:s.c,marginTop:6}}>{$(s.v)}</div>
