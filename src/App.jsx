@@ -3032,8 +3032,6 @@ function InviteAcceptPage({ token, onDone }) {
     setError(''); setLoading(true);
     try {
       const data = await authAcceptInvite(token, name, password);
-      // Clear invite param from URL
-      window.history.replaceState({}, '', window.location.pathname);
       onDone(data.user);
     } catch (err) { setError(err.message); }
     setLoading(false);
@@ -3364,7 +3362,18 @@ function AdminUsersPanel({ t, onClose }) {
 export default function App(){
   const[authUser,setAuthUser]=useState(()=>{try{const u=localStorage.getItem('dashboard_user');return u?JSON.parse(u):null}catch{return null}});
   const[authChecking,setAuthChecking]=useState(true);
-  const[inviteToken]=useState(()=>new URLSearchParams(window.location.search).get('invite'));
+  const[inviteToken,setInviteToken]=useState(()=>new URLSearchParams(window.location.search).get('invite'));
+
+  // Set favicon + title globally (not just inside Dashboard)
+  useEffect(()=>{
+    document.title="Amazon Dashboard";
+    const col="#3B4A8A";
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="${col}"/><polyline points="4,24 10,16 16,19 22,10 28,14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="10" cy="16" r="2" fill="white"/><circle cx="16" cy="19" r="2" fill="white"/><circle cx="22" cy="10" r="2" fill="white"/></svg>`;
+    const url="data:image/svg+xml,"+encodeURIComponent(svg);
+    let link=document.querySelector("link[rel~='icon']");
+    if(!link){link=document.createElement("link");link.rel="icon";document.head.appendChild(link);}
+    link.href=url;
+  },[]);
 
   useEffect(()=>{
     if(inviteToken){setAuthChecking(false);return;} // skip token check if on invite page
@@ -3375,13 +3384,13 @@ export default function App(){
     }).finally(()=>setAuthChecking(false));
   },[]);
 
-  const handleLogin=(user)=>{setAuthUser(user);};
+  const handleLogin=(user)=>{setAuthUser(user);setInviteToken(null);window.history.replaceState({},'',window.location.pathname);};
   const handleLogout=()=>{clearAuth();setAuthUser(null);};
 
   if(authChecking)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:window.matchMedia?.('(prefers-color-scheme:dark)').matches?'#0D0F1A':'#F0F2F8',color:'#9099BE',fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:14}}>Verifying session...</div>;
 
-  // Invite flow — show accept page
-  if(inviteToken)return<InviteAcceptPage token={inviteToken} onDone={handleLogin}/>;
+  // Invite flow — show accept page (only if not already logged in)
+  if(inviteToken&&!authUser)return<InviteAcceptPage token={inviteToken} onDone={handleLogin}/>;
 
   if(!authUser)return<LoginPage onLogin={handleLogin}/>;
 
