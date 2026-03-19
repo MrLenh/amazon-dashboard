@@ -325,9 +325,10 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
   const[open,setOpen]=useState(false);
   const[dropPos,setDropPos]=useState({top:0,left:0,minWidth:220});
   const ref=useRef(null);
+  const portalRef=useRef(null);
   useEffect(()=>{
     if(!open)return;
-    const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};
+    const h=e=>{if(ref.current&&!ref.current.contains(e.target)&&portalRef.current&&!portalRef.current.contains(e.target))setOpen(false)};
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[open]);
   const openDrop=()=>{
@@ -348,7 +349,7 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
       <span style={{fontSize:10}}>{active?'':'​'}{label}</span>
       <span style={{fontSize:9,color:accentText,transition:'transform .2s',transform:open?'rotate(180deg)':'none'}}>▾</span>
     </button>
-    {open&&ReactDOM.createPortal(<div style={{position:'fixed',top:dropPos.top,left:dropPos.left,background:t.card,border:'1px solid '+BD,borderRadius:13,boxShadow:'0 16px 48px rgba(20,24,36,.18)',zIndex:99990,minWidth:dropPos.minWidth,overflow:'hidden'}}>
+    {open&&ReactDOM.createPortal(<div ref={portalRef} style={{position:'fixed',top:dropPos.top,left:dropPos.left,background:t.card,border:'1px solid '+BD,borderRadius:13,boxShadow:'0 16px 48px rgba(20,24,36,.18)',zIndex:99990,minWidth:dropPos.minWidth,overflow:'hidden'}}>
       {/* All Shops row */}
       <div onClick={()=>{onChange(new Set());setOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid '+DIV,background:allSelected?accentColor+'18':'transparent',transition:'background .1s'}}
         onMouseEnter={e=>e.currentTarget.style.background=allSelected?accentColor+'28':t.tableHover}
@@ -638,9 +639,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const[presetOpen,setPresetOpen]=useState(false);
   const[presetPos,setPresetPos]=useState({top:0,left:0});
   const presetRef=useRef(null);
+  const presetPortalRef=useRef(null);
   useEffect(()=>{
     if(!presetOpen)return;
-    const h=e=>{if(presetRef.current&&!presetRef.current.contains(e.target))setPresetOpen(false)};
+    const h=e=>{if(presetRef.current&&!presetRef.current.contains(e.target)&&presetPortalRef.current&&!presetPortalRef.current.contains(e.target))setPresetOpen(false)};
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[presetOpen]);
 
@@ -682,7 +684,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}}>{ZONE_A_PRESETS.find(p=>p.key===zoneAPreset)?.label||'Select preset'}</span>
               <span style={{fontSize:9,color:'#f97316',flexShrink:0,transition:'transform .2s',transform:presetOpen?'rotate(180deg)':'none'}}>▾</span>
             </button>
-            {presetOpen&&ReactDOM.createPortal(<div style={{position:'fixed',top:presetPos.top,left:presetPos.left,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:99990,overflow:'hidden',minWidth:430}}>
+            {presetOpen&&ReactDOM.createPortal(<div ref={presetPortalRef} style={{position:'fixed',top:presetPos.top,left:presetPos.left,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:99990,overflow:'hidden',minWidth:430}}>
               {ZONE_A_PRESETS.map(p=><div key={p.key} onClick={()=>{setZoneAPreset(p.key);setPresetOpen(false)}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',cursor:'pointer',fontSize:12,color:zoneAPreset===p.key?t.primary:S,borderBottom:'1px solid '+DIV,background:zoneAPreset===p.key?t.primaryGhost:'transparent',fontWeight:zoneAPreset===p.key?700:400,transition:'background .1s'}}
                 onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=zoneAPreset===p.key?t.primaryGhost:'transparent'}>
                 <span style={{width:13,flexShrink:0,fontSize:11,color:t.primary}}>{zoneAPreset===p.key?'✓':''}</span>
