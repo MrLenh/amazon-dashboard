@@ -566,6 +566,18 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`;
       rows = await summaryLimiter(()=>qc(sql, f.p, 55000));
+      // Orders, shippingCost, refundCost not in product table — fetch from sales table (date+account filter only)
+      try {
+        const scf = scWhere(s, e, accId);
+        const scRows = await qc(`SELECT SUM(COALESCE(sc.orders,0)) as orders,
+          SUM(COALESCE(sc.shipping,0)) as shippingCost, SUM(COALESCE(sc.refundCost,0)) as refundCost
+          FROM ${salesFrom()} ${scf.w}`, scf.p, 30000);
+        if (scRows[0] && rows[0]) {
+          rows[0].orders = scRows[0].orders || 0;
+          rows[0].shippingCost = scRows[0].shippingCost || 0;
+          rows[0].refundCost = scRows[0].refundCost || 0;
+        }
+      } catch(oe) { console.warn('orders sub-query failed:', oe.message); }
     } else {
       const f = scWhere(s, e, accId);
       const sql = `SELECT SUM(${SC_SALES}) as sales, SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders,
