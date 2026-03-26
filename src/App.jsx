@@ -443,7 +443,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     orders:    {l:'Orders',    v:N(em.orders),                       k:'orders',                 mw:105},
     units:     {l:'Units',     v:N(em.units),                        k:'units',                  mw:100},
     refunds:   {l:'Refunds',   v:N(em.refunds),                      k:'refunds',                mw:95},
-    advCost:   {l:'Adv. Cost', v:$2(Math.abs(em.advCost||0)),        k:'advCost',                mw:132},
+    advCost:   {l:'Adv. Cost', v:$2(Math.abs(em.advCost||0)),        k:'advCost',  chgFn:()=>prevEm?pctChg(Math.abs(em.advCost||0),Math.abs(prevEm.advCost||0)):undefined, reverse:true, mw:132},
     estPayout: {l:'Est. Payout',v:$2(em.estPayout),                  k:'estPayout',              mw:148},
     netProfit: {l:'Net Profit', v:$2(em.netProfit),                  k:'netProfit', profit:true, mw:132},
     tacos:     {l:'TACoS',     v:tacos.toFixed(2)+'%',               k:'_tacos',   isPct:true, ppDiff:prevEm?tacos-prevTacos:null, reverse:true, mw:95},
@@ -451,7 +451,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     sessions:  {l:'Sessions',  v:N(Math.round(em.sessions||0)),      k:'sessions',               mw:112},
     cr:        {l:'CR%',       v:cr.toFixed(2)+'%',                  k:'_cr',      isPct:true, ppDiff:prevEm?cr-prevCr:null, mw:90},
     aov:       {l:'AOV',       v:$2(aov),                            k:'_aov',                   mw:110},
-    shippingCost:{l:'Shipping', v:$2(Math.abs(em.shippingCost||0)),  k:'shippingCost',            mw:118},
+    shippingCost:{l:'Shipping', v:$2(Math.abs(em.shippingCost||0)),  k:'shippingCost', chgFn:()=>prevEm?pctChg(Math.abs(em.shippingCost||0),Math.abs(prevEm.shippingCost||0)):undefined, reverse:true, mw:118},
   };
   const sbRemove=key=>{if(sbVisible.length<=1)return;setSbVisible(prev=>prev.filter(k=>k!==key))};
   const sbAdd=key=>{if(!sbVisible.includes(key))setSbVisible(prev=>[...prev,key])};
@@ -923,7 +923,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'flex-start'}}>
         {sbVisible.map(key=>{
           const m=SB_ALL[key];if(!m)return null;
-          const pv=ch(m.k);
+          const pv=m.chgFn?m.chgFn():ch(m.k);
           const pvLabel=prevPeriod&&prevPeriod.s?prevPeriod.s+' – '+prevPeriod.e:'prev period';
           // For % metrics: show absolute pp diff; for others: show % change
           const isNegGood=m.reverse; // TACoS: lower is better
