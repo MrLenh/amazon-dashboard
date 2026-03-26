@@ -677,15 +677,32 @@ app.get('/api/product/asins', async (req, res) => {
       LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY' AND t.accountId=p.accountId
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 120000);
 
-    // Storage fee from seller_board_storage_fee (more accurate than fbaStorageFee in product table)
+    // Storage fee — try seller_board_storage_fee first, fallback to seller_board_product
     let sfMap2 = {};
     try {
-      let sfW = 'WHERE p.date BETWEEN ? AND ?'; const sfP = [s, e];
-      const sfAc = accIdClause('p', accId); sfW += sfAc.w; sfP.push(...sfAc.p);
+      // Try 1: seller_board_storage_fee latest month
+      let sfAccW = ''; const sfAccP = [];
+      const sfAc = accIdClause('p', accId); sfAccW += sfAc.w; sfAccP.push(...sfAc.p);
       const sfRows2 = await qc(`SELECT p.asin, SUM(COALESCE(p.fbaStorageFee,0)) as storageFee
-        FROM seller_board_storage_fee p ${sfW} GROUP BY p.asin`, sfP, 30000);
+        FROM seller_board_storage_fee p
+        JOIN (SELECT accountId, MAX(date) as maxDate FROM seller_board_storage_fee GROUP BY accountId) latest
+          ON p.accountId = latest.accountId AND p.date = latest.maxDate
+        WHERE 1=1 ${sfAccW} GROUP BY p.asin`, sfAccP, 30000);
       sfRows2.forEach(r=>{ if(parseFloat(r.storageFee)>0) sfMap2[r.asin]=Math.round(parseFloat(r.storageFee)*100)/100; });
-    } catch(e) { /* optional */ }
+    } catch(e) { console.warn('seller_board_storage_fee failed:', e.message); }
+
+    // Fallback: if sfMap2 still empty, use seller_board_product.fbaStorageFee (latest date per ASIN with value > 0)
+    if(Object.keys(sfMap2).length === 0) {
+      try {
+        let sfAccW2 = ''; const sfAccP2 = [];
+        const sfAc2 = accIdClause('p', accId); sfAccW2 += sfAc2.w; sfAccP2.push(...sfAc2.p);
+        const sfRows3 = await qc(`SELECT p.asin, SUM(COALESCE(p.fbaStorageFee,0)) as storageFee
+          FROM seller_board_product p
+          WHERE p.fbaStorageFee > 0 ${sfAccW2}
+          GROUP BY p.asin`, sfAccP2, 60000);
+        sfRows3.forEach(r=>{ if(parseFloat(r.storageFee)>0) sfMap2[r.asin]=Math.round(parseFloat(r.storageFee)*100)/100; });
+      } catch(e) { console.warn('fbaStorageFee fallback failed:', e.message); }
+    }
 
     // ASIN images from product_cogs
     let imgMap = {};
@@ -1728,3 +1745,4 @@ const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
 app.get('*', (req, res) => { res.sendFile(join(distPath, 'index.html')); });
 app.listen(PORT, '0.0.0.0', () => { console.log(`\n🚀 Dashboard ${VER} on :${PORT} | DB: ${process.env.DB_HOST||'none'}\n`); });
+                                                                              
