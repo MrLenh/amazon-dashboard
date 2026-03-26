@@ -3642,7 +3642,7 @@ function Dashboard({authUser,onLogout}){
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
   const zoneAParamsRef=useRef({zoneAPreset,storeStr,zoneACustomApplied});
   zoneAParamsRef.current={zoneAPreset,storeStr,zoneACustomApplied};
-  useEffect(()=>{\
+  useEffect(()=>{
     if(!live||dbConnecting)return;
     let cancelled=false;
     const{zoneAPreset:_preset,storeStr:_store,zoneACustomApplied:_custom}=zoneAParamsRef.current;
