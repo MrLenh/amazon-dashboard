@@ -2013,11 +2013,38 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
 
     {/* ── Tab: Monthly Table ── */}
     {activeTab==="monthly"&&<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:12,overflow:"hidden"}}>
+      {/* Month progress banner for current/selected month */}
+      {(()=>{
+        const now=new Date();
+        const curM=MS[now.getMonth()];
+        const selRow=mpd.find(r=>r.m===planMonth);
+        if(!selRow||(selRow.gpa||0)===0&&(selRow.gpp||0)===0)return null;
+        const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+        const daysPassed=planMonth===curM?now.getDate():daysInMonth;
+        const timePct=Math.round(daysPassed/daysInMonth*100);
+        const gpPct=selRow.gpp>0?Math.round((selRow.gpa||0)/selRow.gpp*100):null;
+        const rvPct=selRow.rp>0?Math.round((selRow.ra||0)/selRow.rp*100):null;
+        const col=gpPct!=null?(gpPct>=timePct?t.green:gpPct>=timePct*0.8?t.orange:t.red):t.textMuted;
+        return<div style={{padding:"10px 16px",borderBottom:"1px solid "+t.divider,background:t.primaryGhost,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,fontWeight:700,color:t.primary,minWidth:80}}>{planMonth} Progress</div>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:t.textMuted,marginBottom:3}}>
+              <span>Time elapsed: {daysPassed}/{daysInMonth}d ({timePct}%)</span>
+              {gpPct!=null&&<span style={{color:col,fontWeight:700}}>GP achieved: {gpPct}% of plan</span>}
+            </div>
+            <div style={{height:6,borderRadius:3,background:t.divider,overflow:"hidden",position:"relative"}}>
+              <div style={{position:"absolute",left:0,top:0,height:"100%",width:timePct+"%",background:t.textMuted+"66",borderRadius:3}}/>
+              {gpPct!=null&&<div style={{position:"absolute",left:0,top:0,height:"100%",width:Math.min(gpPct,100)+"%",background:col,borderRadius:3,opacity:.85}}/>}
+            </div>
+          </div>
+          {rvPct!=null&&<div style={{fontSize:11,color:t.textSec,whiteSpace:"nowrap"}}>Revenue: <span style={{fontWeight:700,color:rvPct>=timePct?t.green:t.orange}}>{rvPct}%</span></div>}
+        </div>;
+      })()}
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12}}>
           <thead><tr>
-            {[["Month","left",false],["GP",null,true],["Revenue"],["Ads"],["Units"],["ROAS ✦"],["Margin ✦"],["Sessions"],["Impressions"],["CR %"],["CTR %"]].map(([h,a,gp],i)=>(
-              <th key={i} style={{padding:"10px 12px",textAlign:a||"right",fontSize:9.5,fontWeight:700,color:gp?t.primary:t.textMuted,textTransform:"uppercase",borderBottom:`2px solid ${t.divider}`,background:gp?t.primaryLight:t.tableBg,whiteSpace:"nowrap",position:"sticky",top:0,zIndex:2}}>{h}</th>
+            {[["Month","left",false,100],["GP",null,true,110],["Revenue",null,false,110],["Ads",null,false,110],["Units",null,false,90],["ROAS ✦",null,false,85],["Margin ✦",null,false,85],["Sessions",null,false,100],["Impressions",null,false,110],["CR %",null,false,80],["CTR %",null,false,80]].map(([h,a,gp,mw],i)=>(
+              <th key={i} style={{padding:"10px 12px",textAlign:a||"right",fontSize:9.5,fontWeight:700,color:gp?t.primary:t.textMuted,textTransform:"uppercase",borderBottom:`2px solid ${t.divider}`,background:gp?t.primaryLight:t.tableBg,whiteSpace:"nowrap",position:"sticky",top:0,zIndex:2,minWidth:mw}}>{h}</th>
             ))}
           </tr></thead>
           <tbody>{mpd.map((r,i)=>{
@@ -2032,16 +2059,16 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
                 {r.m}{!has&&<span style={{fontSize:8,color:t.textMuted,marginLeft:5}}>(planned)</span>}
                 {sel&&<span style={{marginLeft:6,fontSize:9,color:t.primary}}>◀</span>}
               </td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gpa} plan={r.gpp} t={t}/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra}   plan={r.rp}  t={t}/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa}   plan={r.ap}  t={t} reverse/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua}   plan={r.up}  t={t} isMoney={false}/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={roas}   plan={pr}    t={t} isMoney={false} suffix="x"/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={margin} plan={pm}    t={t} isMoney={false} suffix="%"/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.sa}   plan={r.sp}  t={t} isMoney={false}/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.ia}   plan={r.ip}  t={t} isMoney={false}/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.cra}  plan={r.crp} t={t} isMoney={false} suffix="%"/></td>
-              <td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider}}><APG actual={r.cta}  plan={r.ctp} t={t} isMoney={false} suffix="%"/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gpa} plan={r.gpp} t={t}/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra}   plan={r.rp}  t={t}/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa}   plan={r.ap}  t={t} reverse/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua}   plan={r.up}  t={t} isMoney={false}/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={roas}   plan={pr}    t={t} isMoney={false} suffix="x"/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={margin} plan={pm}    t={t} isMoney={false} suffix="%"/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.sa}   plan={r.sp}  t={t} isMoney={false}/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ia}   plan={r.ip}  t={t} isMoney={false}/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cra}  plan={r.crp} t={t} isMoney={false} suffix="%"/></td>
+              <td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.cta}  plan={r.ctp} t={t} isMoney={false} suffix="%"/></td>
             </tr>;
           })}</tbody>
         </table>
