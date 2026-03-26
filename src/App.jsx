@@ -721,10 +721,18 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           </div>}
           {/* Expand All / Collapse All button — Zone A */}
           <button onClick={()=>{
-            const allIds=zoneATileData.map(t=>t.id);
+            const allIds=zoneATileData.map(tile=>tile.id);
             const anyOpen=allIds.some(id=>openTiles.has(id));
-            if(anyOpen){setOpenTiles(new Set());}
-            else{setOpenTiles(new Set(allIds));allIds.forEach(id=>{const tile=zoneATileData.find(t=>t.id===id);if(tile)toggleTile(id,tile);});}
+            if(anyOpen){
+              setOpenTiles(new Set());
+            } else {
+              allIds.forEach(id=>{
+                if(!openTiles.has(id)){
+                  const tile=zoneATileData.find(t=>t.id===id);
+                  if(tile) toggleTile(id,tile);
+                }
+              });
+            }
           }} style={{display:'flex',alignItems:'center',gap:5,background:openTiles.size>0?'#f97316':t.card,border:'1.5px solid #f97316',borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:openTiles.size>0?'#fff':'#c2410c',cursor:'pointer',transition:'all .15s',flexShrink:0}}>
             Detail metrics <span style={{fontSize:10,transition:'transform .2s',display:'inline-block',transform:openTiles.size>0?'rotate(180deg)':'none'}}>▾</span>
           </button>
@@ -785,20 +793,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
                 <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Net Profit</div>
                 <div style={{fontSize:15,fontWeight:700,color:tileNP>=0?t.green:t.red}}>{$2(tileNP)}</div>
                 <div style={{fontSize:10,fontWeight:600,color:tileNP>=0?t.green:t.red}}>{tile.em?.margin!=null?((tile.em.margin||0).toFixed(1)+'%'):'—'} margin</div>
-                {/* vs Same Period Last Year */}
-                {tile.emLY&&tile.emLY.sales>0&&(()=>{
-                  const lyRev=tile.emLY.sales||0;const curRev=tile.em?.sales||0;
-                  const lyNP=tile.emLY.netProfit||0;const curNP=tile.em?.netProfit||0;
-                  const revChg=lyRev>0?((curRev-lyRev)/lyRev*100):null;
-                  const npChg=lyNP!==0?((curNP-lyNP)/Math.abs(lyNP)*100):null;
-                  return<div style={{marginTop:6,paddingTop:6,borderTop:'1px dashed '+DIV}}>
-                    <div style={{fontSize:9,color:t.textMuted,fontWeight:700,letterSpacing:.4,marginBottom:4}}>VS SAME PERIOD LAST YEAR</div>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      {revChg!==null&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:8,background:revChg>=0?t.greenBg:t.redBg,color:revChg>=0?t.green:t.red}}>{revChg>=0?'↑':'↓'} Rev {Math.abs(revChg).toFixed(1)}%</span>}
-                      {npChg!==null&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:8,background:npChg>=0?t.greenBg:t.redBg,color:npChg>=0?t.green:t.red}}>{npChg>=0?'↑':'↓'} NP {Math.abs(npChg).toFixed(1)}%</span>}
-                    </div>
-                  </div>;
-                })()}
               </div>
             </div>
             {/* More / Less toggle */}
@@ -3651,16 +3645,10 @@ function Dashboard({authUser,onLogout}){
     setZoneALoading(true);
     setZoneATileData([]);
     const storeParam=_store==='All'?undefined:_store;
-    const subYear=d=>{const dt=new Date(d+'T12:00:00');dt.setFullYear(dt.getFullYear()-1);return dt.toISOString().slice(0,10);};
-    // Fetch current + same period last year in parallel for every tile
     Promise.allSettled(periods.map(p=>
-      Promise.all([
-        api('exec/summary',{start:p.start,end:p.end,store:storeParam}).catch(()=>null),
-        api('exec/summary',{start:subYear(p.start),end:subYear(p.end),store:storeParam}).catch(()=>null),
-      ]).then(([emRaw,emLY])=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,
-        em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,
-        emLY:emLY&&emLY.sales!=null?emLY:null,
-        detail:null}))
+      api('exec/summary',{start:p.start,end:p.end,store:storeParam})
+        .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
+        .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
     )).then(results=>{
       if(cancelled)return;
       setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:periods[0]));
