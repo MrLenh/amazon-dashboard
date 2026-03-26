@@ -1116,7 +1116,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:(r.gp||r.n||0)>=0?t.green:t.red,borderBottom:'1px solid '+t.divider}}>{$(r.gp||r.n||0)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(Math.abs(r.ad||0))}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.u||0)}</td>
-              <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.cr>0?r.cr.toFixed(1)+'%':r.ses>0?(r.u/r.ses*100).toFixed(1)+'%':'—'}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.cr>0?r.cr.toFixed(2)+'%':r.ses>0?(r.u/r.ses*100).toFixed(2)+'%':'—'}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.o>0?$(r.r/r.o):'—'}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:(r.gp||r.n||0)>=0?t.green:t.red,fontWeight:600}}>{r.u>0?$((r.gp||r.n||0)/r.u):'—'}</td>
               <td style={{padding:'10px 12px',textAlign:'right',color:mC(r.m,t),fontWeight:600,borderBottom:'1px solid '+t.divider}}>{(r.m||0).toFixed(1)}%</td>
@@ -1204,7 +1204,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend','Storage Fee','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+              <th style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Storage Fee<Tip text="Latest monthly snapshot — not filtered by selected date range" t={t}/></th>
+              <th style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>ROAS</th>
           </tr></thead>
           <tbody>{groupedAsins.map((r,i)=>{
             const isHL=highlightedAsin===r.a;
@@ -1219,11 +1221,11 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(r.r)}</td>
             <td style={{padding:'7px 12px',textAlign:'right',fontWeight:700,color:r.n>=0?t.green:t.red,borderBottom:'1px solid '+t.divider}}>{$(r.n)}</td>
-            <td style={{padding:'7px 12px',textAlign:'right',color:mC(r.m,t),borderBottom:'1px solid '+t.divider}}>{r.m.toFixed(1)}%</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:mC(r.m,t),borderBottom:'1px solid '+t.divider}}>{r.m.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.u)}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.cr.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ac<30?t.green:r.ac<50?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ac.toFixed(2)}%</td>
-            <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.r>0?(Math.abs(r.ac)*r.u/100/r.r*100).toFixed(1)+'%':'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.r>0?(Math.abs(r.ac)*r.u/100/r.r*100).toFixed(2)+'%':'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.u>0&&r.n/r.u>=0?t.green:t.red,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.u>0?$(r.n/r.u):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.ap>0?$(r.ap):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.adv>0?$(r.adv):'—'}</td>
