@@ -1521,12 +1521,12 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
       <Sec title="Storage Fee History" icon="" t={t}>
         <Cd t={t}>
-          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>estimatedStorageCostNextMonth</code> · Tháng hiện — = Amazon không ghi nhận phí (inventory thấp hoặc data chưa sync)</div>
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>estimatedStorageCostNextMonth</code> · Months showing — = no fee recorded by Amazon (low inventory or data not yet synced)</div>
           {feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{
-          const prevNonZero=feeHist.slice(0,i).reverse().find(p=>p.fee>0);
-          const chg=prevNonZero&&r.fee>0?((r.fee-prevNonZero.fee)/prevNonZero.fee*100):null;
+          const prev=i>0?feeHist[i-1]:null;
+          const chg=prev&&prev.fee>0&&r.fee>0?((r.fee-prev.fee)/prev.fee*100):null;
           const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;
-          return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}% <span style={{fontWeight:400,fontSize:9,opacity:.7}}>vs {MS[parseInt(prevNonZero.month.split("-")[1])-1]}</span></span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>;
+          return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>;
         })}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}
         </Cd>
       </Sec>
@@ -3941,4 +3941,4 @@ function Dashboard({authUser,onLogout}){
     <StockModal asin={stockAsin} t={t} onClose={()=>setStockAsin(null)}/>
     {showAdmin&&<AdminUsersPanel t={t} onClose={()=>setShowAdmin(false)}/>}
   </div>;
-}                                                                                                                
+}
