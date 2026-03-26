@@ -655,44 +655,53 @@ app.get('/api/product/asins', async (req, res) => {
     const { start, end, store, seller, asin: af } = req.query;
     const { s, e } = defDates(start, end);
     const accId = await storeToAccIds(store);
-    const f = pWhere(s, e, accId, seller, af);
     const shopMap = await getShopMap();
-    const rows = await qc(`SELECT p.asin, p.accountId, a.seller,
+
+    // Use p.seller directly from seller_board_product (not asin table — that's designer/product seller)
+    let w = 'WHERE p.date BETWEEN ? AND ?'; const params = [s, e];
+    const ac = accIdClause('p', accId); w += ac.w; params.push(...ac.p);
+    if (seller && seller !== 'All') { w += ' AND p.seller = ?'; params.push(seller); }
+    if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
+
+    const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
-      SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
+      SUM(${P_UNITS}) as units,
+      AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
-      SUM(COALESCE(t.sessions,0)) as sessions,
+      SUM(COALESCE(p.fbaStorageFee,0)) as storageFee,
+      SUM(COALESCE(p.sessions,0)) as sessions,
       AVG(CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END) as cr,
       AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox,
       CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
-      LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
-      LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY'
-      ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC`, f.p, 120000);
+      LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY' AND t.accountId=p.accountId
+      ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 120000);
 
-    // Storage fee per ASIN from fba_iventory_planning (latest snapshot)
-    let sfMap = {};
+    // ASIN images from product_cogs
+    let imgMap = {};
     try {
-      const sfRows = await qc(`SELECT f.asin, SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee
-        FROM fba_iventory_planning f
-        WHERE f.accountId IN (${accId&&accId.length?accId.map(()=>'?').join(','):'SELECT id FROM account'})
-        GROUP BY f.asin`, accId&&accId.length?accId:[], 30000);
-      sfRows.forEach(r=>{ sfMap[r.asin]=parseFloat(r.storageFee)||0; });
-    } catch(e) { /* storageFee optional */ }
+      const imgRows = await qc(`SELECT asin, image_url FROM product_cogs WHERE image_url IS NOT NULL AND image_url != ''`, [], 10000);
+      imgRows.forEach(r => { if (r.image_url) imgMap[r.asin] = r.image_url; });
+    } catch(e) { /* images optional */ }
 
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
-      const acos=Math.round((parseFloat(r.acos)||0)*100)/100;
-      const cr=Math.round((parseFloat(r.cr)||0)*100)/100;
-      const buyBox=Math.round((parseFloat(r.buyBox)||0)*100)/100;
-      const advCost=parseFloat(r.advCost)||0;
-      const tacos=rev>0?Math.round(advCost/rev*10000)/100:0;
-      const units=parseInt(r.units)||0;
-      return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'', revenue: rev, netProfit: np, units,
-        margin: rev>0?Math.round(np/rev*1000)/10:0, acos, roas: acos>0?Math.round(100/acos*100)/100:0,
+      const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
+      const cr = Math.round((parseFloat(r.cr)||0)*100)/100;
+      const buyBox = Math.round((parseFloat(r.buyBox)||0)*100)/100;
+      const advCost = parseFloat(r.advCost)||0;
+      const units = parseInt(r.units)||0;
+      return {
+        asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'',
+        revenue: rev, netProfit: np, units,
+        margin: rev>0?Math.round(np/rev*1000)/10:0,
+        acos, roas: acos>0?Math.round(100/acos*100)/100:0,
         cr, buyBox, sessions: parseInt(r.sessions)||0,
-        advCost, tacos, storageFee: sfMap[r.asin]||0,
-        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
+        advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
+        storageFee: Math.round((parseFloat(r.storageFee)||0)*100)/100,
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
+        imageUrl: imgMap[r.asin]||null
+      };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
