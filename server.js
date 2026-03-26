@@ -965,15 +965,12 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
     const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
     { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
-    // Get last snapshot of each month (most accurate monthly fee)
+    // Use seller_board_storage_fee — actual FBA storage fees charged (not estimates)
     const rows = await q(`
       SELECT DATE_FORMAT(date,'%Y-%m') as ym,
-        MAX(date) as lastDate,
-        SUM(COALESCE(estimatedStorageCostNextMonth,0)) as fee
-      FROM fba_iventory_planning
-      WHERE date IN (
-        SELECT MAX(date) FROM fba_iventory_planning GROUP BY DATE_FORMAT(date,'%Y-%m')
-      )${extra}
+        SUM(COALESCE(fbaStorageFee,0)) as fee
+      FROM seller_board_storage_fee
+      WHERE 1=1${extra}
       GROUP BY DATE_FORMAT(date,'%Y-%m')
       ORDER BY ym
     `, params);
@@ -1107,10 +1104,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         SUM(COALESCE(f.inboundQuantity,0)) as inbound,
         SUM(COALESCE(f.totalReservedQuantity,0)) as planReserved,
         SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee,
-        (SUM(COALESCE(f.estimatedAis18to210Days,0))+SUM(COALESCE(f.estimatedAis21to240Days,0))+
-         SUM(COALESCE(f.estimatedAis24to270Days,0))+SUM(COALESCE(f.estimatedAis27to300Days,0))+
-         SUM(COALESCE(f.estimatedAis30to330Days,0))+SUM(COALESCE(f.estimatedAis33to365Days,0))+
-         SUM(COALESCE(f.estimatedAis365PlusDays,0))) as longTermFee,
+        0 as longTermFee,
         SUM(COALESCE(f.unfulfillableQuantity,0)) as unfulfillable,
         AVG(COALESCE(f.daysOfSupply,0)) as daysOfSupply,
         SUM(COALESCE(f.invAge0To90Days,0)) as age0_90,
@@ -1146,6 +1140,19 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     const planMap = {};
     planRows.forEach(r => { planMap[r.asin+'_'+r.accountId] = r; });
 
+    // Long-term storage fee from seller_board_product (correct source per schema)
+    let ltFeeMap = {};
+    try {
+      let ltAccW = ''; const ltAccP = [];
+      const ltAc = accIdClause('p', accId); ltAccW += ltAc.w; ltAccP.push(...ltAc.p);
+      const ltRows = await q(`SELECT p.asin, SUM(COALESCE(p.longTermStorageFee,0)) as ltFee
+        FROM seller_board_product p
+        WHERE p.date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+        AND p.longTermStorageFee > 0 ${ltAccW}
+        GROUP BY p.asin`, ltAccP, 30000);
+      ltRows.forEach(r => { if(parseFloat(r.ltFee)>0) ltFeeMap[r.asin] = Math.round(parseFloat(r.ltFee)*100)/100; });
+    } catch(e) { /* optional */ }
+
     // Build seller lookup from seller_board_product (most recent seller per ASIN)
     let sellerMap = {};
     try {
@@ -1177,7 +1184,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         stockValue: parseFloat(r.stockValue)||0,
         velocity: Math.round((parseFloat(r.velocity)||0)*100)/100,
         daysLeft, storageFee,
-        longTermFee: parseFloat(plan.longTermFee)||0,
+        longTermFee: ltFeeMap[r.asin]||0,
         unfulfillable: parseInt(plan.unfulfillable)||0,
         salePrice: parseFloat(r.salePrice)||0,
         businessPrice: parseFloat(r.businessPrice)||0,
