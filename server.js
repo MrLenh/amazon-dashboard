@@ -964,14 +964,20 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
   try {
     const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
-    { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
-    // seller_board_storage_fee.fbaStorageFee = actual monthly storage fees from Sellerboard
+    { const _ac=accIdClause('p',accId); extra=_ac.w; params.push(..._ac.p); }
+    // seller_board_product.fbaStorageFee: negative values = costs. Use MAX(date) per ASIN per month to avoid double-counting
     const rows = await q(`
-      SELECT DATE_FORMAT(date,'%Y-%m') as ym,
-        SUM(COALESCE(fbaStorageFee,0)) as fee
-      FROM seller_board_storage_fee
-      WHERE 1=1${extra}
-      GROUP BY DATE_FORMAT(date,'%Y-%m')
+      SELECT DATE_FORMAT(p.date,'%Y-%m') as ym,
+        ABS(SUM(p.fbaStorageFee)) as fee
+      FROM seller_board_product p
+      JOIN (
+        SELECT asin, accountId, DATE_FORMAT(date,'%Y-%m') as ym2, MAX(date) as maxDate
+        FROM seller_board_product
+        WHERE fbaStorageFee < 0
+        GROUP BY asin, accountId, DATE_FORMAT(date,'%Y-%m')
+      ) latest ON p.asin=latest.asin AND p.accountId=latest.accountId AND p.date=latest.maxDate
+      WHERE p.fbaStorageFee < 0 ${extra}
+      GROUP BY DATE_FORMAT(p.date,'%Y-%m')
       ORDER BY ym
     `, params);
     res.json((rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 })));
@@ -1053,13 +1059,21 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     let planWhere = 'JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate WHERE 1=1'; const planParams = [];
     { const _ac=accIdClause('f',accId); planWhere+=_ac.w; planParams.push(..._ac.p); }
 
-    // Seller filter via seller_board_product (p.seller = account seller like TN/AP/HM)
-    let sellerJoin = '', sellerWhere = '';
+    // Seller filter via seller_board_product
+    let sellerJoin = '';
     if (seller && seller !== 'All') {
-      // Join seller_board_product to get the seller per ASIN
-      sellerJoin = ` JOIN (SELECT DISTINCT asin FROM seller_board_product WHERE seller = ?) sbp_sel ON s.asin COLLATE utf8mb4_0900_ai_ci = sbp_sel.asin`;
-      sellerWhere = '';
-      stockParams.unshift(seller); // prepend since sellerJoin uses ? first
+      // Pre-fetch ASINs for this seller to avoid param ordering issues
+      try {
+        let slW = 'WHERE seller = ?'; const slP = [seller];
+        const slAc = accIdClause('p', accId); slW += slAc.w; slP.push(...slAc.p);
+        const slAsins = await q(`SELECT DISTINCT asin FROM seller_board_product p ${slW}`, slP, 15000);
+        if (slAsins.length > 0) {
+          const asinList = slAsins.map(r => `'${r.asin.replace(/'/g,"''")}'`).join(',');
+          stockWhere += ` AND s.asin IN (${asinList})`;
+        } else {
+          stockWhere += ` AND 1=0`; // no ASINs for this seller
+        }
+      } catch(e) { console.warn('seller filter failed:', e.message); }
     }
 
     // Main ASIN stock from seller_board_stock — try with price cols, fallback without
