@@ -32,9 +32,8 @@ const ZONE_A_PRESETS=[
   {key:'week',        label:'This week / Last week / 2 weeks ago / 3 weeks ago'},
   {key:'month',       label:'Month to date / Last month / 2 months ago / 3 months ago'},
   {key:'qtr',         label:'This quarter / Last quarter / 2 quarters ago / 3 quarters ago'},
-  {key:'custom',      label:'Custom range'},
 ];
-function getZoneAPeriods(presetKey, refDateStr, opts={}){
+function getZoneAPeriods(presetKey, refDateStr){
   const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
   const fmt=d=>d.toISOString().slice(0,10);
   const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r};
@@ -92,11 +91,6 @@ function getZoneAPeriods(presetKey, refDateStr, opts={}){
         {id:'2q', label:'2 quarters ago', start:fmt(q2s), end:fmt(q2e), dateLabel:qLabel(q2s)},
         {id:'3q', label:'3 quarters ago', start:fmt(q3s), end:fmt(q3e), dateLabel:qLabel(q3s)},
       ];}
-    case 'custom':{
-      const{cs,ce}=opts;
-      if(!cs||!ce||cs>ce)return[];
-      return[{id:'custom',label:'Custom range',start:cs,end:ce,dateLabel:rangeLabel(cs,ce)}];
-    }
     default: return[];
   }
 }
@@ -395,7 +389,8 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
 
 function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt,
   store,seller,setStore,setSeller,storeOpts,sellerOpts,onApplyZoneB,
-  zoneATileData,setZoneATileData,zoneAPreset,setZoneAPreset,zoneALoading,selectedStores,setSelectedStores}){
+  zoneATileData,setZoneATileData,zoneAPreset,setZoneAPreset,zoneALoading,selectedStores,setSelectedStores,
+}){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
   const[showDetail,setShowDetail]=useState(false);
@@ -706,19 +701,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               </div>)}
             </div>,document.body)}
           </div>
-          {/* Custom date range inputs — shown only when preset = custom */}
-          {zoneAPreset==='custom'&&<div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            <input type="date" value={zoneACustomStart} onChange={e=>setZoneACustomStart(e.target.value)}
-              style={{border:'1.5px solid #f97316',borderRadius:8,padding:'5px 8px',fontSize:11,fontWeight:600,color:'#c2410c',background:t.card,outline:'none',cursor:'pointer'}}/>
-            <span style={{fontSize:10,color:'#9a3412',fontWeight:700}}>→</span>
-            <input type="date" value={zoneACustomEnd} onChange={e=>setZoneACustomEnd(e.target.value)}
-              style={{border:'1.5px solid #f97316',borderRadius:8,padding:'5px 8px',fontSize:11,fontWeight:600,color:'#c2410c',background:t.card,outline:'none',cursor:'pointer'}}/>
-            <button onClick={()=>{if(zoneACustomStart&&zoneACustomEnd&&zoneACustomStart<=zoneACustomEnd)setZoneACustomApplied({cs:zoneACustomStart,ce:zoneACustomEnd});}}
-              disabled={!zoneACustomStart||!zoneACustomEnd||zoneACustomStart>zoneACustomEnd}
-              style={{background:zoneACustomStart&&zoneACustomEnd&&zoneACustomStart<=zoneACustomEnd?'#f97316':'#fed7aa',border:'none',borderRadius:8,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#fff',cursor:'pointer',transition:'background .15s'}}>
-              Apply
-            </button>
-          </div>}
           {/* Expand All / Collapse All button — Zone A */}
           <button onClick={()=>{
             const allIds=zoneATileData.map(tile=>tile.id);
@@ -3499,9 +3481,6 @@ function Dashboard({authUser,onLogout}){
 
   // ═══ ZONE A STATE ═══
   const[zoneAPreset,setZoneAPreset]=useState('tod_7_14_30');
-  const[zoneACustomStart,setZoneACustomStart]=useState('');
-  const[zoneACustomEnd,setZoneACustomEnd]=useState('');
-  const[zoneACustomApplied,setZoneACustomApplied]=useState({cs:'',ce:''});
   // zoneAStore is derived from selectedStores (shared with Zone B)
   const[zoneATileData,setZoneATileData]=useState([]);
   const[zoneALoading,setZoneALoading]=useState(false);
@@ -3634,13 +3613,13 @@ function Dashboard({authUser,onLogout}){
   },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
-  const zoneAParamsRef=useRef({zoneAPreset,storeStr,zoneACustomApplied});
-  zoneAParamsRef.current={zoneAPreset,storeStr,zoneACustomApplied};
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
+  zoneAParamsRef.current={zoneAPreset,storeStr};
   useEffect(()=>{
     if(!live||dbConnecting)return;
     let cancelled=false;
-    const{zoneAPreset:_preset,storeStr:_store,zoneACustomApplied:_custom}=zoneAParamsRef.current;
-    const periods=getZoneAPeriods(_preset, dbToday, {cs:_custom.cs,ce:_custom.ce});
+    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
+    const periods=getZoneAPeriods(_preset, dbToday);
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
@@ -3655,7 +3634,7 @@ function Dashboard({authUser,onLogout}){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,storeStr,zoneACustomApplied,live,dbConnecting]);
+  },[zoneAPreset,storeStr,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
