@@ -1265,8 +1265,12 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
   const feeHist=invFeeMonthly||[];
   const asinRows=invAsin||[];
   const[asinSearch,setAsinSearch]=useState('');
+  const[asinSellerF,setAsinSellerF]=useState('All');
   const[asinSort,setAsinSort]=useState('fba');
   const[asinSortDir,setAsinSortDir]=useState(-1); // -1 desc, 1 asc
+
+  const sellerOpts=useMemo(()=>['All',...new Set(asinRows.map(r=>r.seller).filter(Boolean)).keys()]
+    .filter((v,i,a)=>a.indexOf(v)===i),[asinRows]);
 
   // Alerts derived from asin data
   const invAlerts=useMemo(()=>{
@@ -1292,8 +1296,9 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     let rows=asinRows;
     const q=asinSearch.trim().toLowerCase();
     if(q)rows=rows.filter(r=>r.asin.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)||r.sku.toLowerCase().includes(q));
+    if(asinSellerF!=='All')rows=rows.filter(r=>r.seller===asinSellerF);
     return [...rows].sort((a,b)=>asinSortDir*((a[asinSort]||0)-(b[asinSort]||0)));
-  },[asinRows,asinSearch,asinSort,asinSortDir]);
+  },[asinRows,asinSearch,asinSellerF,asinSort,asinSortDir]);
 
   const thSort=(k,label)=>{
     const active=asinSort===k;
@@ -1358,27 +1363,22 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
             {name:"181-270d",v:d.age181_270||0,cnt:d.ageCnt181||0,fill:t.orange},
             {name:"271-365d",v:d.age271_365||0,cnt:d.ageCnt271||0,fill:t.red},
             {name:"365d+",  v:d.age365plus||0,cnt:d.ageCnt365||0, fill:t.red},
-          ]}>
+          ]} margin={{top:22}}}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/>
             <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/>
             <Tooltip content={({active,payload,label})=>{
               if(!active||!payload?.length)return null;
-              const d=payload[0]?.payload;
+              const row=payload[0]?.payload;
               return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:8,padding:"8px 12px",fontSize:12}}>
                 <div style={{fontWeight:700,marginBottom:4}}>{label}</div>
-                <div style={{color:t.textSec}}>{N(d?.v)} units</div>
-                {d?.cnt>0&&<div style={{color:t.textMuted,fontSize:11}}>{d.cnt} ASINs</div>}
+                <div style={{color:t.textSec}}>{N(row?.v)} units</div>
+                {row?.cnt>0&&<div style={{color:t.textMuted,fontSize:11}}>{row.cnt} ASINs</div>}
               </div>;
             }}/>
             <Bar dataKey="v" name="Units" radius={[4,4,0,0]}>
               {[{fill:t.green},{fill:t.orange},{fill:t.orange},{fill:t.red},{fill:t.red}].map((e,i)=><Cell key={i} fill={e.fill}/>)}
-              <LabelList content={({x,y,width,value,index,viewBox})=>{
-                const buckets=[d.ageCnt0,d.ageCnt91,d.ageCnt181,d.ageCnt271,d.ageCnt365];
-                const cnt=buckets[index]||0;
-                if(!cnt||!value)return null;
-                return<text x={x+width/2} y={y-6} textAnchor="middle" fontSize={9} fill={t.textMuted}>{cnt} ASINs</text>;
-              }}/>
+              <LabelList dataKey="cnt" position="top" formatter={v=>v>0?v+' ASINs':''} style={{fontSize:9,fill:t.textMuted}}/>
             </Bar>
           </BarChart></ResponsiveContainer>
         </Cd>
@@ -1445,13 +1445,18 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     {/* ⑤ ASIN Detail Table */}
     <Sec title={"ASIN Stock Detail"+(asinRows.length>0?" ("+asinRows.length+" ASINs)":"")} icon="" t={t} style={{marginTop:14}}>
       <Cd t={t} style={{padding:0,overflow:'hidden'}}>
-        {/* Search bar */}
-        <div style={{padding:'10px 14px',borderBottom:'1px solid '+t.divider,background:t.tableBg}}>
+        {/* Search bar + seller filter */}
+        <div style={{padding:'10px 14px',borderBottom:'1px solid '+t.divider,background:t.tableBg,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <input
             value={asinSearch} onChange={e=>setAsinSearch(e.target.value)}
             placeholder="Search ASIN / SKU / name..."
-            style={{width:'100%',padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',boxSizing:'border-box'}}
+            style={{flex:1,minWidth:180,padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',boxSizing:'border-box'}}
           />
+          <select value={asinSellerF} onChange={e=>setAsinSellerF(e.target.value)} style={{padding:'7px 10px',borderRadius:8,border:'1px solid '+(asinSellerF!=='All'?t.primary:t.inputBorder),background:asinSellerF!=='All'?t.primaryLight:t.card,color:asinSellerF!=='All'?t.primary:t.text,fontSize:12,outline:'none',cursor:'pointer',fontWeight:asinSellerF!=='All'?700:400}}>
+            {sellerOpts.map(s=><option key={s} value={s}>{s==='All'?'All Sellers':s}</option>)}
+          </select>
+          {asinSellerF!=='All'&&<button onClick={()=>setAsinSellerF('All')} style={{padding:'6px 10px',borderRadius:8,border:'1px solid '+t.inputBorder,background:'transparent',color:t.textSec,fontSize:11,cursor:'pointer'}}>✕</button>}
+          <span style={{fontSize:11,color:t.textMuted,whiteSpace:'nowrap'}}>{filteredAsin.length} / {asinRows.length} ASINs</span>
         </div>
         <div style={{overflowX:'auto',maxHeight:480,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
@@ -1515,7 +1520,13 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     {/* ⑥ Storage fee history + sell-through chart */}
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
       <Sec title="Storage Fee History" icon="" t={t}>
-        <Cd t={t}>{feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{const prev=i>0?feeHist[i-1].fee:null;const chg=prev?((r.fee-prev)/Math.max(prev,1)*100):null;const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:t.text,borderBottom:"1px solid "+t.divider}}>{$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>})}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}</Cd>
+        <Cd t={t}>{feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{
+          // For change: find last non-zero previous month
+          const prevNonZero=feeHist.slice(0,i).reverse().find(p=>p.fee>0);
+          const chg=prevNonZero&&r.fee>0?((r.fee-prevNonZero.fee)/prevNonZero.fee*100):null;
+          const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;
+          return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>;
+        })}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}</Cd>
       </Sec>
       <Sec title="Sell-Through & Days of Supply by Shop" icon="" t={t}>
         <Cd t={t}><div style={{fontSize:10,color:t.textMuted,marginBottom:8}}>Sell-Through = Units Sold 30d ÷ (Sold + Stock) · Days of Supply = Stock ÷ Avg Daily Sales (30d) · <span style={{color:t.orange}}>Note: differs from KPI cards which use Amazon's own calculation</span></div><ResponsiveContainer width="100%" height={220}><BarChart data={invShop} barGap={3} barCategoryGap="18%"><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="s" tick={{fill:t.textSec,fontSize:10}} interval={0} angle={-20} textAnchor="end" height={50}/><YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>Math.round(v*100)+"%"}/><YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v+"d"}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/><Bar yAxisId="l" dataKey="st" name="Sell-Through %" fill={t.green} radius={[3,3,0,0]}/><Bar yAxisId="r" dataKey="doh" name="Days of Supply" fill={t.orange} radius={[3,3,0,0]}/></BarChart></ResponsiveContainer></Cd>
