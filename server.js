@@ -668,7 +668,7 @@ app.get('/api/product/asins', async (req, res) => {
       SUM(${P_UNITS}) as units,
       AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
-      SUM(COALESCE(p.fbaStorageFee,0)) as storageFee,
+      0 as storageFee, /* fetched separately from seller_board_storage_fee */
       SUM(COALESCE(p.sessions,0)) as sessions,
       AVG(CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END) as cr,
       AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox,
@@ -676,6 +676,16 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY' AND t.accountId=p.accountId
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 120000);
+
+    // Storage fee from seller_board_storage_fee (more accurate than fbaStorageFee in product table)
+    let sfMap2 = {};
+    try {
+      let sfW = 'WHERE p.date BETWEEN ? AND ?'; const sfP = [s, e];
+      const sfAc = accIdClause('p', accId); sfW += sfAc.w; sfP.push(...sfAc.p);
+      const sfRows2 = await qc(`SELECT p.asin, SUM(COALESCE(p.fbaStorageFee,0)) as storageFee
+        FROM seller_board_storage_fee p ${sfW} GROUP BY p.asin`, sfP, 30000);
+      sfRows2.forEach(r=>{ if(parseFloat(r.storageFee)>0) sfMap2[r.asin]=Math.round(parseFloat(r.storageFee)*100)/100; });
+    } catch(e) { /* optional */ }
 
     // ASIN images from product_cogs
     let imgMap = {};
@@ -698,7 +708,7 @@ app.get('/api/product/asins', async (req, res) => {
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
         cr, buyBox, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        storageFee: Math.round((parseFloat(r.storageFee)||0)*100)/100,
+        storageFee: sfMap2[r.asin]||0,
         avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
         imageUrl: imgMap[r.asin]||null
       };
@@ -774,6 +784,11 @@ app.get('/api/shops', async (req, res) => {
          FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
     const q3 = qc(adsSQL, pF2.p, 35000).catch(()=>[]);
 
+    // ── Q5: sessions per shop from seller_board_product ──
+    const sessSQL2 = `SELECT p.accountId, SUM(COALESCE(p.sessions,0)) as sessions, SUM(${P_UNITS}) as sessUnits
+      FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
+    const q5 = qc(sessSQL2, pF2.p, 35000).catch(()=>[]);
+
     // ── Q4: plan — use date range not YEAR() for index ──
     const yr = new Date(s).getFullYear();
     const q4 = qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
@@ -784,13 +799,16 @@ app.get('/api/shops', async (req, res) => {
       GROUP BY p.accountId, ap.metrics`, [s, e, yr], 35000).catch(()=>[]);
 
     // Run all in parallel
-    const [rows, stockRows, adsRows, planRows] = await Promise.all([q1, q2, q3, q4]);
+    const [rows, stockRows, adsRows, planRows, sessRows2] = await Promise.all([q1, q2, q3, q4, q5]);
 
     const stockMap = {};
     (stockRows||[]).forEach(s=>{ stockMap[s.accountId]={ fba:parseInt(s.fba)||0, sv:parseFloat(s.sv)||0 }; });
 
     const adsMap = {};
     (adsRows||[]).forEach(r=>{ adsMap[r.accountId]={ ads:parseFloat(r.ads)||0, gp:parseFloat(r.gp)||0 }; });
+
+    const sessMap2 = {};
+    (sessRows2||[]).forEach(r=>{ sessMap2[r.accountId]={ sessions:parseInt(r.sessions)||0, units:parseInt(r.sessUnits)||0 }; });
 
     const planMap = {};
     (planRows||[]).forEach(r=>{
@@ -805,7 +823,15 @@ app.get('/api/shops', async (req, res) => {
       const plan=planMap[r.accountId]||{gp:0,rv:0,ad:0,un:0};
       const ad=adsMap[r.accountId]||{ads:0,gp:0};
       const gp=ad.gp||np;
-      return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId, revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads, units:parseInt(r.units)||0, orders:parseInt(r.orders)||0, margin:rev>0?(gp/rev*100):0, fbaStock:stk.fba, stockValue:stk.sv, gpPlan:plan.gp, rvPlan:plan.rv, adPlan:plan.ad, unPlan:plan.un };
+      const sess=sessMap2[r.accountId]||{sessions:0,units:0};
+      const units=parseInt(r.units)||0;
+      const orders=parseInt(r.orders)||0;
+      const cr=sess.sessions>0?(units/sess.sessions*100):0;
+      return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId,
+        revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads,
+        units, orders, sessions:sess.sessions, cr:Math.round(cr*100)/100,
+        margin:rev>0?(gp/rev*100):0, fbaStock:stk.fba, stockValue:stk.sv,
+        gpPlan:plan.gp, rvPlan:plan.rv, adPlan:plan.ad, unPlan:plan.un };
     }));
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
