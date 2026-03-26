@@ -1214,7 +1214,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               onMouseEnter={e=>{if(!isHL)e.currentTarget.style.background=t.tableHover}}
               onMouseLeave={e=>{e.currentTarget.style.background=isHL?t.primary+'22':'transparent'}}>
             <td style={{padding:'7px 8px',borderBottom:'1px solid '+t.divider,width:36}}>
-              {groupBy==='ASIN'&&r.a?<img src={r.img||`https://images-na.ssl-images-amazon.com/images/P/${r.a}.01.THUMBZZZ.jpg`} alt="" style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:t.tableBg}} onError={e=>{e.target.src=`https://images-na.ssl-images-amazon.com/images/P/${r.a}.01.THUMBZZZ.jpg`;e.target.onerror=null;}}/>:null}
+              {groupBy==='ASIN'&&r.a?<img src={`https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${r.a}&ServiceVersion=20070822&ID=AsinImage&WS=1&Format=SL75`} alt="" style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:t.tableBg}} onError={e=>{e.target.style.display='none';}}/>:null}
             </td>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
@@ -1352,7 +1352,35 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
       <Sec title="Inventory Aging" icon="" t={t}>
         <Cd t={t} style={{position:"relative"}}>
           {(()=>{const over90=(d.age91_180||0)+(d.age181_270||0)+(d.age271_365||0)+(d.age365plus||0);return over90>0&&<div style={{position:"absolute",top:8,right:12,background:over90>50000?t.redBg:t.orangeBg,color:over90>50000?t.red:t.orange,padding:"3px 10px",borderRadius:8,fontSize:10,fontWeight:600,zIndex:1}}>90d+: {N(over90)} units</div>})()}
-          <ResponsiveContainer width="100%" height={220}><BarChart data={[{name:"0-90d",v:d.age0_90||0,fill:t.green},{name:"91-180d",v:d.age91_180||0,fill:t.orange},{name:"181-270d",v:d.age181_270||0,fill:t.orange},{name:"271-365d",v:d.age271_365||0,fill:t.red},{name:"365d+",v:d.age365plus||0,fill:t.red}]}><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/><YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/><Tooltip content={<CT t={t}/>}/><Bar dataKey="v" name="Units" radius={[4,4,0,0]}>{[{fill:t.green},{fill:t.orange},{fill:t.orange},{fill:t.red},{fill:t.red}].map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer>
+          <ResponsiveContainer width="100%" height={240}><BarChart data={[
+            {name:"0-90d",  v:d.age0_90||0,   cnt:d.ageCnt0||0,   fill:t.green},
+            {name:"91-180d",v:d.age91_180||0, cnt:d.ageCnt91||0,  fill:t.orange},
+            {name:"181-270d",v:d.age181_270||0,cnt:d.ageCnt181||0,fill:t.orange},
+            {name:"271-365d",v:d.age271_365||0,cnt:d.ageCnt271||0,fill:t.red},
+            {name:"365d+",  v:d.age365plus||0,cnt:d.ageCnt365||0, fill:t.red},
+          ]}>
+            <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
+            <XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/>
+            <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/>
+            <Tooltip content={({active,payload,label})=>{
+              if(!active||!payload?.length)return null;
+              const d=payload[0]?.payload;
+              return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:8,padding:"8px 12px",fontSize:12}}>
+                <div style={{fontWeight:700,marginBottom:4}}>{label}</div>
+                <div style={{color:t.textSec}}>{N(d?.v)} units</div>
+                {d?.cnt>0&&<div style={{color:t.textMuted,fontSize:11}}>{d.cnt} ASINs</div>}
+              </div>;
+            }}/>
+            <Bar dataKey="v" name="Units" radius={[4,4,0,0]}>
+              {[{fill:t.green},{fill:t.orange},{fill:t.orange},{fill:t.red},{fill:t.red}].map((e,i)=><Cell key={i} fill={e.fill}/>)}
+              <LabelList content={({x,y,width,value,index,viewBox})=>{
+                const buckets=[d.ageCnt0,d.ageCnt91,d.ageCnt181,d.ageCnt271,d.ageCnt365];
+                const cnt=buckets[index]||0;
+                if(!cnt||!value)return null;
+                return<text x={x+width/2} y={y-6} textAnchor="middle" fontSize={9} fill={t.textMuted}>{cnt} ASINs</text>;
+              }}/>
+            </Bar>
+          </BarChart></ResponsiveContainer>
         </Cd>
       </Sec>
     </div>
