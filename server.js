@@ -675,11 +675,11 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
 
-    // ASIN images from product_cogs
+    // ASIN images from asin table (internal ASIN management)
     let imgMap = {};
     try {
-      const imgRows = await qc(`SELECT asin, image_url FROM product_cogs WHERE image_url IS NOT NULL AND image_url != ''`, [], 10000);
-      imgRows.forEach(r => { if (r.image_url) imgMap[r.asin] = r.image_url; });
+      const imgRows = await qc(`SELECT asin, image FROM asin WHERE image IS NOT NULL AND image != ''`, [], 10000);
+      imgRows.forEach(r => { if (r.image) imgMap[r.asin] = r.image; });
     } catch(e) { /* images optional */ }
 
     res.json(rows.map(r => {
