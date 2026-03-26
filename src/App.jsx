@@ -1204,7 +1204,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend','Storage Fee','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
           </tr></thead>
           <tbody>{groupedAsins.map((r,i)=>{
             const isHL=highlightedAsin===r.a;
@@ -1225,12 +1225,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ac<30?t.green:r.ac<50?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ac.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.r>0?(Math.abs(r.ac)*r.u/100/r.r*100).toFixed(1)+'%':'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.u>0&&r.n/r.u>=0?t.green:t.red,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.u>0?$(r.n/r.u):'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.ap>0?$(r.ap):'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.adv>0?$(r.adv):'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:r.sf>100?t.red:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.sf>0?$(r.sf):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
           </tr>;
           })}</tbody>
         </table>
       </div>
-      <div style={{padding:'6px 12px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider}}>{groupedAsins.length} {groupBy==='ASIN'?'ASINs':'groups'}</div>
+      <div style={{padding:'6px 12px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider}}>{groupedAsins.length} {groupBy==='ASIN'?`ASINs (${fAsin.length} total)`:'groups'}</div>
     </Cd>
     </div>
 
@@ -3688,7 +3691,7 @@ function Dashboard({authUser,onLogout}){
       api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d)setExecDetail(d)}).catch(()=>{});
       api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d))setShopExt(d)}).catch(()=>{});
       api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d))setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}))}).catch(()=>{});
-      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100})));
+      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0})));
       setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
       setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
     }catch(e){console.error("Fetch error:",e)}
