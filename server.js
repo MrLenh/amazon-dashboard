@@ -964,14 +964,14 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
   try {
     const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
-    { const _ac=accIdClause('p',accId); extra=_ac.w; params.push(..._ac.p); }
-    // Use seller_board_product.longTermStorageFee — Amazon charges for items stored 90+ days
+    { const _ac=accIdClauseRaw(accId); extra=_ac.w; params.push(..._ac.p); }
+    // seller_board_storage_fee.fbaStorageFee = actual monthly storage fees from Sellerboard
     const rows = await q(`
-      SELECT DATE_FORMAT(p.date,'%Y-%m') as ym,
-        SUM(COALESCE(p.longTermStorageFee,0)) as fee
-      FROM seller_board_product p
-      WHERE p.longTermStorageFee > 0 ${extra}
-      GROUP BY DATE_FORMAT(p.date,'%Y-%m')
+      SELECT DATE_FORMAT(date,'%Y-%m') as ym,
+        SUM(COALESCE(fbaStorageFee,0)) as fee
+      FROM seller_board_storage_fee
+      WHERE 1=1${extra}
+      GROUP BY DATE_FORMAT(date,'%Y-%m')
       ORDER BY ym
     `, params);
     res.json((rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 })));
