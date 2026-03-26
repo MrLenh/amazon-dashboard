@@ -1463,9 +1463,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
             <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
               <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',minWidth:190}}>ASIN / Name</th>
               <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Shop</th>
-              <th onClick={()=>{if(asinSort==='salePrice')setAsinSortDir(d=>-d);else{setAsinSort('salePrice');setAsinSortDir(-1);}}} style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:asinSort==='salePrice'?t.primary:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,cursor:'pointer',whiteSpace:'nowrap',userSelect:'none'}}>
-                Price<Tip text="From Sellerboard stock snapshot. May be empty if not synced." t={t}/>{asinSort==='salePrice'?(asinSortDir===-1?' ↓':' ↑'):''}
-              </th>
+
               {thSort('fba','FBA Total')}
               {thSort('available','Available')}
               {thSort('inbound','Inbound')}
@@ -1493,7 +1491,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                   {r.sku&&<div style={{fontSize:9,color:t.textMuted}}>{r.sku}</div>}
                 </td>
                 <td style={{padding:'8px 12px',fontSize:12,color:t.textSec,borderBottom:'1px solid '+t.divider,whiteSpace:'nowrap'}}>{r.shop}</td>
-                <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:600}}>{r.salePrice>0?$2(r.salePrice):<span style={{color:t.textMuted}}>—</span>}</td>
+
                 <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{N(r.fba)}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',color:t.green,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{N(r.available)}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',color:t.blue,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.inbound>0?N(r.inbound):<span style={{color:t.textMuted}}>—</span>}</td>
