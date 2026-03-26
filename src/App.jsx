@@ -1126,22 +1126,27 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           </tbody></table>
         </div>:<div style={{padding:'12px 12px 8px'}}>
           <ResponsiveContainer width="100%" height={Math.max(320, fShop.length*52)}>
-            <ComposedChart data={sortedShop} margin={{top:28,right:40,bottom:8,left:10}} barCategoryGap="28%">
+            <ComposedChart data={sortedShop} margin={{top:36,right:40,bottom:8,left:10}} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid} vertical={false}/>
               <XAxis dataKey="s" tick={{fill:t.textSec,fontSize:10}} interval={0} angle={-15} textAnchor="end" height={44}/>
               <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} width={58}/>
               <YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']} width={38}/>
               <Tooltip content={<CT t={t}/>}/>
               <Legend wrapperStyle={{fontSize:10,paddingTop:8}}/>
-              <Bar yAxisId="l" dataKey="u" name="Units" fill="#0891B2" radius={[3,3,0,0]} barSize={14}>
-                {sortedShop.map((e,i)=><LabelList key={i} dataKey="u" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>v>0?N(v):''}/>)}
-              </Bar>
-              <Bar yAxisId="l" dataKey="ad" name="Ad Spend" fill="#EA580C" radius={[3,3,0,0]} barSize={14}>
-                {sortedShop.map((e,i)=><LabelList key={i} dataKey="ad" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>v>0?$s(v):''}/>)}
-              </Bar>
+              <Bar yAxisId="l" dataKey="u" name="Units" fill="#0891B2" radius={[3,3,0,0]} barSize={14}/>
+              <Bar yAxisId="l" dataKey="ad" name="Ad Spend" fill="#EA580C" radius={[3,3,0,0]} barSize={14}/>
               <Bar yAxisId="l" dataKey="gp" name="Profit" radius={[3,3,0,0]} barSize={14}>
                 {sortedShop.map((e,i)=><Cell key={i} fill={(e.gp||0)>=0?'#16A34A':'#DC2626'}/>)}
-                {sortedShop.map((e,i)=><LabelList key={'l'+i} dataKey="gp" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>$s(v)}/>)}
+                <LabelList dataKey="gp" position="top" content={({x,y,width,value})=>{
+                  if(!value&&value!==0)return null;
+                  const txt=$s(value);
+                  const col=(value||0)>=0?'#15803d':'#dc2626';
+                  const bw=txt.length*5.5+8;
+                  return<g>
+                    <rect x={x+width/2-bw/2} y={y-18} width={bw} height={14} rx={3} fill={t.card||'#fff'} stroke={col} strokeWidth={0.8} opacity={0.92}/>
+                    <text x={x+width/2} y={y-8} textAnchor="middle" fontSize={9} fontWeight={600} fill={col}>{txt}</text>
+                  </g>;
+                }}/>
               </Bar>
               <Line yAxisId="r" type="monotone" dataKey="m" name="Margin%" stroke="#7C3AED" strokeWidth={2} dot={{r:3,fill:'#7C3AED'}}/>
               <Line yAxisId="r" type="monotone" dataKey="cr" name="CR%" stroke="#059669" strokeWidth={2} dot={{r:3,fill:'#059669'}}/>
