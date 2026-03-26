@@ -660,21 +660,39 @@ app.get('/api/product/asins', async (req, res) => {
     const rows = await qc(`SELECT p.asin, p.accountId, a.seller,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
+      SUM(ABS(${P_ADS})) as advCost,
       SUM(COALESCE(t.sessions,0)) as sessions,
       AVG(CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END) as cr,
-      AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox
+      AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox,
+      CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin
       LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY'
-      ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC LIMIT 500`, f.p, 45000);
+      ${f.w} GROUP BY p.asin, p.accountId, a.seller ORDER BY revenue DESC`, f.p, 120000);
+
+    // Storage fee per ASIN from fba_iventory_planning (latest snapshot)
+    let sfMap = {};
+    try {
+      const sfRows = await qc(`SELECT f.asin, SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee
+        FROM fba_iventory_planning f
+        WHERE f.accountId IN (${accId&&accId.length?accId.map(()=>'?').join(','):'SELECT id FROM account'})
+        GROUP BY f.asin`, accId&&accId.length?accId:[], 30000);
+      sfRows.forEach(r=>{ sfMap[r.asin]=parseFloat(r.storageFee)||0; });
+    } catch(e) { /* storageFee optional */ }
+
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos=Math.round((parseFloat(r.acos)||0)*100)/100;
       const cr=Math.round((parseFloat(r.cr)||0)*100)/100;
       const buyBox=Math.round((parseFloat(r.buyBox)||0)*100)/100;
-      return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'', revenue: rev, netProfit: np, units: parseInt(r.units)||0,
+      const advCost=parseFloat(r.advCost)||0;
+      const tacos=rev>0?Math.round(advCost/rev*10000)/100:0;
+      const units=parseInt(r.units)||0;
+      return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'', revenue: rev, netProfit: np, units,
         margin: rev>0?Math.round(np/rev*1000)/10:0, acos, roas: acos>0?Math.round(100/acos*100)/100:0,
-        cr, buyBox, sessions: parseInt(r.sessions)||0 };
+        cr, buyBox, sessions: parseInt(r.sessions)||0,
+        advCost, tacos, storageFee: sfMap[r.asin]||0,
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -747,14 +765,6 @@ app.get('/api/shops', async (req, res) => {
          FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
     const q3 = qc(adsSQL, pF2.p, 35000).catch(()=>[]);
 
-    // ── Q5: sessions from seller_board_product per shop ──
-    const sessSQL = seller && seller!=='All'
-      ? `SELECT p.accountId, SUM(COALESCE(p.sessions,0)) as sessions
-         FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${pF2.w} GROUP BY p.accountId`
-      : `SELECT p.accountId, SUM(COALESCE(p.sessions,0)) as sessions
-         FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
-    const q5 = qc(sessSQL, pF2.p, 35000).catch(()=>[]);
-
     // ── Q4: plan — use date range not YEAR() for index ──
     const yr = new Date(s).getFullYear();
     const q4 = qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
@@ -765,16 +775,13 @@ app.get('/api/shops', async (req, res) => {
       GROUP BY p.accountId, ap.metrics`, [s, e, yr], 35000).catch(()=>[]);
 
     // Run all in parallel
-    const [rows, stockRows, adsRows, planRows, sessRows] = await Promise.all([q1, q2, q3, q4, q5]);
+    const [rows, stockRows, adsRows, planRows] = await Promise.all([q1, q2, q3, q4]);
 
     const stockMap = {};
     (stockRows||[]).forEach(s=>{ stockMap[s.accountId]={ fba:parseInt(s.fba)||0, sv:parseFloat(s.sv)||0 }; });
 
     const adsMap = {};
     (adsRows||[]).forEach(r=>{ adsMap[r.accountId]={ ads:parseFloat(r.ads)||0, gp:parseFloat(r.gp)||0 }; });
-
-    const sessMap = {};
-    (sessRows||[]).forEach(r=>{ sessMap[r.accountId]=parseInt(r.sessions)||0; });
 
     const planMap = {};
     (planRows||[]).forEach(r=>{
@@ -789,15 +796,7 @@ app.get('/api/shops', async (req, res) => {
       const plan=planMap[r.accountId]||{gp:0,rv:0,ad:0,un:0};
       const ad=adsMap[r.accountId]||{ads:0,gp:0};
       const gp=ad.gp||np;
-      const sessions=sessMap[r.accountId]||0;
-      const units=parseInt(r.units)||0;
-      const orders=parseInt(r.orders)||0;
-      return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId,
-        revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads,
-        units, orders, sessions,
-        cr: sessions>0?(units/sessions*100):0,
-        margin:rev>0?(gp/rev*100):0, fbaStock:stk.fba, stockValue:stk.sv,
-        gpPlan:plan.gp, rvPlan:plan.rv, adPlan:plan.ad, unPlan:plan.un };
+      return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId, revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads, units:parseInt(r.units)||0, orders:parseInt(r.orders)||0, margin:rev>0?(gp/rev*100):0, fbaStock:stk.fba, stockValue:stk.sv, gpPlan:plan.gp, rvPlan:plan.rv, adPlan:plan.ad, unPlan:plan.un };
     }));
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
