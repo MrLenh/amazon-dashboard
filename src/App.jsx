@@ -1356,7 +1356,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
       </Sec>
       <Sec title="Inventory Aging" icon="" t={t}>
         <Cd t={t} style={{position:"relative"}}>
-          {(()=>{const over90=(d.age91_180||0)+(d.age181_270||0)+(d.age271_365||0)+(d.age365plus||0);return over90>0&&<div style={{position:"absolute",top:8,right:12,background:over90>50000?t.redBg:t.orangeBg,color:over90>50000?t.red:t.orange,padding:"3px 10px",borderRadius:8,fontSize:10,fontWeight:600,zIndex:1}}>90d+: {N(over90)} units</div>})()}
+          {(()=>{const over90=(d.age91_180||0)+(d.age181_270||0)+(d.age271_365||0)+(d.age365plus||0);const asinOver90=(d.ageCnt91||0)+(d.ageCnt181||0)+(d.ageCnt271||0)+(d.ageCnt365||0);return over90>0&&<div style={{position:"absolute",top:8,right:12,background:over90>50000?t.redBg:t.orangeBg,color:over90>50000?t.red:t.orange,padding:"3px 10px",borderRadius:8,fontSize:10,fontWeight:600,zIndex:1}}>90d+: {N(over90)} units · {asinOver90} ASINs</div>})()}
           <ResponsiveContainer width="100%" height={240}><BarChart data={[
             {name:"0-90d",  v:d.age0_90||0,   cnt:d.ageCnt0||0,   fill:t.green},
             {name:"91-180d",v:d.age91_180||0, cnt:d.ageCnt91||0,  fill:t.orange},
