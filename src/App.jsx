@@ -338,7 +338,17 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[open]);
   const openDrop=()=>{
-    if(ref.current){const r=ref.current.getBoundingClientRect();setDropPos({top:r.bottom+4,left:r.left,minWidth:Math.max(220,r.width)});}
+    if(ref.current){
+      const r=ref.current.getBoundingClientRect();
+      const spaceBelow=window.innerHeight-r.bottom;
+      const dropH=Math.min(360,opts.length*41+80);
+      const openUp=spaceBelow<dropH&&r.top>dropH;
+      setDropPos({
+        top:openUp?r.top-dropH-4:r.bottom+4,
+        left:Math.min(r.left,window.innerWidth-240),
+        minWidth:Math.max(220,r.width)
+      });
+    }
     setOpen(v=>!v);
   };
   const toggle=s=>{
@@ -450,7 +460,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const ALL_PILLS=[
     {id:'UNITS',    label:'Units',       val:em.units,                  fmtV:N,  ch:()=>prevEm?pctChg(em.units,prevEm.units):undefined,       asinKey:'u'},
     {id:'SALES',    label:'Revenue',     val:em.sales,                  fmtV:$,  ch:()=>prevEm?pctChg(em.sales,prevEm.sales):undefined,       asinKey:'r'},
-    {id:'ADV.COST', label:'Adv. Cost',   val:Math.abs(em.advCost||0),   fmtV:$,  ch:()=>prevEm?pctChg(em.advCost,prevEm.advCost):undefined,   asinKey:null},
+    {id:'ADV.COST', label:'Adv. Cost',   val:Math.abs(em.advCost||0),   fmtV:$,  ch:()=>prevEm?pctChg(Math.abs(em.advCost||0),Math.abs(prevEm.advCost||0)):undefined,   asinKey:null},
     {id:'NET PROFIT',label:'Net Profit', val:em.netProfit,              fmtV:$,  ch:()=>prevEm?pctChg(em.netProfit,prevEm.netProfit):undefined,asinKey:'n'},
     {id:'SESSIONS', label:'Sessions',    val:Math.round(em.sessions||0),fmtV:N,  ch:()=>prevEm?pctChg(em.sessions,prevEm.sessions):undefined,  asinKey:null},
     {id:'CR%',      label:'CR%',         val:cr,                        fmtV:v=>v.toFixed(2)+'%',ch:()=>undefined,                            asinKey:'cr'},
@@ -505,8 +515,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   ];
 
   /* ── DAILY TREND (combo: bars + lines) ── */
-  const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:true});
-  const[trendLines,setTrendLines]=useState({crPct:true,tacos:false});
+  const[trendBars,setTrendBars]=useState({revenue:true,netProfit:true,advCost:true,units:false});
+  const[trendLines,setTrendLines]=useState({crPct:true,tacos:false,margin:false,aov:false,roas:false,sessions:false});
   const[trendZoom,setTrendZoom]=useState(0); // 0 = All
   const[showBrush,setShowBrush]=useState(false);
   const dailyChartData=fDaily.map(d=>({
@@ -514,6 +524,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     advCost:Math.abs(d.advCost||0),
     crPct:d.sessions>0?(d.units/d.sessions*100):0,
     tacos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0,
+    margin:d.revenue>0?(d.netProfit/d.revenue*100):0,
+    aov:d.units>0?(d.revenue/d.units):0,
+    roas:Math.abs(d.advCost||0)>0?(d.revenue/Math.abs(d.advCost||0)):0,
   }));
   const LY_COLOR='#B8BDD8';
 
@@ -1019,11 +1032,30 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <span style={{fontSize:11}}>⇔</span> Slicer
           </button>
         </div>
+        {/* Quick date filter buttons */}
+        {(()=>{
+          const now=new Date();
+          const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          const dAgo=n=>{const d=new Date(now);d.setDate(d.getDate()-n);return fmt(d);};
+          const QUICK=[
+            {l:'7D',s:dAgo(6),e:fmt(now)},
+            {l:'30D',s:dAgo(29),e:fmt(now)},
+            {l:'MTD',s:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`,e:fmt(now)},
+            {l:'Last Month',s:(()=>{const d=new Date(now.getFullYear(),now.getMonth()-1,1);return fmt(d);})(),e:(()=>{const d=new Date(now.getFullYear(),now.getMonth(),0);return fmt(d);})()},
+            {l:'YTD',s:`${now.getFullYear()}-01-01`,e:fmt(now)},
+          ];
+          return<div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
+            {QUICK.map(q=>{
+              const active=sd===q.s&&ed===q.e;
+              return<button key={q.l} onClick={()=>{setSd(q.s);setEd(q.e);setTimeout(()=>onApplyZoneB(),50);}} style={{padding:'3px 10px',borderRadius:7,border:'1px solid '+(active?t.primary:t.inputBorder),background:active?t.primaryGhost:'transparent',color:active?t.primary:t.textMuted,fontSize:10,fontWeight:active?700:500,cursor:'pointer',transition:'all .12s'}}>{q.l}</button>;
+            })}
+          </div>;
+        })()}
         {/* Row 2: series toggles */}
         <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
-          {[{k:'revenue',l:'Revenue',c:t.primary},{k:'netProfit',l:'Net Profit',c:t.green},{k:'advCost',l:'Ad Spend',c:t.orange}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
+          {[{k:'revenue',l:'Revenue',c:t.primary},{k:'netProfit',l:'Net Profit',c:t.green},{k:'advCost',l:'Ad Spend',c:t.orange},{k:'units',l:'Units',c:'#0ea5e9'}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
           <div style={{width:1,background:t.divider,alignSelf:'stretch'}}/>
-          {[{k:'crPct',l:'CR%',c:'#9B59B6'},{k:'tacos',l:'TACoS',c:'#E67E22'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
+          {[{k:'crPct',l:'CR%',c:'#9B59B6'},{k:'tacos',l:'TACoS',c:'#E67E22'},{k:'margin',l:'Margin',c:'#059669'},{k:'aov',l:'AOV',c:'#0891b2'},{k:'roas',l:'ROAS',c:'#7c3aed'},{k:'sessions',l:'Sessions',c:'#64748b'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
           {dailyLY&&dailyLY.length>0&&<button onClick={()=>setShowLY(!showLY)} style={{padding:'4px 10px',borderRadius:8,border:'1px dashed '+(showLY?LY_COLOR:t.inputBorder),background:showLY?LY_COLOR+'18':'transparent',color:showLY?LY_COLOR:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Last Year</button>}
         </div>
         <ResponsiveContainer width="100%" height={showBrush?400:440}>
@@ -1031,14 +1063,19 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={xInterval}/>
             <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
-            {(trendLines.crPct||trendLines.tacos)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']}/>}
+            {(trendLines.crPct||trendLines.tacos||trendLines.margin||trendLines.roas)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+(trendLines.roas&&!trendLines.crPct&&!trendLines.tacos&&!trendLines.margin?'x':'%')} domain={[0,'auto']}/>}
             <Tooltip content={<CT t={t}/>}/>
             <Legend wrapperStyle={{fontSize:10}}/>
             {trendBars.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={t.primary} radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill={t.green} radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill={t.orange} radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.units&&<Bar yAxisId="l" dataKey="units" name="Units" fill="#0ea5e9" radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#9B59B6" strokeWidth={2} dot={false}/>}
             {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#E67E22" strokeWidth={2} dot={false}/>}
+            {trendLines.margin&&<Line yAxisId="r" type="monotone" dataKey="margin" name="Margin%" stroke="#059669" strokeWidth={2} dot={false}/>}
+            {trendLines.roas&&<Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#7c3aed" strokeWidth={2} dot={false}/>}
+            {trendLines.aov&&<Line yAxisId="l" type="monotone" dataKey="aov" name="AOV" stroke="#0891b2" strokeWidth={2} dot={false}/>}
+            {trendLines.sessions&&<Line yAxisId="l" type="monotone" dataKey="sessions" name="Sessions" stroke="#64748b" strokeWidth={2} dot={false}/>}
             {showBrush&&<Brush
               dataKey="label"
               startIndex={brushStart}
@@ -1071,7 +1108,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
         {shopView==='table'?<div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13.5}}>
             <thead><tr style={{position:'sticky',top:0,zIndex:2}}>
-              {['Shop','Revenue','GP','Ads','Units','Margin','FBA Stock','% Rev'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+              {['Shop','Revenue','GP','Ads','Units','CR%','AOV','Profit/Unit','Margin','FBA Stock','% Rev'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
             </tr></thead>
             <tbody>{sortedShop.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'10px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.s}</td>
@@ -1079,6 +1116,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:(r.gp||r.n||0)>=0?t.green:t.red,borderBottom:'1px solid '+t.divider}}>{$(r.gp||r.n||0)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(Math.abs(r.ad||0))}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.u||0)}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.o>0&&r.u>0?(r.u/r.o*100).toFixed(1)+'%':'—'}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.o>0?$(r.r/r.o):'—'}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:(r.gp||r.n||0)>=0?t.green:t.red,fontWeight:600}}>{r.u>0?$((r.gp||r.n||0)/r.u):'—'}</td>
               <td style={{padding:'10px 12px',textAlign:'right',color:mC(r.m,t),fontWeight:600,borderBottom:'1px solid '+t.divider}}>{(r.m||0).toFixed(1)}%</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.f||0)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted,fontSize:12}}>{tRev>0?(r.r/tRev*100).toFixed(1)+'%':'—'}</td>
@@ -1147,7 +1187,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i>=2?'right':'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','ROAS'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
           </tr></thead>
           <tbody>{groupedAsins.map((r,i)=>{
             const isHL=highlightedAsin===r.a;
@@ -1155,6 +1195,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               style={{background:isHL?t.primary+'22':'transparent',outline:isHL?'2px solid '+t.primary:'none',transition:'background .3s,outline .3s'}}
               onMouseEnter={e=>{if(!isHL)e.currentTarget.style.background=t.tableHover}}
               onMouseLeave={e=>{e.currentTarget.style.background=isHL?t.primary+'22':'transparent'}}>
+            <td style={{padding:'7px 8px',borderBottom:'1px solid '+t.divider,width:36}}>
+              {groupBy==='ASIN'&&r.a?<img src={`https://images-na.ssl-images-amazon.com/images/P/${r.a}.01.THUMBZZZ.jpg`} alt="" style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:t.tableBg}} onError={e=>{e.target.style.display='none'}}/>:null}
+            </td>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(r.r)}</td>
@@ -1163,6 +1206,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.u)}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.cr.toFixed(2)}%</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ac<30?t.green:r.ac<50?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ac.toFixed(2)}%</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.r>0?(Math.abs(r.ac)*r.u/100/r.r*100).toFixed(1)+'%':'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',color:r.u>0&&r.n/r.u>=0?t.green:t.red,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.u>0?$(r.n/r.u):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
           </tr>;
           })}</tbody>
