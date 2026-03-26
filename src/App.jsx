@@ -400,6 +400,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const[donutTab,setDonutTab]=useState('rev');
   const[showLY,setShowLY]=useState(false);
   const[groupBy,setGroupBy]=useState('ASIN');
+  const[asinShopF,setAsinShopF]=useState('All');
+  const[asinSellerF,setAsinSellerF]=useState('All');
   const[sortShop,setSortShop]=useState('Revenue');
   // ── chip-based Sellerboard Summary ──
   const[sbVisible,setSbVisible]=useState(['sales','orders','units','refunds','advCost','estPayout','netProfit']);
@@ -545,19 +547,36 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
 
   /* ── ASIN GROUP BY ── */
   const groupedAsins=useMemo(()=>{
-    if(groupBy==='ASIN')return fAsin;
+    let base=fAsin;
+    if(asinShopF!=='All')base=base.filter(a=>a.b===asinShopF);
+    if(asinSellerF!=='All')base=base.filter(a=>a.sl===asinSellerF);
+    if(groupBy==='ASIN')return base;
     const map={};
-    fAsin.forEach(a=>{
-      const key=groupBy==='Shop'?a.b:groupBy==='Brand'?a.b:groupBy==='Seller'?a.sl:a.a;
+    base.forEach(a=>{
+      const key=groupBy==='Shop'?a.b:groupBy==='Seller'?a.sl:a.a;
       if(!map[key])map[key]={a:key,b:key,sl:a.sl,r:0,n:0,u:0,cr:0,ac:0,ro:0,m:0,_cnt:0,_cr_sum:0};
       const g=map[key];g.r+=a.r;g.n+=a.n;g.u+=a.u;g._cr_sum+=a.cr;g._cnt++;
       g.m=g.r>0?(g.n/g.r*100):0;
-      g.ac=g.r>0?(Math.abs(a.ac)*a.r+g.ac*g.r)/(g.r+a.r):0; // approx weighted
+      g.ac=g.r>0?(Math.abs(a.ac)*a.r+g.ac*g.r)/(g.r+a.r):0;
       g.ro=g.ac>0?100/g.ac:0;
       g.cr=g._cr_sum/g._cnt;
     });
     return Object.values(map).sort((a,b)=>b.r-a.r);
-  },[fAsin,groupBy]);
+  },[fAsin,groupBy,asinShopF,asinSellerF]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   /* ── CSV EXPORT ── */
   const exportCSV=()=>{
@@ -848,7 +867,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <input type="date" value={ed} onChange={e=>setEd(e.target.value)} style={{...inputStyle,width:130}}/>
           <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
           {/* Store dropdown — shared selectedStores, synced with Zone A */}
-          <StoreMultiSelect selected={selectedStores} onChange={setSelectedStores} opts={storeOpts||[]}
+          <StoreMultiSelect selected={selectedStores} onChange={v=>{setSelectedStores(v);setTimeout(()=>onApplyZoneB(),50);}} opts={storeOpts||[]}
             accentColor={t.primary} accentBorder={t.primary} accentText={t.primary} t={t} zIndex={500}/>
           {/* Seller dropdown — custom UI */}
           <div ref={zoneBSellerRef} style={{position:'relative'}}>
@@ -1106,10 +1125,21 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     <Cd t={t} style={{padding:0,overflow:'hidden',marginBottom:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:'1px solid '+t.divider,flexWrap:'wrap',gap:8}}>
         <div style={{fontSize:13,fontWeight:700,color:t.text}}>ASIN Performance</div>
-        <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          <span style={{fontSize:10,color:t.textMuted}}>Group by:</span>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          {/* Shop filter */}
+          <select value={asinShopF} onChange={e=>{setAsinShopF(e.target.value);}} style={{background:asinShopF!=='All'?t.primaryLight:t.card,color:asinShopF!=='All'?t.primary:t.text,border:'1px solid '+(asinShopF!=='All'?t.primary+'66':t.inputBorder),borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer',fontWeight:asinShopF!=='All'?700:400}}>
+            <option value="All">All Shops</option>
+            {[...new Set(fAsin.map(a=>a.b).filter(Boolean))].sort().map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          {/* Seller filter */}
+          <select value={asinSellerF} onChange={e=>setAsinSellerF(e.target.value)} style={{background:asinSellerF!=='All'?t.primaryLight:t.card,color:asinSellerF!=='All'?t.primary:t.text,border:'1px solid '+(asinSellerF!=='All'?t.primary+'66':t.inputBorder),borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer',fontWeight:asinSellerF!=='All'?700:400}}>
+            <option value="All">All Sellers</option>
+            {[...new Set(fAsin.map(a=>a.sl).filter(Boolean))].sort().map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          {(asinShopF!=='All'||asinSellerF!=='All')&&<button onClick={()=>{setAsinShopF('All');setAsinSellerF('All');}} style={{padding:'4px 8px',borderRadius:7,border:'1px solid '+t.inputBorder,background:'transparent',color:t.textSec,fontSize:10,cursor:'pointer'}}>✕ Clear</button>}
+          <span style={{fontSize:10,color:t.textMuted,borderLeft:'1px solid '+t.divider,paddingLeft:6}}>Group by:</span>
           <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} style={{background:t.card,color:t.text,border:'1px solid '+t.inputBorder,borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer'}}>
-            {['ASIN','Shop','Brand','Seller'].map(o=><option key={o}>{o}</option>)}
+            {['ASIN','Shop','Seller'].map(o=><option key={o}>{o}</option>)}
           </select>
           <button onClick={exportCSV} style={{padding:'4px 10px',borderRadius:7,border:'1px solid '+t.inputBorder,background:'transparent',color:t.textSec,fontSize:10,fontWeight:600,cursor:'pointer'}}>CSV</button>
         </div>
@@ -1197,7 +1227,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     let rows=asinRows;
     const q=asinSearch.trim().toLowerCase();
     if(q)rows=rows.filter(r=>r.asin.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)||r.sku.toLowerCase().includes(q));
-    return [...rows].sort((a,b)=>asinSortDir*((b[asinSort]||0)-(a[asinSort]||0)));
+    return [...rows].sort((a,b)=>asinSortDir*((a[asinSort]||0)-(b[asinSort]||0)));
   },[asinRows,asinSearch,asinSort,asinSortDir]);
 
   const thSort=(k,label)=>{
