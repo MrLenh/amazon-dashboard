@@ -36,7 +36,7 @@ const ZONE_A_PRESETS=[
 function getZoneAPeriods(presetKey, refDateStr){
   const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
   const realNow=new Date(); // browser real date — dùng cho month/week start, không bị ảnh hưởng bởi Sellerboard lag
-  const fmt=d=>d.toISOString().slice(0,10);
+  const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r};
   const today=fmt(ref);
   const yday=fmt(sub(ref,1));
@@ -140,7 +140,7 @@ function DateInput({label,value,onChange,t}){return<div style={{display:"flex",a
 
 function PeriodBtns({onSelect,active,t,refDate}){
   const ref=refDate?new Date(refDate+"T00:00:00"):new Date();
-  const fmt=d=>d.toISOString().slice(0,10);const now=fmt(ref);
+  const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;const now=fmt(ref);
   const dAgo=n=>{const d=new Date(ref);d.setDate(d.getDate()-n);return fmt(d)};
   const mS=(m=0)=>fmt(new Date(ref.getFullYear(),ref.getMonth()-m,1));
   const mE=(m=0)=>fmt(new Date(ref.getFullYear(),ref.getMonth()-m+1,0));
