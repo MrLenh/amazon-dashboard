@@ -35,6 +35,7 @@ const ZONE_A_PRESETS=[
 ];
 function getZoneAPeriods(presetKey, refDateStr){
   const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
+  const realNow=new Date(); // browser real date — dùng cho month/week start, không bị ảnh hưởng bởi Sellerboard lag
   const fmt=d=>d.toISOString().slice(0,10);
   const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r};
   const today=fmt(ref);
@@ -57,8 +58,8 @@ function getZoneAPeriods(presetKey, refDateStr){
     case 'tod_yd_mtd': return[
       {id:'today', label:'Today',              start:today,                   end:today,                     dateLabel:fmtLabel(ref)},
       {id:'yday',  label:'Yesterday',          start:yday,                    end:yday,                      dateLabel:fmtLabel(sub(ref,1))},
-      {id:'mtd',   label:'Month to date',      start:fmt(soMonth(ref)),       end:today,                     dateLabel:rangeLabel(fmt(soMonth(ref)),today)},
-      {id:'tmf',   label:'This month (fcst)',  start:fmt(soMonth(ref)),       end:fmt(eoMonth(ref)),         dateLabel:MS[ref.getMonth()]+' '+ref.getFullYear()+' (est)'},
+      {id:'mtd',   label:'Month to date',      start:fmt(soMonth(realNow)),   end:today,                     dateLabel:rangeLabel(fmt(soMonth(realNow)),today)},
+      {id:'tmf',   label:'This month (fcst)',  start:fmt(soMonth(realNow)),   end:fmt(eoMonth(realNow)),     dateLabel:MS[realNow.getMonth()]+' '+realNow.getFullYear()+' (est)'},
       {id:'lm',    label:'Last month',         start:fmt(soMonth(sub(ref,ref.getDate()))), end:fmt(eoMonth(sub(ref,ref.getDate()))), dateLabel:MS[(ref.getMonth()+11)%12]+' '+( ref.getMonth()===0?ref.getFullYear()-1:ref.getFullYear())},
     ];
     case 'week':{
@@ -70,7 +71,7 @@ function getZoneAPeriods(presetKey, refDateStr){
         {id:'3w',  label:'3 weeks ago', start:fmt(www0),  end:fmt(www1),  dateLabel:rangeLabel(fmt(www0),fmt(www1))},
       ];}
     case 'month':{
-      const m0s=soMonth(ref);const m1=sub(ref,ref.getDate());const m1s=soMonth(m1);const m1e=eoMonth(m1);
+      const m0s=soMonth(realNow);const m1=sub(ref,ref.getDate());const m1s=soMonth(m1);const m1e=eoMonth(m1);
       const m2=sub(m1s,1);const m2s=soMonth(m2);const m2e=eoMonth(m2);
       const m3=sub(m2s,1);const m3s=soMonth(m3);const m3e=eoMonth(m3);
       return[
@@ -765,7 +766,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:1}}>{tile.label}</div>
               <div style={{fontSize:10,color:t.textMuted,marginBottom:10,lineHeight:1.4}}>
                 {tile.dateLabel}
-                {tile.id==='mtd'&&<span style={{marginLeft:5,fontSize:9,color:t.orange,fontWeight:600,opacity:.85}} title="Sellerboard data typically has a 1–2 day delay">⚠ ~2d delay</span>}
               </div>
               {/* Orders/Units + Refunds */}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
