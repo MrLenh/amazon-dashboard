@@ -1745,4 +1745,3 @@ const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
 app.get('*', (req, res) => { res.sendFile(join(distPath, 'index.html')); });
 app.listen(PORT, '0.0.0.0', () => { console.log(`\n🚀 Dashboard ${VER} on :${PORT} | DB: ${process.env.DB_HOST||'none'}\n`); });
-                                                                              
