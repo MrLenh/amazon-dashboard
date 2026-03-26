@@ -1363,7 +1363,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
             {name:"181-270d",v:d.age181_270||0,cnt:d.ageCnt181||0,fill:t.orange},
             {name:"271-365d",v:d.age271_365||0,cnt:d.ageCnt271||0,fill:t.red},
             {name:"365d+",  v:d.age365plus||0,cnt:d.ageCnt365||0, fill:t.red},
-          ]} margin={{top:22}}}>
+          ]} margin={{top:22}}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/>
             <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={N}/>
