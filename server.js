@@ -977,10 +977,7 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
       GROUP BY DATE_FORMAT(date,'%Y-%m')
       ORDER BY ym
     `, params);
-    // Filter out months with $0 fee to avoid misleading -100% drops
-    const allRows = (rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 }));
-    const nonZero = allRows.filter(r => r.fee > 0);
-    res.json(nonZero);
+    res.json((rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1083,7 +1080,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         FROM seller_board_stock s${sellerJoin}
         ${stockWhere}${sellerWhere}
         GROUP BY s.asin, s.name, s.sku, s.accountId
-        ORDER BY fba DESC LIMIT 300`, stockParams, 30000);
+        ORDER BY fba DESC`, stockParams, 60000);
     } catch(e1) {
       // Fallback: without price/businessPrice columns
       try {
@@ -1098,7 +1095,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
           FROM seller_board_stock s${sellerJoin}
           ${stockWhere}${sellerWhere}
           GROUP BY s.asin, s.name, s.sku, s.accountId
-          ORDER BY fba DESC LIMIT 300`, stockParams, 30000);
+          ORDER BY fba DESC`, stockParams, 60000);
       } catch(e2) { console.error('stockRows fallback failed:', e2.message); }
     }
 
@@ -1110,7 +1107,10 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         SUM(COALESCE(f.inboundQuantity,0)) as inbound,
         SUM(COALESCE(f.totalReservedQuantity,0)) as planReserved,
         SUM(COALESCE(f.estimatedStorageCostNextMonth,0)) as storageFee,
-        SUM(COALESCE(f.estimatedLongTermStorageFee,0)) as longTermFee,
+        (SUM(COALESCE(f.estimatedAis18to210Days,0))+SUM(COALESCE(f.estimatedAis21to240Days,0))+
+         SUM(COALESCE(f.estimatedAis24to270Days,0))+SUM(COALESCE(f.estimatedAis27to300Days,0))+
+         SUM(COALESCE(f.estimatedAis30to330Days,0))+SUM(COALESCE(f.estimatedAis33to365Days,0))+
+         SUM(COALESCE(f.estimatedAis365PlusDays,0))) as longTermFee,
         SUM(COALESCE(f.unfulfillableQuantity,0)) as unfulfillable,
         AVG(COALESCE(f.daysOfSupply,0)) as daysOfSupply,
         SUM(COALESCE(f.invAge0To90Days,0)) as age0_90,
