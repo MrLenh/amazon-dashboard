@@ -1053,9 +1053,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
         })()}
         {/* Row 2: series toggles */}
         <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
-          {[{k:'revenue',l:'Revenue',c:t.primary},{k:'netProfit',l:'Net Profit',c:t.green},{k:'advCost',l:'Ad Spend',c:t.orange},{k:'units',l:'Units',c:'#0ea5e9'}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
+          {[{k:'revenue',l:'Revenue',c:'#2563EB'},{k:'netProfit',l:'Net Profit',c:'#16A34A'},{k:'advCost',l:'Ad Spend',c:'#EA580C'},{k:'units',l:'Units',c:'#0891B2'}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
           <div style={{width:1,background:t.divider,alignSelf:'stretch'}}/>
-          {[{k:'crPct',l:'CR%',c:'#9B59B6'},{k:'tacos',l:'TACoS',c:'#E67E22'},{k:'margin',l:'Margin',c:'#059669'},{k:'aov',l:'AOV',c:'#0891b2'},{k:'roas',l:'ROAS',c:'#7c3aed'},{k:'sessions',l:'Sessions',c:'#64748b'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
+          {[{k:'crPct',l:'CR%',c:'#7C3AED'},{k:'tacos',l:'TACoS',c:'#B45309'},{k:'margin',l:'Margin',c:'#059669'},{k:'aov',l:'AOV',c:'#0891B2'},{k:'roas',l:'ROAS',c:'#DB2777'},{k:'sessions',l:'Sessions',c:'#475569'}].map(li=><button key={li.k} onClick={()=>setTrendLines(p=>({...p,[li.k]:!p[li.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendLines[li.k]?li.c:t.inputBorder),background:trendLines[li.k]?li.c+'18':'transparent',color:trendLines[li.k]?li.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{li.l}</button>)}
           {dailyLY&&dailyLY.length>0&&<button onClick={()=>setShowLY(!showLY)} style={{padding:'4px 10px',borderRadius:8,border:'1px dashed '+(showLY?LY_COLOR:t.inputBorder),background:showLY?LY_COLOR+'18':'transparent',color:showLY?LY_COLOR:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Last Year</button>}
         </div>
         <ResponsiveContainer width="100%" height={showBrush?400:440}>
@@ -1066,16 +1066,16 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             {(trendLines.crPct||trendLines.tacos||trendLines.margin||trendLines.roas)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+(trendLines.roas&&!trendLines.crPct&&!trendLines.tacos&&!trendLines.margin?'x':'%')} domain={[0,'auto']}/>}
             <Tooltip content={<CT t={t}/>}/>
             <Legend wrapperStyle={{fontSize:10}}/>
-            {trendBars.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={t.primary} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-            {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill={t.green} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-            {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill={t.orange} radius={[3,3,0,0]} fillOpacity={0.85}/>}
-            {trendBars.units&&<Bar yAxisId="l" dataKey="units" name="Units" fill="#0ea5e9" radius={[3,3,0,0]} fillOpacity={0.85}/>}
-            {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#9B59B6" strokeWidth={2} dot={false}/>}
-            {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#E67E22" strokeWidth={2} dot={false}/>}
+            {trendBars.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill='#2563EB' radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill='#16A34A' radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill='#EA580C' radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendBars.units&&<Bar yAxisId="l" dataKey="units" name="Units" fill='#0891B2' radius={[3,3,0,0]} fillOpacity={0.85}/>}
+            {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#7C3AED" strokeWidth={2} dot={false}/>}
+            {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#B45309" strokeWidth={2} dot={false}/>}
             {trendLines.margin&&<Line yAxisId="r" type="monotone" dataKey="margin" name="Margin%" stroke="#059669" strokeWidth={2} dot={false}/>}
-            {trendLines.roas&&<Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#7c3aed" strokeWidth={2} dot={false}/>}
+            {trendLines.roas&&<Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#DB2777" strokeWidth={2} dot={false}/>}
             {trendLines.aov&&<Line yAxisId="l" type="monotone" dataKey="aov" name="AOV" stroke="#0891b2" strokeWidth={2} dot={false}/>}
-            {trendLines.sessions&&<Line yAxisId="l" type="monotone" dataKey="sessions" name="Sessions" stroke="#64748b" strokeWidth={2} dot={false}/>}
+            {trendLines.sessions&&<Line yAxisId="l" type="monotone" dataKey="sessions" name="Sessions" stroke="#475569" strokeWidth={2} dot={false}/>}
             {showBrush&&<Brush
               dataKey="label"
               startIndex={brushStart}
