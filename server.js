@@ -1146,6 +1146,17 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     const planMap = {};
     planRows.forEach(r => { planMap[r.asin+'_'+r.accountId] = r; });
 
+    // Build seller lookup from seller_board_product (most recent seller per ASIN)
+    let sellerMap = {};
+    try {
+      let slAccW = ''; const slAccP = [];
+      const slAc = accIdClause('p', accId); slAccW += slAc.w; slAccP.push(...slAc.p);
+      const slRows = await q(`SELECT DISTINCT p.asin, p.seller FROM seller_board_product p
+        WHERE p.seller IS NOT NULL AND p.seller != '' ${slAccW}
+        GROUP BY p.asin, p.seller ORDER BY MAX(p.date) DESC`, slAccP, 20000);
+      slRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
+    } catch(e) { /* optional */ }
+
     const result = stockRows.map(r => {
       const plan = planMap[r.asin+'_'+r.accountId] || {};
       const fba = parseInt(r.fba)||0;
@@ -1160,6 +1171,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         name: (r.name||'').substring(0,60),
         sku: r.sku||'',
         shop: shopMap[r.accountId]||`Account ${r.accountId}`,
+        seller: sellerMap[r.asin]||'',
         accountId: r.accountId,
         fba, available, reserved, inbound,
         stockValue: parseFloat(r.stockValue)||0,
@@ -1174,7 +1186,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         age181_270: parseInt(plan.age181_270)||0,
         age271_365: parseInt(plan.age271_365)||0,
         age365plus: parseInt(plan.age365plus)||0,
-        aged, // units aged >90 days
+        aged,
         oos45: daysLeft > 0 && daysLeft <= 45,
       };
     });
