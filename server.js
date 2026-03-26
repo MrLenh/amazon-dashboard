@@ -1172,9 +1172,11 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     try {
       let slAccW = ''; const slAccP = [];
       const slAc = accIdClause('p', accId); slAccW += slAc.w; slAccP.push(...slAc.p);
-      const slRows = await q(`SELECT DISTINCT p.asin, p.seller FROM seller_board_product p
+      const slRows = await q(`SELECT p.asin, p.seller, MAX(p.date) as lastDate
+        FROM seller_board_product p
         WHERE p.seller IS NOT NULL AND p.seller != '' ${slAccW}
-        GROUP BY p.asin, p.seller ORDER BY MAX(p.date) DESC`, slAccP, 20000);
+        GROUP BY p.asin, p.seller
+        ORDER BY p.asin, lastDate DESC`, slAccP, 20000);
       slRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
     } catch(e) { /* optional */ }
 
