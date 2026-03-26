@@ -656,48 +656,32 @@ app.get('/api/product/asins', async (req, res) => {
     const { s, e } = defDates(start, end);
     const accId = await storeToAccIds(store);
     const shopMap = await getShopMap();
-
-    // Use p.seller directly — seller_board_product.seller is the account seller (TN/AP/HM...)
     let w = 'WHERE p.date BETWEEN ? AND ?'; const params = [s, e];
     const ac = accIdClause('p', accId); w += ac.w; params.push(...ac.p);
     if (seller && seller !== 'All') { w += ' AND p.seller = ?'; params.push(seller); }
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
-
     const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
-      SUM(${P_SALES}) as revenue,
-      SUM(COALESCE(p.netProfit,0)) as netProfit,
-      SUM(${P_UNITS}) as units,
-      AVG(COALESCE(p.realACOS,0)) as acos,
+      SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
+      SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
       SUM(COALESCE(p.sessions,0)) as sessions,
       AVG(CASE WHEN p.unitSessionPercentage > 0 THEN p.unitSessionPercentage END) as cr,
       CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
-
-    // ASIN images from asin table (internal ASIN management)
-    let imgMap = {};
-    try {
-      const imgRows = await qc(`SELECT asin, image FROM asin WHERE image IS NOT NULL AND image != ''`, [], 10000);
-      imgRows.forEach(r => { if (r.image) imgMap[r.asin] = r.image; });
-    } catch(e) { /* images optional */ }
-
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
       const cr = Math.round((parseFloat(r.cr)||0)*100)/100;
       const advCost = parseFloat(r.advCost)||0;
       const units = parseInt(r.units)||0;
-      return {
-        asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'',
+      return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'',
         revenue: rev, netProfit: np, units,
         margin: rev>0?Math.round(np/rev*1000)/10:0,
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
-        imageUrl: imgMap[r.asin]||null
-      };
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -770,11 +754,6 @@ app.get('/api/shops', async (req, res) => {
          FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
     const q3 = qc(adsSQL, pF2.p, 35000).catch(()=>[]);
 
-    // ── Q5: sessions per shop from seller_board_product ──
-    const sessSQL2 = `SELECT p.accountId, SUM(COALESCE(p.sessions,0)) as sessions, SUM(${P_UNITS}) as sessUnits
-      FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
-    const q5 = qc(sessSQL2, pF2.p, 35000).catch(()=>[]);
-
     // ── Q4: plan — use date range not YEAR() for index ──
     const yr = new Date(s).getFullYear();
     const q4 = qc(`SELECT p.accountId, ap.metrics, SUM(ap.value) as val
@@ -783,6 +762,11 @@ app.get('/api/shops', async (req, res) => {
         ON ap.asin COLLATE utf8mb4_0900_ai_ci = p.asin
       WHERE ap.year = ?
       GROUP BY p.accountId, ap.metrics`, [s, e, yr], 35000).catch(()=>[]);
+
+    // ── Q5: sessions per shop ──
+    const sessSQL2 = `SELECT p.accountId, SUM(COALESCE(p.sessions,0)) as sessions, SUM(${P_UNITS}) as sessUnits
+      FROM seller_board_product p ${pF2.w} GROUP BY p.accountId`;
+    const q5 = qc(sessSQL2, pF2.p, 35000).catch(()=>[]);
 
     // Run all in parallel
     const [rows, stockRows, adsRows, planRows, sessRows2] = await Promise.all([q1, q2, q3, q4, q5]);
@@ -810,8 +794,7 @@ app.get('/api/shops', async (req, res) => {
       const ad=adsMap[r.accountId]||{ads:0,gp:0};
       const gp=ad.gp||np;
       const sess=sessMap2[r.accountId]||{sessions:0,units:0};
-      const units=parseInt(r.units)||0;
-      const orders=parseInt(r.orders)||0;
+      const units=parseInt(r.units)||0, orders=parseInt(r.orders)||0;
       const cr=sess.sessions>0?(units/sess.sessions*100):0;
       return{ shop:shopMap[r.accountId]||`Account ${r.accountId}`, accountId:r.accountId,
         revenue:rev, grossProfit:gp, netProfit:np, ads:ad.ads,
@@ -875,6 +858,11 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       SUM(COALESCE(f.invAge0To90Days,0)) as a0,
       SUM(COALESCE(f.invAge91To180Days,0)) as a91, SUM(COALESCE(f.invAge181To270Days,0)) as a181,
       SUM(COALESCE(f.invAge271To365Days,0)) as a271, SUM(COALESCE(f.invAge365PlusDays,0)) as a365,
+      COUNT(DISTINCT CASE WHEN COALESCE(f.invAge0To90Days,0)>0 THEN f.asin END) as cnt0,
+      COUNT(DISTINCT CASE WHEN COALESCE(f.invAge91To180Days,0)>0 THEN f.asin END) as cnt91,
+      COUNT(DISTINCT CASE WHEN COALESCE(f.invAge181To270Days,0)>0 THEN f.asin END) as cnt181,
+      COUNT(DISTINCT CASE WHEN COALESCE(f.invAge271To365Days,0)>0 THEN f.asin END) as cnt271,
+      COUNT(DISTINCT CASE WHEN COALESCE(f.invAge365PlusDays,0)>0 THEN f.asin END) as cnt365,
       AVG(COALESCE(f.sellThrough,0)) as avgSellThrough
       FROM fba_iventory_planning f
       JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest
@@ -916,6 +904,8 @@ app.get('/api/inventory/snapshot', async (req, res) => {
       criticalSkus: parseInt(r.criticalSkus)||0, avgDaysOfSupply: Math.round(parseFloat(r.avgDaysOfSupply)||0),
       age0_90: parseInt(r.a0)||0, age91_180: parseInt(r.a91)||0, age181_270: parseInt(r.a181)||0,
       age271_365: parseInt(r.a271)||0, age365plus: parseInt(r.a365)||0,
+      ageCnt0: parseInt(r.cnt0)||0, ageCnt91: parseInt(r.cnt91)||0, ageCnt181: parseInt(r.cnt181)||0,
+      ageCnt271: parseInt(r.cnt271)||0, ageCnt365: parseInt(r.cnt365)||0,
       storageFee: storageFee, avgSellThrough: parseFloat(r.avgSellThrough)||0
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -987,7 +977,10 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
       GROUP BY DATE_FORMAT(date,'%Y-%m')
       ORDER BY ym
     `, params);
-    res.json((rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 })));
+    // Filter out months with $0 fee to avoid misleading -100% drops
+    const allRows = (rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 }));
+    const nonZero = allRows.filter(r => r.fee > 0);
+    res.json(nonZero);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1066,12 +1059,13 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     let planWhere = 'JOIN (SELECT accountId AS aid, MAX(date) as maxDate FROM fba_iventory_planning GROUP BY accountId) latest ON f.accountId = latest.aid AND f.date = latest.maxDate WHERE 1=1'; const planParams = [];
     { const _ac=accIdClause('f',accId); planWhere+=_ac.w; planParams.push(..._ac.p); }
 
-    // Seller filter via asin table
+    // Seller filter via seller_board_product (p.seller = account seller like TN/AP/HM)
     let sellerJoin = '', sellerWhere = '';
     if (seller && seller !== 'All') {
-      sellerJoin = ' LEFT JOIN asin a ON s.asin COLLATE utf8mb4_0900_ai_ci = a.asin';
-      sellerWhere = ' AND a.seller = ?';
-      stockParams.push(seller);
+      // Join seller_board_product to get the seller per ASIN
+      sellerJoin = ` JOIN (SELECT DISTINCT asin FROM seller_board_product WHERE seller = ?) sbp_sel ON s.asin COLLATE utf8mb4_0900_ai_ci = sbp_sel.asin`;
+      sellerWhere = '';
+      stockParams.unshift(seller); // prepend since sellerJoin uses ? first
     }
 
     // Main ASIN stock from seller_board_stock — try with price cols, fallback without
