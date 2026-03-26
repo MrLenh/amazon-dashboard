@@ -657,52 +657,23 @@ app.get('/api/product/asins', async (req, res) => {
     const accId = await storeToAccIds(store);
     const shopMap = await getShopMap();
 
-    // Use p.seller directly from seller_board_product (not asin table — that's designer/product seller)
+    // Use p.seller directly — seller_board_product.seller is the account seller (TN/AP/HM...)
     let w = 'WHERE p.date BETWEEN ? AND ?'; const params = [s, e];
     const ac = accIdClause('p', accId); w += ac.w; params.push(...ac.p);
     if (seller && seller !== 'All') { w += ' AND p.seller = ?'; params.push(seller); }
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
 
     const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
-      SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
+      SUM(${P_SALES}) as revenue,
+      SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units,
       AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
-      0 as storageFee, /* fetched separately from seller_board_storage_fee */
       SUM(COALESCE(p.sessions,0)) as sessions,
-      AVG(CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END) as cr,
-      AVG(CASE WHEN t.buyBoxPercentage > 0 THEN t.buyBoxPercentage END) as buyBox,
+      AVG(CASE WHEN p.unitSessionPercentage > 0 THEN p.unitSessionPercentage END) as cr,
       CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
-      LEFT JOIN analytics_sale_traffiec_by_asin_date t ON t.asin=p.asin AND t.date=p.date AND t.typeDate='DAY' AND t.accountId=p.accountId
-      ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 120000);
-
-    // Storage fee — try seller_board_storage_fee first, fallback to seller_board_product
-    let sfMap2 = {};
-    try {
-      // Try 1: seller_board_storage_fee latest month
-      let sfAccW = ''; const sfAccP = [];
-      const sfAc = accIdClause('p', accId); sfAccW += sfAc.w; sfAccP.push(...sfAc.p);
-      const sfRows2 = await qc(`SELECT p.asin, SUM(COALESCE(p.fbaStorageFee,0)) as storageFee
-        FROM seller_board_storage_fee p
-        JOIN (SELECT accountId, MAX(date) as maxDate FROM seller_board_storage_fee GROUP BY accountId) latest
-          ON p.accountId = latest.accountId AND p.date = latest.maxDate
-        WHERE 1=1 ${sfAccW} GROUP BY p.asin`, sfAccP, 30000);
-      sfRows2.forEach(r=>{ if(parseFloat(r.storageFee)>0) sfMap2[r.asin]=Math.round(parseFloat(r.storageFee)*100)/100; });
-    } catch(e) { console.warn('seller_board_storage_fee failed:', e.message); }
-
-    // Fallback: if sfMap2 still empty, use seller_board_product.fbaStorageFee (latest date per ASIN with value > 0)
-    if(Object.keys(sfMap2).length === 0) {
-      try {
-        let sfAccW2 = ''; const sfAccP2 = [];
-        const sfAc2 = accIdClause('p', accId); sfAccW2 += sfAc2.w; sfAccP2.push(...sfAc2.p);
-        const sfRows3 = await qc(`SELECT p.asin, SUM(COALESCE(p.fbaStorageFee,0)) as storageFee
-          FROM seller_board_product p
-          WHERE p.fbaStorageFee > 0 ${sfAccW2}
-          GROUP BY p.asin`, sfAccP2, 60000);
-        sfRows3.forEach(r=>{ if(parseFloat(r.storageFee)>0) sfMap2[r.asin]=Math.round(parseFloat(r.storageFee)*100)/100; });
-      } catch(e) { console.warn('fbaStorageFee fallback failed:', e.message); }
-    }
+      ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
 
     // ASIN images from product_cogs
     let imgMap = {};
@@ -715,7 +686,6 @@ app.get('/api/product/asins', async (req, res) => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
       const cr = Math.round((parseFloat(r.cr)||0)*100)/100;
-      const buyBox = Math.round((parseFloat(r.buyBox)||0)*100)/100;
       const advCost = parseFloat(r.advCost)||0;
       const units = parseInt(r.units)||0;
       return {
@@ -723,14 +693,13 @@ app.get('/api/product/asins', async (req, res) => {
         revenue: rev, netProfit: np, units,
         margin: rev>0?Math.round(np/rev*1000)/10:0,
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
-        cr, buyBox, sessions: parseInt(r.sessions)||0,
+        cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        storageFee: sfMap2[r.asin]||0,
         avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
         imageUrl: imgMap[r.asin]||null
       };
     }));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 /* ═══════════ PRODUCT ASIN DAILY (drill-down) ═══════════ */
