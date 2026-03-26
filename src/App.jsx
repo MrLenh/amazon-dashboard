@@ -4,7 +4,7 @@ import { checkBackend, api, apiPost, authLogin, authMe, authChangePassword, auth
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Cell, ScatterChart, Scatter,
-  ZAxis, PieChart, Pie, ReferenceLine, Brush
+  ZAxis, PieChart, Pie, ReferenceLine, Brush, LabelList
 } from "recharts";
 
 /* ═══════════ THEMES ═══════════ */
@@ -1124,16 +1124,28 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted,fontSize:12}}>{tRev>0?(r.r/tRev*100).toFixed(1)+'%':'—'}</td>
             </tr>)}
           </tbody></table>
-        </div>:<div style={{padding:12}}>
-          <ResponsiveContainer width="100%" height={Math.max(200,fShop.length*36)}>
-            <BarChart data={sortedShop} layout="vertical" barSize={9} barCategoryGap="18%">
-              <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
-              <XAxis type="number" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
-              <YAxis type="category" dataKey="s" tick={{fill:t.textSec,fontSize:10}} width={90}/>
-              <Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/>
-              <Bar dataKey="r" name="Revenue" fill={t.primary} radius={[0,4,4,0]}/>
-              <Bar dataKey="n" name="Net Profit" fill={t.green} radius={[0,4,4,0]}>{sortedShop.map((e,i)=><Cell key={i} fill={(e.n||0)>=0?t.green:t.red}/>)}</Bar>
-            </BarChart>
+        </div>:<div style={{padding:'12px 12px 8px'}}>
+          <ResponsiveContainer width="100%" height={Math.max(320, fShop.length*52)}>
+            <ComposedChart data={sortedShop} margin={{top:28,right:40,bottom:8,left:10}} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid} vertical={false}/>
+              <XAxis dataKey="s" tick={{fill:t.textSec,fontSize:10}} interval={0} angle={-15} textAnchor="end" height={44}/>
+              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} width={58}/>
+              <YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']} width={38}/>
+              <Tooltip content={<CT t={t}/>}/>
+              <Legend wrapperStyle={{fontSize:10,paddingTop:8}}/>
+              <Bar yAxisId="l" dataKey="u" name="Units" fill="#0891B2" radius={[3,3,0,0]} barSize={14}>
+                {sortedShop.map((e,i)=><LabelList key={i} dataKey="u" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>v>0?N(v):''}/>)}
+              </Bar>
+              <Bar yAxisId="l" dataKey="ad" name="Ad Spend" fill="#EA580C" radius={[3,3,0,0]} barSize={14}>
+                {sortedShop.map((e,i)=><LabelList key={i} dataKey="ad" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>v>0?$s(v):''}/>)}
+              </Bar>
+              <Bar yAxisId="l" dataKey="gp" name="Profit" radius={[3,3,0,0]} barSize={14}>
+                {sortedShop.map((e,i)=><Cell key={i} fill={(e.gp||0)>=0?'#16A34A':'#DC2626'}/>)}
+                {sortedShop.map((e,i)=><LabelList key={'l'+i} dataKey="gp" position="top" style={{fill:t.textSec,fontSize:9}} formatter={v=>$s(v)}/>)}
+              </Bar>
+              <Line yAxisId="r" type="monotone" dataKey="m" name="Margin%" stroke="#7C3AED" strokeWidth={2} dot={{r:3,fill:'#7C3AED'}}/>
+              <Line yAxisId="r" type="monotone" dataKey="cr" name="CR%" stroke="#059669" strokeWidth={2} dot={{r:3,fill:'#059669'}}/>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>}
       </Cd>
