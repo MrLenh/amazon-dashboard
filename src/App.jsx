@@ -1070,12 +1070,12 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             {trendBars.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Net Profit" fill='#16A34A' radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendBars.advCost&&<Bar yAxisId="l" dataKey="advCost" name="Ad Spend" fill='#EA580C' radius={[3,3,0,0]} fillOpacity={0.85}/>}
             {trendBars.units&&<Bar yAxisId="l" dataKey="units" name="Units" fill='#0891B2' radius={[3,3,0,0]} fillOpacity={0.85}/>}
-            {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#7C3AED" strokeWidth={2} dot={false}/>}
-            {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#B45309" strokeWidth={2} dot={false}/>}
-            {trendLines.margin&&<Line yAxisId="r" type="monotone" dataKey="margin" name="Margin%" stroke="#059669" strokeWidth={2} dot={false}/>}
-            {trendLines.roas&&<Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#DB2777" strokeWidth={2} dot={false}/>}
-            {trendLines.aov&&<Line yAxisId="l" type="monotone" dataKey="aov" name="AOV" stroke="#F59E0B" strokeWidth={2.5} strokeWidth={2} dot={false}/>}
-            {trendLines.sessions&&<Line yAxisId="l" type="monotone" dataKey="sessions" name="Sessions" stroke="#475569" strokeWidth={2} dot={false}/>}
+            {trendLines.crPct&&<Line yAxisId="r" type="monotone" dataKey="crPct" name="CR%" stroke="#7C3AED" strokeWidth={2} dot={{r:3,fill:"#7C3AED"}} activeDot={{r:5}}/>}
+            {trendLines.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS%" stroke="#B45309" strokeWidth={2} dot={{r:3,fill:"#B45309"}} activeDot={{r:5}}/>}
+            {trendLines.margin&&<Line yAxisId="r" type="monotone" dataKey="margin" name="Margin%" stroke="#059669" strokeWidth={2} dot={{r:3,fill:"#059669"}} activeDot={{r:5}}/>}
+            {trendLines.roas&&<Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#DB2777" strokeWidth={2} dot={{r:3,fill:"#DB2777"}} activeDot={{r:5}}/>}
+            {trendLines.aov&&<Line yAxisId="l" type="monotone" dataKey="aov" name="AOV" stroke="#F59E0B" strokeWidth={2.5} dot={{r:3,fill:"#F59E0B"}} activeDot={{r:5}}/>}
+            {trendLines.sessions&&<Line yAxisId="l" type="monotone" dataKey="sessions" name="Sessions" stroke="#475569" strokeWidth={2} dot={{r:3,fill:"#475569"}} activeDot={{r:5}}/>}
             {showBrush&&<Brush
               dataKey="label"
               startIndex={brushStart}
