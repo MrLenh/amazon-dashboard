@@ -1269,6 +1269,8 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
   const[asinSort,setAsinSort]=useState('fba');
   const[asinSortDir,setAsinSortDir]=useState(-1); // -1 desc, 1 asc
 
+  const[feeSort,setFeeSort]=useState('month');
+  const[feeSortDir,setFeeSortDir]=useState(-1);
   const sellerOpts=useMemo(()=>['All',...[...new Set(asinRows.map(r=>r.seller).filter(Boolean))]]
     ,[asinRows]);
 
@@ -1521,13 +1523,42 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
       <Sec title="Storage Fee History" icon="" t={t}>
         <Cd t={t}>
-          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_product → fbaStorageFee</code> · Monthly FBA storage fees (negative values = costs). Uses last snapshot per ASIN per month.</div>
-          {feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{
-          const prev=i>0?feeHist[i-1]:null;
-          const chg=prev&&prev.fee>0&&r.fee>0?((r.fee-prev.fee)/prev.fee*100):null;
-          const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;
-          return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td><td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td><td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td></tr>;
-        })}</tbody></table></div>:<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>}
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_product → fbaStorageFee</code> · Monthly FBA storage fees. Uses last snapshot per ASIN per month.</div>
+          {(()=>{
+            const sorted=[...feeHist].sort((a,b)=>{
+              if(feeSort==='month')return feeSortDir*(a.month>b.month?1:-1);
+              return feeSortDir*(a.fee-b.fee);
+            });
+            const thFee=(col,label,align='right')=>{
+              const active=feeSort===col;
+              return<th onClick={()=>{if(active)setFeeSortDir(d=>-d);else{setFeeSort(col);setFeeSortDir(-1);}}}
+                style={{padding:"8px 12px",textAlign:align,color:active?t.primary:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg,cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
+                {label}{active?(feeSortDir===-1?' ↓':' ↑'):''}
+              </th>;
+            };
+            return feeHist.length>0
+              ?<div style={{overflowY:'auto',maxHeight:360}}>
+                <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}>
+                  <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
+                    {thFee('month','Month','left')}
+                    {thFee('fee','Storage Fee')}
+                    <th style={{padding:"8px 12px",textAlign:'right',color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Change</th>
+                  </tr></thead>
+                  <tbody>{sorted.map((r,i)=>{
+                    const origIdx=feeHist.findIndex(x=>x.month===r.month);
+                    const prev=origIdx>0?feeHist[origIdx-1]:null;
+                    const chg=prev&&prev.fee>0&&r.fee>0?((r.fee-prev.fee)/prev.fee*100):null;
+                    const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;
+                    return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td>
+                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td>
+                      <td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+              :<div style={{padding:20,textAlign:"center",color:t.textMuted,fontSize:11}}>No historical data available</div>;
+          })()}
         </Cd>
       </Sec>
 
