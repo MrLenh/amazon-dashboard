@@ -32,8 +32,9 @@ const ZONE_A_PRESETS=[
   {key:'week',        label:'This week / Last week / 2 weeks ago / 3 weeks ago'},
   {key:'month',       label:'Month to date / Last month / 2 months ago / 3 months ago'},
   {key:'qtr',         label:'This quarter / Last quarter / 2 quarters ago / 3 quarters ago'},
+  {key:'custom',      label:'Custom range'},
 ];
-function getZoneAPeriods(presetKey, refDateStr){
+function getZoneAPeriods(presetKey, refDateStr, opts={}){
   const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
   const fmt=d=>d.toISOString().slice(0,10);
   const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r};
@@ -91,6 +92,11 @@ function getZoneAPeriods(presetKey, refDateStr){
         {id:'2q', label:'2 quarters ago', start:fmt(q2s), end:fmt(q2e), dateLabel:qLabel(q2s)},
         {id:'3q', label:'3 quarters ago', start:fmt(q3s), end:fmt(q3e), dateLabel:qLabel(q3s)},
       ];}
+    case 'custom':{
+      const{cs,ce}=opts;
+      if(!cs||!ce||cs>ce)return[];
+      return[{id:'custom',label:'Custom range',start:cs,end:ce,dateLabel:rangeLabel(cs,ce)}];
+    }
     default: return[];
   }
 }
@@ -118,7 +124,7 @@ function buildDetailRows(em, detail={}){
     {id:'sessions',  label:'Sessions',       val:Math.round(merged.sessions||0),               fmt:N,    sub:[]},
     {id:'cr',        label:'CR%',            val:cr,                                           fmt:v=>v.toFixed(2)+'%', sub:[]},
     {id:'tacos',     label:'TACoS',          val:tacos,                                        fmt:v=>v.toFixed(2)+'%', sub:[]},
-    {id:'roas',      label:'ROAS',           val:merged.realAcos>0?(100/merged.realAcos):0,    fmt:v=>v.toFixed(2)+'x', sub:[]},
+
   ];
 }
 
@@ -700,6 +706,28 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               </div>)}
             </div>,document.body)}
           </div>
+          {/* Custom date range inputs — shown only when preset = custom */}
+          {zoneAPreset==='custom'&&<div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <input type="date" value={zoneACustomStart} onChange={e=>setZoneACustomStart(e.target.value)}
+              style={{border:'1.5px solid #f97316',borderRadius:8,padding:'5px 8px',fontSize:11,fontWeight:600,color:'#c2410c',background:t.card,outline:'none',cursor:'pointer'}}/>
+            <span style={{fontSize:10,color:'#9a3412',fontWeight:700}}>→</span>
+            <input type="date" value={zoneACustomEnd} onChange={e=>setZoneACustomEnd(e.target.value)}
+              style={{border:'1.5px solid #f97316',borderRadius:8,padding:'5px 8px',fontSize:11,fontWeight:600,color:'#c2410c',background:t.card,outline:'none',cursor:'pointer'}}/>
+            <button onClick={()=>{if(zoneACustomStart&&zoneACustomEnd&&zoneACustomStart<=zoneACustomEnd)setZoneACustomApplied({cs:zoneACustomStart,ce:zoneACustomEnd});}}
+              disabled={!zoneACustomStart||!zoneACustomEnd||zoneACustomStart>zoneACustomEnd}
+              style={{background:zoneACustomStart&&zoneACustomEnd&&zoneACustomStart<=zoneACustomEnd?'#f97316':'#fed7aa',border:'none',borderRadius:8,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#fff',cursor:'pointer',transition:'background .15s'}}>
+              Apply
+            </button>
+          </div>}
+          {/* Expand All / Collapse All button — Zone A */}
+          <button onClick={()=>{
+            const allIds=zoneATileData.map(t=>t.id);
+            const anyOpen=allIds.some(id=>openTiles.has(id));
+            if(anyOpen){setOpenTiles(new Set());}
+            else{setOpenTiles(new Set(allIds));allIds.forEach(id=>{const tile=zoneATileData.find(t=>t.id===id);if(tile)toggleTile(id,tile);});}
+          }} style={{display:'flex',alignItems:'center',gap:5,background:openTiles.size>0?'#f97316':t.card,border:'1.5px solid #f97316',borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:openTiles.size>0?'#fff':'#c2410c',cursor:'pointer',transition:'all .15s',flexShrink:0}}>
+            Detail metrics <span style={{fontSize:10,transition:'transform .2s',display:'inline-block',transform:openTiles.size>0?'rotate(180deg)':'none'}}>▾</span>
+          </button>
           {/* Zone A store filter — shared selectedStores, synced with Zone B */}
           <StoreMultiSelect selected={selectedStores} onChange={setSelectedStores} opts={storeOpts||[]}
             accentColor="#f97316" accentBorder="#f97316" accentText="#c2410c" t={t} zIndex={600}/>
@@ -726,7 +754,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             {/* Tile summary */}
             <div style={{padding:'14px 14px 10px',display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:1}}>{tile.label}</div>
-              <div style={{fontSize:10,color:t.textMuted,marginBottom:10,lineHeight:1.4}}>{tile.dateLabel}</div>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:10,lineHeight:1.4}}>
+                {tile.dateLabel}
+                {tile.id==='mtd'&&<span style={{marginLeft:5,fontSize:9,color:t.orange,fontWeight:600,opacity:.85}} title="Sellerboard data typically has a 1–2 day delay">⚠ ~2d delay</span>}
+              </div>
               {/* Orders/Units + Refunds */}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
                 <div style={{flex:1}}>
@@ -754,6 +785,20 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
                 <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Net Profit</div>
                 <div style={{fontSize:15,fontWeight:700,color:tileNP>=0?t.green:t.red}}>{$2(tileNP)}</div>
                 <div style={{fontSize:10,fontWeight:600,color:tileNP>=0?t.green:t.red}}>{tile.em?.margin!=null?((tile.em.margin||0).toFixed(1)+'%'):'—'} margin</div>
+                {/* vs Same Period Last Year */}
+                {tile.emLY&&tile.emLY.sales>0&&(()=>{
+                  const lyRev=tile.emLY.sales||0;const curRev=tile.em?.sales||0;
+                  const lyNP=tile.emLY.netProfit||0;const curNP=tile.em?.netProfit||0;
+                  const revChg=lyRev>0?((curRev-lyRev)/lyRev*100):null;
+                  const npChg=lyNP!==0?((curNP-lyNP)/Math.abs(lyNP)*100):null;
+                  return<div style={{marginTop:6,paddingTop:6,borderTop:'1px dashed '+DIV}}>
+                    <div style={{fontSize:9,color:t.textMuted,fontWeight:700,letterSpacing:.4,marginBottom:4}}>VS SAME PERIOD LAST YEAR</div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {revChg!==null&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:8,background:revChg>=0?t.greenBg:t.redBg,color:revChg>=0?t.green:t.red}}>{revChg>=0?'↑':'↓'} Rev {Math.abs(revChg).toFixed(1)}%</span>}
+                      {npChg!==null&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:8,background:npChg>=0?t.greenBg:t.redBg,color:npChg>=0?t.green:t.red}}>{npChg>=0?'↑':'↓'} NP {Math.abs(npChg).toFixed(1)}%</span>}
+                    </div>
+                  </div>;
+                })()}
               </div>
             </div>
             {/* More / Less toggle */}
@@ -3460,6 +3505,9 @@ function Dashboard({authUser,onLogout}){
 
   // ═══ ZONE A STATE ═══
   const[zoneAPreset,setZoneAPreset]=useState('tod_7_14_30');
+  const[zoneACustomStart,setZoneACustomStart]=useState('');
+  const[zoneACustomEnd,setZoneACustomEnd]=useState('');
+  const[zoneACustomApplied,setZoneACustomApplied]=useState({cs:'',ce:''});
   // zoneAStore is derived from selectedStores (shared with Zone B)
   const[zoneATileData,setZoneATileData]=useState([]);
   const[zoneALoading,setZoneALoading]=useState(false);
@@ -3592,29 +3640,34 @@ function Dashboard({authUser,onLogout}){
   },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
-  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
-  zoneAParamsRef.current={zoneAPreset,storeStr};
-  useEffect(()=>{
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr,zoneACustomApplied});
+  zoneAParamsRef.current={zoneAPreset,storeStr,zoneACustomApplied};
+  useEffect(()=>{\
     if(!live||dbConnecting)return;
     let cancelled=false;
-    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
-    const periods=getZoneAPeriods(_preset, dbToday);
+    const{zoneAPreset:_preset,storeStr:_store,zoneACustomApplied:_custom}=zoneAParamsRef.current;
+    const periods=getZoneAPeriods(_preset, dbToday, {cs:_custom.cs,ce:_custom.ce});
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
-    // Fetch ALL summaries in parallel — summary is light (1 query each)
     const storeParam=_store==='All'?undefined:_store;
+    const subYear=d=>{const dt=new Date(d+'T12:00:00');dt.setFullYear(dt.getFullYear()-1);return dt.toISOString().slice(0,10);};
+    // Fetch current + same period last year in parallel for every tile
     Promise.allSettled(periods.map(p=>
-      api('exec/summary',{start:p.start,end:p.end,store:storeParam})
-        .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
-        .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
+      Promise.all([
+        api('exec/summary',{start:p.start,end:p.end,store:storeParam}).catch(()=>null),
+        api('exec/summary',{start:subYear(p.start),end:subYear(p.end),store:storeParam}).catch(()=>null),
+      ]).then(([emRaw,emLY])=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,
+        em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,
+        emLY:emLY&&emLY.sales!=null?emLY:null,
+        detail:null}))
     )).then(results=>{
       if(cancelled)return;
       setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:periods[0]));
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,storeStr,live,dbConnecting]);
+  },[zoneAPreset,storeStr,zoneACustomApplied,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
