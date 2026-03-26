@@ -3789,7 +3789,7 @@ function Dashboard({authUser,onLogout}){
     return()=>{cancelled=true};
   },[planTrigger]);
 
-  const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n,gp:s.gp,ad:s.ad,m:s.m,u:s.u,f:s.f,n_ads:s.ad})),[fShopData]);
+  const fShopRev=useMemo(()=>fShopData.map(s=>({s:s.s,r:s.r,n:s.n,gp:s.gp,ad:s.ad,m:s.m,u:s.u,f:s.f,n_ads:s.ad,o:s.o,ses:s.ses,cr:s.cr})),[fShopData]);
 
   const pctChg=useCallback((cur,prev)=>{if(prev==null||prev===0)return undefined;return((cur-prev)/Math.abs(prev))*100},[]);
 
