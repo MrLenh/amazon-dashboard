@@ -1521,7 +1521,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
       <Sec title="Storage Fee History" icon="" t={t}>
         <Cd t={t}>
-          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_storage_fee → fbaStorageFee</code> · Actual FBA storage fees charged by Amazon per month</div>
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_product → longTermStorageFee</code> · Long-term storage fees charged by Amazon for inventory stored 90+ days</div>
           {feeHist.length>0?<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{["Month","Storage Fee","Change"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>=1?"right":"left",color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg}}>{h}</th>)}</tr></thead><tbody>{feeHist.map((r,i)=>{
           const prev=i>0?feeHist[i-1]:null;
           const chg=prev&&prev.fee>0&&r.fee>0?((r.fee-prev.fee)/prev.fee*100):null;
@@ -3969,4 +3969,3 @@ function Dashboard({authUser,onLogout}){
     {showAdmin&&<AdminUsersPanel t={t} onClose={()=>setShowAdmin(false)}/>}
   </div>;
 }
-                                    
