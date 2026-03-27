@@ -1395,7 +1395,10 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     const q=asinSearch.trim().toLowerCase();
     if(q)rows=rows.filter(r=>r.asin.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)||r.sku.toLowerCase().includes(q));
     if(asinSellerF!=='All')rows=rows.filter(r=>r.seller===asinSellerF);
-    return [...rows].sort((a,b)=>asinSortDir*((a[asinSort]||0)-(b[asinSort]||0)));
+    return [...rows].sort((a,b)=>{
+      const av=a[asinSort]||0, bv=b[asinSort]||0;
+      return asinSortDir===1?(av-bv):(bv-av);
+    });
   },[asinRows,asinSearch,asinSellerF,asinSort,asinSortDir]);
 
   const thSort=(k,label)=>{
