@@ -2232,12 +2232,34 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const[search,setSearch]=useState('');
   const[shopF,setShopF]=useState('All');
   const[trendMetrics,setTrendMetrics]=useState({revenue:true,netProfit:true,advCost:false,units:false,cr:false,tacos:false});
+  const[prevEm,setPrevEm]=useState(null);
 
   // Sync shopF with top-level store filter
   useEffect(()=>{
     if(store&&store!=='All')setShopF(store);
     else setShopF('All');
   },[store]);
+
+  // Fetch prev period for KPI comparison
+  useEffect(()=>{
+    if(!sd||!ed)return;
+    const days=Math.round((new Date(ed)-new Date(sd))/86400000)+1;
+    const ps=new Date(sd);ps.setDate(ps.getDate()-days);
+    const pe=new Date(ed);pe.setDate(pe.getDate()-days);
+    const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    api('exec/summary',{start:fmt(ps),end:fmt(pe)}).then(d=>setPrevEm(d||null)).catch(()=>setPrevEm(null));
+  },[sd,ed]);
+
+  const prevLabel=useMemo(()=>{
+    if(!sd||!ed)return'';
+    const days=Math.round((new Date(ed)-new Date(sd))/86400000)+1;
+    const ps=new Date(sd);ps.setDate(ps.getDate()-days);
+    const pe=new Date(ed);pe.setDate(pe.getDate()-days);
+    const fmt=d=>MS[d.getMonth()]+' '+d.getDate();
+    return`vs ${fmt(ps)} – ${fmt(pe)}`;
+  },[sd,ed]);
+
+  const pctChgLocal=(cur,prev)=>prev&&prev!==0?Math.round((cur-prev)/Math.abs(prev)*1000)/10:null;
 
   const tR=fAsin.reduce((s,a)=>s+a.r,0),tN=fAsin.reduce((s,a)=>s+a.n,0),tU=fAsin.reduce((s,a)=>s+a.u,0);
   const avgCr=useMemo(()=>{const arr=fAsin.filter(a=>a.cr>0);return arr.length?(arr.reduce((s,a)=>s+a.cr,0)/arr.length):0;},[fAsin]);
@@ -2283,26 +2305,51 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const SrcDot=({c})=><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:c,marginRight:4,verticalAlign:'middle'}}/>;
 
   return<div>
-    {/* KPI Cards — 6 cols */}
-    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12,marginBottom:16}}>
-      <KpiCard title="Revenue" value={$(tR)} t={t} tip={TIPS.prodRev}/>
-      <KpiCard title="Net Profit" value={$(tN)} t={t} tip={TIPS.prodNP}/>
-      <KpiCard title="Margin" value={(tR?(tN/tR*100).toFixed(1):0)+'%'} t={t} tip={TIPS.prodMargin}/>
-      <KpiCard title="Units" value={N(tU)} t={t} tip={TIPS.prodUnits}/>
-      <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
-        <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Avg Conv. Rate<span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'#E6F1FB',color:'#185FA5',marginLeft:5,fontWeight:700}}>AMZ</span></div>
-        <div style={{fontSize:24,fontWeight:800,color:avgCr>=8?t.green:avgCr>=4?t.orange:t.red,letterSpacing:-.4}}>{avgCr.toFixed(2)}%</div>
-        <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>unitSessionPercentage</div>
-      </div>
-      <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
-        <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Avg Buy Box%<span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'#E6F1FB',color:'#185FA5',marginLeft:5,fontWeight:700}}>AMZ</span></div>
-        <div style={{fontSize:24,fontWeight:800,color:avgBb>=90?t.green:avgBb>=80?t.orange:t.red,letterSpacing:-.4}}>{avgBb.toFixed(1)}%</div>
-        <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>buyBoxPercentage</div>
-      </div>
-    </div>
+    {/* KPI Cards — with prev period comparison */}
+    {(()=>{
+      const chgR=pctChgLocal(tR,prevEm?.sales);
+      const chgN=pctChgLocal(tN,prevEm?.netProfit);
+      const tM=tR>0?(tN/tR*100):0;
+      const prevM=prevEm?.sales>0?((prevEm?.netProfit||0)/(prevEm?.sales||1)*100):null;
+      const chgM=prevM!=null?(tM-prevM):null;
+      const chgU=pctChgLocal(tU,prevEm?.units);
+      const ChgBadge=({v,tip,isPP=false})=>v==null?null:<span title={tip||prevLabel} style={{fontSize:10,fontWeight:700,color:v>=0?t.green:t.red,background:v>=0?t.greenBg:t.redBg,padding:'2px 7px',borderRadius:6,marginLeft:6,cursor:'help',textDecoration:'underline dotted',textDecorationColor:v>=0?t.green:t.red}}>{v>=0?'+':''}{v.toFixed(1)}{isPP?'pp':'%'}</span>;
+      return<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12,marginBottom:16}}>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Revenue</div>
+          <div style={{fontSize:22,fontWeight:800,color:t.text,letterSpacing:-.5}}>{$(tR)}</div>
+          <ChgBadge v={chgR}/>
+        </div>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Net Profit</div>
+          <div style={{fontSize:22,fontWeight:800,color:tN>=0?t.green:t.red,letterSpacing:-.5}}>{$(tN)}</div>
+          <ChgBadge v={chgN}/>
+        </div>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Margin</div>
+          <div style={{fontSize:22,fontWeight:800,color:tM>15?t.green:tM>8?t.orange:t.red,letterSpacing:-.5}}>{tM.toFixed(1)}%</div>
+          <ChgBadge v={chgM} isPP={true}/>
+        </div>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Units</div>
+          <div style={{fontSize:22,fontWeight:800,color:t.text,letterSpacing:-.5}}>{N(tU)}</div>
+          <ChgBadge v={chgU}/>
+        </div>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Avg Conv. Rate<span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'#E6F1FB',color:'#185FA5',marginLeft:5,fontWeight:700}}>AMZ</span></div>
+          <div style={{fontSize:24,fontWeight:800,color:avgCr>=8?t.green:avgCr>=4?t.orange:t.red,letterSpacing:-.4}}>{avgCr.toFixed(2)}%</div>
+          <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>unitSessionPercentage</div>
+        </div>
+        <div style={{background:t.card,borderRadius:14,padding:'16px 18px',border:'1px solid '+t.cardBorder}}>
+          <div style={{fontSize:11,color:t.textSec,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Avg Buy Box%<span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'#E6F1FB',color:'#185FA5',marginLeft:5,fontWeight:700}}>AMZ</span></div>
+          <div style={{fontSize:24,fontWeight:800,color:avgBb>=90?t.green:avgBb>=80?t.orange:t.red,letterSpacing:-.4}}>{avgBb.toFixed(1)}%</div>
+          <div style={{fontSize:10,color:t.textMuted,marginTop:4}}>buyBoxPercentage</div>
+        </div>
+      </div>;
+    })()}
 
     {/* Trend Chart with metric toggles */}
-    <Sec title="Revenue & Net Profit Trend" icon="" t={t}>
+    <Sec title="Daily Performance Trend" icon="" t={t}>
       <Cd t={t}>
         {(()=>{
           const METRICS=[
@@ -2351,7 +2398,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
     <Sec title="ASIN Table" icon="" t={t} action={
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ASIN…" style={{fontSize:12,padding:'5px 10px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.inputBg,color:t.text,width:165,outline:'none'}}/>
-        <select value={shopF} onChange={e=>setShopF(e.target.value)} style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.inputBg,color:t.text2||t.textSec}}>
+        <select value={store&&store!=='All'?store:shopF} onChange={e=>setShopF(e.target.value)} style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+(shopF!=='All'||store&&store!=='All'?t.primary:t.inputBorder),background:t.inputBg,color:t.text2||t.textSec}}>
           {shops.map(s=><option key={s}>{s}</option>)}
         </select>
         <span style={{fontSize:11,color:t.textMuted}}>{filtered.length} ASINs</span>
