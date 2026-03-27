@@ -213,6 +213,55 @@ function AsinSel({value,onChange,options,label,t}){
   </div>;
 }
 
+function AsinMultiSel({value=[],onChange,options=[],t}){
+  const[open,setOpen]=useState(false);const[q,setQ]=useState('');const ref=useRef(null);
+  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
+  const filtered=q?options.filter(o=>o.asin.toLowerCase().includes(q.toLowerCase())||o.name.toLowerCase().includes(q.toLowerCase())):options;
+  const toggle=a=>{const next=value.includes(a)?value.filter(x=>x!==a):[...value,a];onChange(next);};
+  const label=value.length===0?'All ASINs':`${value.length} ASIN${value.length>1?'s':''} selected`;
+  const isActive=value.length>0;
+  return<div ref={ref} style={{position:'relative',display:'inline-block'}}>
+    <button onClick={()=>{setOpen(!open);setQ('');}} style={{background:t.card,color:isActive?t.primary:t.textMuted,border:'1px solid '+(isActive?t.primary:t.inputBorder),borderRadius:10,padding:'7px 14px',fontSize:13,fontWeight:isActive?700:500,cursor:'pointer',minWidth:140,textAlign:'left',whiteSpace:'nowrap'}}>
+      {label} <span style={{fontSize:9,opacity:.5}}>▾</span>
+    </button>
+    {open&&<div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:999,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:14,boxShadow:'0 12px 40px '+t.shadow,width:300,maxHeight:440,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{padding:'10px 12px',borderBottom:'1px solid '+t.divider,display:'flex',gap:8,alignItems:'center'}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ASIN..." autoFocus
+          style={{flex:1,padding:'8px 12px',border:'1.5px solid '+t.inputBorder,borderRadius:8,fontSize:13,background:t.inputBg,color:t.text,outline:'none'}}
+          onFocus={e=>e.target.style.borderColor=t.primary} onBlur={e=>e.target.style.borderColor=t.inputBorder}/>
+        {value.length>0&&<button onClick={()=>onChange([])} style={{fontSize:10,color:t.red,background:'transparent',border:'none',cursor:'pointer',whiteSpace:'nowrap',fontWeight:700}}>Clear</button>}
+      </div>
+      <div style={{padding:'4px 8px',borderBottom:'1px solid '+t.divider}}>
+        <div onClick={()=>onChange([])} style={{padding:'8px 10px',fontSize:13,cursor:'pointer',fontWeight:value.length===0?700:400,color:value.length===0?t.primary:t.text,borderRadius:8,background:value.length===0?t.primaryLight:'transparent'}}
+          onMouseEnter={e=>e.currentTarget.style.background=value.length===0?t.primaryLight:t.tableHover}
+          onMouseLeave={e=>e.currentTarget.style.background=value.length===0?t.primaryLight:'transparent'}>
+          All ASINs {value.length===0&&'✓'}
+        </div>
+      </div>
+      <div style={{overflowY:'auto',flex:1,padding:'4px 8px'}}>
+        {filtered.length>0&&<div style={{padding:'4px 10px',fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase'}}>{filtered.length} ASINs</div>}
+        {filtered.map(o=>{const sel=value.includes(o.asin);return<div key={o.asin} onClick={()=>toggle(o.asin)}
+          style={{padding:'7px 10px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',borderRadius:8,background:sel?t.primaryLight:'transparent',fontSize:13}}
+          onMouseEnter={e=>e.currentTarget.style.background=sel?t.primaryLight:t.tableHover}
+          onMouseLeave={e=>e.currentTarget.style.background=sel?t.primaryLight:'transparent'}>
+          <div style={{width:16,height:16,borderRadius:4,border:'2px solid '+(sel?t.primary:t.inputBorder),background:sel?t.primary:'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {sel&&<span style={{color:'#fff',fontSize:9,fontWeight:900}}>✓</span>}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:sel?700:500,color:sel?t.primary:t.text,letterSpacing:.2}}>{o.asin}</div>
+            {o.name&&<div style={{fontSize:10,color:t.textMuted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.name}</div>}
+          </div>
+        </div>;})}
+        {filtered.length===0&&<div style={{padding:'20px',textAlign:'center',color:t.textMuted,fontSize:12}}>No ASINs found</div>}
+      </div>
+      <div style={{padding:'8px 14px',borderTop:'1px solid '+t.divider,fontSize:11,color:t.textMuted,display:'flex',justifyContent:'space-between'}}>
+        <span>{options.length} total</span>
+        {value.length>0&&<span style={{color:t.primary,fontWeight:600}}>{value.length} selected</span>}
+      </div>
+    </div>}
+  </div>;
+}
+
 function KpiCard({title,value,change,icon,t,tip}){return<div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:"1px solid "+t.cardBorder,overflow:"visible",transition:"all .2s ease"}} onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 8px 28px "+t.shadow;e.currentTarget.style.transform="translateY(-1px)";}} onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.transform="";}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{flex:1,overflow:"visible"}}><div style={{fontSize:11.5,color:t.textSec,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:10}}>{title}{tip&&<Tip text={tip} t={t}/>}</div><div style={{fontSize:26,fontWeight:800,color:t.text,letterSpacing:-.5}}>{value}</div>{change!==undefined&&change!==null&&<div style={{display:"flex",alignItems:"center",gap:5,marginTop:8}}><span style={{fontSize:12,fontWeight:600,color:change>=0?t.green:t.red,background:change>=0?t.greenBg:t.redBg,padding:"3px 10px",borderRadius:10}}>{change>=0?"↑":"↓"} {Math.abs(change).toFixed(1)}%</span><span style={{fontSize:10,color:t.textMuted}}>vs prev</span></div>}</div>{icon&&<div style={{width:36,height:36,borderRadius:10,background:t.kpiIcon,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:t.textMuted,flexShrink:0,letterSpacing:-.5}}>{icon}</div>}</div></div>}
 
 function PlanKpi({title,actual,plan,t,highlight,tip,fmt}){const isN=typeof actual==="number"&&typeof plan==="number";const gap=isN?actual-plan:null;const gc=gap!=null?(gap>=0?t.green:t.red):t.textMuted;const F=fmt||$;const fmtActual=typeof actual==="number"?F(actual):actual;const fmtPlan=typeof plan==="number"?F(plan):plan;const fmtGap=gap!=null?F(gap):"—";return<div style={{background:highlight?t.primaryLight:t.card,borderRadius:14,padding:"20px 22px",border:highlight?"2px solid "+t.primary:"1px solid "+t.cardBorder,overflow:"visible",transition:"all .2s ease"}} onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 8px 28px "+t.shadow;}} onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}><div style={{fontSize:11.5,color:highlight?t.primary:t.textSec,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:14}}>{highlight?"⭐ ":""}{title}{tip&&<Tip text={tip} t={t}/>}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Actual</span><span style={{fontSize:highlight?28:24,fontWeight:800,color:highlight?t.primary:t.text,letterSpacing:-.3}}>{fmtActual}</span></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Plan</span><span style={{fontSize:15,fontWeight:600,color:t.textSec}}>{fmtPlan}</span></div><div style={{marginTop:14,padding:"10px 14px",borderRadius:10,background:t.primaryGhost,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Gap</span><span style={{fontSize:15,fontWeight:700,color:gc}}>{fmtGap}</span></div></div>}
@@ -2326,6 +2375,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const[sortDir,setSortDir]=useState(-1);
   const[search,setSearch]=useState('');
   const[shopF,setShopF]=useState('All');
+  const[asinMultiF,setAsinMultiF]=useState([]);
   const[trendMetrics,setTrendMetrics]=useState({revenue:true,netProfit:true,advCost:false,units:false,cr:false,tacos:false});
   const[prevEm,setPrevEm]=useState(null);
 
@@ -2365,12 +2415,13 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
     let arr=[...fAsin];
     if(search)arr=arr.filter(a=>a.a.toLowerCase().includes(search.toLowerCase())||a.b.toLowerCase().includes(search.toLowerCase()));
     if(shopF&&shopF!=='All')arr=arr.filter(a=>a.b===shopF);
+    if(asinMultiF.length>0)arr=arr.filter(a=>asinMultiF.includes(a.a));
     arr.sort((a,b)=>{
       const av=a[sortKey]??0,bv=b[sortKey]??0;
       return sortDir*(av<bv?-1:av>bv?1:0);
     });
     return arr;
-  },[fAsin,search,shopF,sortKey,sortDir]);
+  },[fAsin,search,shopF,asinMultiF,sortKey,sortDir]);
 
   const sortBy=k=>{if(sortKey===k)setSortDir(d=>-d);else{setSortKey(k);setSortDir(-1);}};
   const sIco=k=>sortKey===k?(sortDir<0?' ↓':' ↑'):'';
@@ -2496,6 +2547,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
         <select value={store&&store!=='All'?store:shopF} onChange={e=>setShopF(e.target.value)} style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+(shopF!=='All'||store&&store!=='All'?t.primary:t.inputBorder),background:t.inputBg,color:t.text2||t.textSec}}>
           {shops.map(s=><option key={s}>{s}</option>)}
         </select>
+        <AsinMultiSel value={asinMultiF} onChange={setAsinMultiF} options={fAsin.map(a=>({asin:a.a,name:''}))} t={t}/>
         <span style={{fontSize:11,color:t.textMuted}}>{filtered.length} ASINs</span>
       </div>
     }>
