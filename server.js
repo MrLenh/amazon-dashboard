@@ -210,11 +210,12 @@ const P_SALES  = 'COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)';
 const P_UNITS  = 'COALESCE(p.unitsOrganic,0)+COALESCE(p.unitsPPC,0)';
 const P_ADS    = 'COALESCE(p.sponsoredProducts,0)+COALESCE(p.sponsoredDisplay,0)+COALESCE(p.sponsoredBrands,0)+COALESCE(p.sponsoredBrandsVideo,0)+COALESCE(p.googleAds,0)+COALESCE(p.facebookAds,0)';
 
-function pWhere(sd, ed, accIds, seller, af) {
+function pWhere(sd, ed, accIds, seller, af, productType) {
   let w = 'WHERE p.date BETWEEN ? AND ?'; const p = [sd, ed];
   const ac = accIdClause('p', accIds); w += ac.w; p.push(...ac.p);
   if (seller && seller !== 'All') { w += ' AND p.seller = ?'; p.push(seller); }
   if (af && af !== 'All') { w += ' AND p.asin = ?'; p.push(af); }
+  if (productType && productType !== 'All') { w += ' AND p.productType = ?'; p.push(productType); }
   return { w, p };
 }
 function scWhere(sd, ed, accIds) {
@@ -563,22 +564,31 @@ app.get('/api/filters', async (req, res) => {
 /* ═══════════ EXEC SUMMARY ═══════════ */
 app.get('/api/exec/summary', async (req, res) => {
   try {
-    const { start, end, store, seller, asin: af } = req.query;
+    const { start, end, store, seller, asin: af, productType } = req.query;
     const { s, e } = defDates(start, end);
     const accId = await storeToAccIds(store);
     let rows, cogsVal = 0;
 
-    if (useProduct(seller, af)) {
-      const f = pWhere(s, e, accId, seller, af);
+    if (useProduct(seller, af) || (productType && productType !== 'All')) {
+      const f = pWhere(s, e, accId, seller, af, productType);
       const sql = `SELECT SUM(${P_SALES}) as sales, SUM(${P_UNITS}) as units, 0 as orders,
         SUM(COALESCE(p.refunds,0)) as refunds, SUM(${P_ADS}) as advCost,
         0 as shippingCost, 0 as refundCost,
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(COALESCE(p.estimatedPayout,0)) as estPayout,
-        SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
+        SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit,
+        SUM(COALESCE(p.salesOrganic,0)) as salesOrganic,
+        SUM(COALESCE(p.salesSponsoredProducts,0)) as salesSP,
+        SUM(COALESCE(p.salesSponsoredDisplay,0)) as salesSD,
+        SUM(COALESCE(p.unitsOrganic,0)) as unitsOrganic,
+        SUM(COALESCE(p.unitsSponsoredProducts,0)) as unitsSP,
+        SUM(COALESCE(p.unitsSponsoredDisplay,0)) as unitsSD,
+        SUM(COALESCE(p.sponsoredProducts,0)) as adsSP,
+        SUM(COALESCE(p.sponsoredDisplay,0)) as adsSD,
+        SUM(COALESCE(p.sponsoredBrands,0)) as adsSB,
+        SUM(COALESCE(p.sponsoredBrandsVideo,0)) as adsSBV
         FROM seller_board_product p ${f.w}`;
       rows = await summaryLimiter(()=>qc(sql, f.p, 55000));
-      // Orders, shippingCost, refundCost not in product table — fetch from sales table (date+account filter only)
       try {
         const scf = scWhere(s, e, accId);
         const scRows = await qc(`SELECT SUM(COALESCE(sc.orders,0)) as orders,
@@ -600,13 +610,28 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(sc.sessions,0)) as sessions, SUM(COALESCE(sc.grossProfit,0)) as grossProfit
         FROM ${salesFrom()} ${f.w}`;
       rows = await summaryLimiter(()=>qc(sql, f.p, 55000));
-      // COGS from seller_board_product (not in sales tables)
+      // Also fetch SP/SD/SB breakdown from seller_board_product
       try {
-        let cw = 'WHERE p.date BETWEEN ? AND ?'; const cp = [s, e];
-        { const _ac=accIdClause('p',accId); cw+=_ac.w; cp.push(..._ac.p); }
-        const cr = await qc(`SELECT SUM(COALESCE(p.costOfGoods,0)) as cogs FROM seller_board_product p ${cw}`, cp, 30000);
-        cogsVal = parseFloat(cr[0]?.cogs) || 0;
-      } catch(ce) {}
+        let pw = 'WHERE p.date BETWEEN ? AND ?'; const pp = [s, e];
+        { const _ac=accIdClause('p',accId); pw+=_ac.w; pp.push(..._ac.p); }
+        const pbRows = await qc(`SELECT
+          SUM(COALESCE(p.salesOrganic,0)) as salesOrganic,
+          SUM(COALESCE(p.salesSponsoredProducts,0)) as salesSP,
+          SUM(COALESCE(p.salesSponsoredDisplay,0)) as salesSD,
+          SUM(COALESCE(p.unitsOrganic,0)) as unitsOrganic,
+          SUM(COALESCE(p.unitsSponsoredProducts,0)) as unitsSP,
+          SUM(COALESCE(p.unitsSponsoredDisplay,0)) as unitsSD,
+          SUM(COALESCE(p.sponsoredProducts,0)) as adsSP,
+          SUM(COALESCE(p.sponsoredDisplay,0)) as adsSD,
+          SUM(COALESCE(p.sponsoredBrands,0)) as adsSB,
+          SUM(COALESCE(p.sponsoredBrandsVideo,0)) as adsSBV,
+          SUM(COALESCE(p.costOfGoods,0)) as cogs
+          FROM seller_board_product p ${pw}`, pp, 30000);
+        if (pbRows[0] && rows[0]) {
+          Object.assign(rows[0], pbRows[0]);
+          cogsVal = parseFloat(pbRows[0].cogs)||0;
+        }
+      } catch(pe) {}
     }
     const r = rows[0] || {};
     const sales = parseFloat(r.sales)||0, np = parseFloat(r.netProfit)||0, cogs = parseFloat(r.cogs)||cogsVal;
@@ -619,6 +644,17 @@ app.get('/api/exec/summary', async (req, res) => {
       realAcos: sales>0 ? (Math.abs(parseFloat(r.advCost)||0)/sales*100) : 0,
       pctRefunds: (parseInt(r.orders)||0)>0 ? ((parseInt(r.refunds)||0)/parseInt(r.orders)*100) : 0,
       margin: sales>0 ? (np/sales*100) : 0,
+      // SP/SD/SB breakdown
+      salesOrganic: parseFloat(r.salesOrganic)||0,
+      salesSP: parseFloat(r.salesSP)||0,
+      salesSD: parseFloat(r.salesSD)||0,
+      unitsOrganic: parseInt(r.unitsOrganic)||0,
+      unitsSP: parseInt(r.unitsSP)||0,
+      unitsSD: parseInt(r.unitsSD)||0,
+      adsSP: Math.abs(parseFloat(r.adsSP)||0),
+      adsSD: Math.abs(parseFloat(r.adsSD)||0),
+      adsSB: Math.abs(parseFloat(r.adsSB)||0),
+      adsSBV: Math.abs(parseFloat(r.adsSBV)||0),
     });
   } catch (e) { console.error('exec/summary:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -626,12 +662,12 @@ app.get('/api/exec/summary', async (req, res) => {
 /* ═══════════ EXEC DAILY ═══════════ */
 app.get('/api/exec/daily', async (req, res) => {
   try {
-    const { start, end, store, seller, asin: af } = req.query;
+    const { start, end, store, seller, asin: af, productType } = req.query;
     const { s, e } = defDates(start, end);
     const accId = await storeToAccIds(store);
     let rows;
-    if (useProduct(seller, af)) {
-      const f = pWhere(s, e, accId, seller, af);
+    if (useProduct(seller, af) || (productType && productType !== 'All')) {
+      const f = pWhere(s, e, accId, seller, af, productType);
       rows = await qc(`SELECT p.date,
         SUM(${P_SALES}) as revenue,
         SUM(COALESCE(p.netProfit,0)) as netProfit,
@@ -664,7 +700,7 @@ app.get('/api/exec/daily', async (req, res) => {
 /* ═══════════ PRODUCT ASINS ═══════════ */
 app.get('/api/product/asins', async (req, res) => {
   try {
-    const { start, end, store, seller, asin: af } = req.query;
+    const { start, end, store, seller, asin: af, productType, niche } = req.query;
     const { s, e } = defDates(start, end);
     const accId = await storeToAccIds(store);
     const shopMap = await getShopMap();
@@ -672,7 +708,10 @@ app.get('/api/product/asins', async (req, res) => {
     const ac = accIdClause('p', accId); w += ac.w; params.push(...ac.p);
     if (seller && seller !== 'All') { w += ' AND p.seller = ?'; params.push(seller); }
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
+    if (productType && productType !== 'All') { w += ' AND a.productType = ?'; params.push(productType); }
+    if (niche && niche !== 'All') { w += ' AND a.seasonAndNiche = ?'; params.push(niche); }
     const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
+      a.productType, a.seasonAndNiche,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
@@ -680,6 +719,7 @@ app.get('/api/product/asins', async (req, res) => {
       AVG(CASE WHEN p.unitSessionPercentage > 0 THEN p.unitSessionPercentage END) as cr,
       CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
+      LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
@@ -688,6 +728,13 @@ app.get('/api/product/asins', async (req, res) => {
       const advCost = parseFloat(r.advCost)||0;
       const units = parseInt(r.units)||0;
       return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'',
+        productType: r.productType||'', niche: r.seasonAndNiche||'',
+        revenue: rev, netProfit: np, units,
+        margin: rev>0?Math.round(np/rev*1000)/10:0,
+        acos, roas: acos>0?Math.round(100/acos*100)/100:0,
+        cr, sessions: parseInt(r.sessions)||0,
+        advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
         revenue: rev, netProfit: np, units,
         margin: rev>0?Math.round(np/rev*1000)/10:0,
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
@@ -699,6 +746,23 @@ app.get('/api/product/asins', async (req, res) => {
 });
 
 /* ═══════════ PRODUCT ASIN DAILY (drill-down) ═══════════ */
+app.get('/api/product/filter-options', async (req, res) => {
+  try {
+    const { store } = req.query;
+    const accId = await storeToAccIds(store);
+    let w = 'WHERE p.productType IS NOT NULL AND p.productType != ""'; const p = [];
+    { const _ac=accIdClause('p',accId); w+=_ac.w; p.push(..._ac.p); }
+    const [ptRows, nicheRows] = await Promise.all([
+      qc(`SELECT DISTINCT p.productType FROM seller_board_product p ${w} ORDER BY p.productType`, p, 10000),
+      qc(`SELECT DISTINCT a.seasonAndNiche FROM asin a WHERE a.seasonAndNiche IS NOT NULL AND a.seasonAndNiche != '' ORDER BY a.seasonAndNiche`, [], 10000),
+    ]);
+    res.json({
+      productTypes: ptRows.map(r=>r.productType).filter(Boolean),
+      niches: nicheRows.map(r=>r.seasonAndNiche).filter(Boolean),
+    });
+  } catch(e) { res.json({ productTypes:[], niches:[] }); }
+});
+
 app.get('/api/product/asin-daily', async (req, res) => {
   try {
     const { start, end, asin } = req.query;
