@@ -795,6 +795,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           const prevNP=prevTile?.em?.netProfit||0;
           const salesChg=prevSales>0?((tileSales-prevSales)/prevSales*100):null;
           const npChg=prevNP!==0?((tileNP-prevNP)/Math.abs(prevNP)*100):null;
+          // compare period label for tooltip
+          const compareLabel=prevTile?`vs ${prevTile.dateLabel}`:'';
+          const TL=({children,tip})=><span title={tip} style={{borderBottom:'1px dashed '+t.textMuted+'88',cursor:'help'}}>{children}</span>;
+          const Chg=({v,cmp})=>v!=null?<span title={cmp} style={{fontSize:11,fontWeight:700,color:v>=0?t.green:t.red,cursor:cmp?'help':'default',textDecoration:cmp?'underline dotted':'none',textDecorationColor:t.textMuted}}>{v>=0?'+':''}{v.toFixed(1)}%</span>:null;
           return<div key={tile.id} style={{flex:1,minWidth:220,maxWidth:320,borderRight:ti<zoneATileData.length-1?'1px solid '+DIV:'none',display:'flex',flexDirection:'column'}}>
             {/* Color bar */}
             <div style={{height:4,background:tileColor,flexShrink:0}}/>
@@ -804,40 +808,40 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <div style={{fontSize:10,color:t.textMuted,marginBottom:8,lineHeight:1.4}}>{tile.dateLabel}</div>
               {/* Sales headline */}
               <div style={{marginBottom:8}}>
-                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Sales</div>
+                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Total revenue from all sales channels">Sales</TL></div>
                 <div style={{display:'flex',alignItems:'baseline',gap:8}}>
                   <div style={{fontSize:18,fontWeight:700,color:t.text}}>{$2(tileSales)}</div>
-                  {salesChg!=null&&<span style={{fontSize:11,fontWeight:700,color:salesChg>=0?t.green:t.red}}>{salesChg>=0?'+':''}{salesChg.toFixed(1)}%</span>}
+                  <Chg v={salesChg} cmp={compareLabel}/>
                 </div>
               </div>
               {/* Orders/Units + Refunds */}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Orders / Units</div>
+                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Orders = total number of orders placed. Units = total items ordered.">Orders / Units</TL></div>
                   <div style={numSmSt}>{N(tile.em?.orders||0)} / {N(tile.em?.units||0)}</div>
                 </div>
                 <div>
-                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Refunds</div>
+                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Number of refunded orders in this period">Refunds</TL></div>
                   <div style={{...numSmSt,color:(tile.em?.refunds||0)>5?t.orange:t.text}}>{N(tile.em?.refunds||0)}</div>
                 </div>
               </div>
               {/* Adv. cost + Est. payout */}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Adv. Cost</div>
+                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Total advertising spend (Sponsored Products, Brands, Display)">Adv. Cost</TL></div>
                   <div style={numSmSt}>{$2(Math.abs(tile.em?.advCost||0))}</div>
                 </div>
                 <div>
-                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Est. Payout</div>
+                  <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Estimated Amazon payout after fees, refunds and adjustments">Est. Payout</TL></div>
                   <div style={numSmSt}>{$2(tile.em?.estPayout||0)}</div>
                 </div>
               </div>
               {/* Net profit */}
               <div style={{paddingTop:6,borderTop:'1px solid '+DIV}}>
-                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Net Profit</div>
+                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}><TL tip="Revenue minus all costs: ads, COGS, Amazon fees, shipping, refunds">Net Profit</TL></div>
                 <div style={{display:'flex',alignItems:'baseline',gap:8}}>
                   <div style={{fontSize:15,fontWeight:700,color:tileNP>=0?t.green:t.red}}>{$2(tileNP)}</div>
-                  {npChg!=null&&<span style={{fontSize:11,fontWeight:700,color:npChg>=0?t.green:t.red}}>{npChg>=0?'+':''}{npChg.toFixed(1)}%</span>}
+                  <Chg v={npChg} cmp={compareLabel}/>
                 </div>
                 <div style={{fontSize:10,fontWeight:600,color:tileNP>=0?t.green:t.red}}>{tile.em?.margin!=null?((tile.em.margin||0).toFixed(1)+'%'):'—'} margin</div>
               </div>
