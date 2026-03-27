@@ -195,20 +195,56 @@ function PeriodBtns({onSelect,active,t,refDate}){
 }
 function ClearBtn({onClick,t}){return<button onClick={onClick} style={{padding:"4px 8px",borderRadius:6,border:"1px solid "+t.red,fontSize:10,cursor:"pointer",fontWeight:600,background:"transparent",color:t.red,whiteSpace:"nowrap"}}>✕ Clear</button>}
 const Sel=({value,onChange,options,label,t,renderLabel})=><select value={value} onChange={e=>onChange(e.target.value)} style={{background:t.card,color:value==="All"?t.textMuted:t.text,border:"1px solid "+(value==="All"?t.inputBorder:t.primary+"66"),borderRadius:10,padding:"7px 14px",fontSize:12,fontWeight:value==="All"?500:600,cursor:"pointer",transition:"all .15s"}}><option value="All">{label}</option>{options.map(o=><option key={o} value={o}>{renderLabel?renderLabel(o):o}</option>)}</select>;
-function AsinSel({value,onChange,options,label,t}){
-  const[open,setOpen]=useState(false);const[q,setQ]=useState("");const ref=useRef(null);const[hov,setHov]=useState(null);
-  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h)},[]);
-  const filtered=q?options.filter(o=>o.toLowerCase().includes(q.toLowerCase())):options;
-  return<div ref={ref} style={{position:"relative",display:"inline-block"}}><button onClick={()=>{setOpen(!open);setQ("")}} style={{background:t.card,color:value==="All"?t.textMuted:t.primary,border:"1px solid "+(value==="All"?t.inputBorder:t.primary),borderRadius:10,padding:"7px 14px",fontSize:13,fontWeight:value==="All"?500:700,cursor:"pointer",minWidth:120,textAlign:"left",transition:"all .15s"}}>{value==="All"?label:value} <span style={{fontSize:9,opacity:.5}}>▾</span></button>
-    {open&&<div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:999,background:t.card,border:"1px solid "+t.cardBorder,borderRadius:14,boxShadow:"0 12px 40px "+t.shadow,width:280,maxHeight:420,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{padding:"12px 12px 10px",borderBottom:"1px solid "+t.divider}}><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ASIN..." autoFocus style={{width:"100%",padding:"10px 14px",border:"2px solid "+t.inputBorder,borderRadius:10,fontSize:14,background:t.inputBg,color:t.text,outline:"none",boxSizing:"border-box",transition:"border .15s"}} onFocus={e=>e.target.style.borderColor=t.primary} onBlur={e=>e.target.style.borderColor=t.inputBorder}/></div>
-      <div style={{overflowY:"auto",flex:1,padding:"6px 6px"}}>
-        <div onClick={()=>{onChange("All");setOpen(false)}} onMouseEnter={()=>setHov("all")} onMouseLeave={()=>setHov(null)} style={{padding:"10px 14px",fontSize:14,cursor:"pointer",fontWeight:value==="All"?700:500,color:value==="All"?t.primary:t.text,background:value==="All"?t.primaryLight:hov==="all"?t.tableHover:"transparent",transition:"background .12s",borderRadius:8}}>{label}</div>
-        {filtered.length>0&&<div style={{padding:"8px 14px 4px",fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>{filtered.length} ASINs</div>}
-        {filtered.map(o=><div key={o} onClick={()=>{onChange(o);setOpen(false)}} onMouseEnter={()=>setHov(o)} onMouseLeave={()=>setHov(null)} style={{padding:"10px 14px",fontSize:14,fontWeight:value===o?700:500,color:value===o?t.primary:t.text,background:value===o?t.primaryLight:hov===o?t.tableHover:"transparent",cursor:"pointer",transition:"background .12s",borderRadius:8,letterSpacing:.2}}>{o}</div>)}
-        {filtered.length===0&&<div style={{padding:"20px 14px",fontSize:13,color:t.textMuted,textAlign:"center"}}>No ASINs found</div>}
+function AsinSel({value,onChange,onMultiChange,options,label,t}){
+  const[open,setOpen]=useState(false);const[q,setQ]=useState('');const ref=useRef(null);
+  const[sel,setSel]=useState(()=>value&&value!=='All'?[value]:[]);
+  useEffect(()=>{if(value==='All')setSel([]);},[value]);
+  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
+  const filtered=useMemo(()=>q?options.filter(o=>(o.asin||o).toLowerCase().includes(q.toLowerCase())):options,[options,q]);
+  const toggle=a=>{
+    const next=sel.includes(a)?sel.filter(x=>x!==a):[...sel,a];
+    setSel(next);
+    onChange(next.length===1?next[0]:'All');
+    if(onMultiChange)onMultiChange(next);
+  };
+  const clearAll=()=>{setSel([]);onChange('All');if(onMultiChange)onMultiChange([]);};
+  const btnLabel=sel.length===0?label:sel.length===1?sel[0]:`${sel.length} ASINs selected`;
+  const isActive=sel.length>0;
+  return<div ref={ref} style={{position:'relative',display:'inline-block'}}>
+    <button onClick={()=>{setOpen(!open);setQ('');}} style={{background:t.card,color:isActive?t.primary:t.textMuted,border:'1px solid '+(isActive?t.primary:t.inputBorder),borderRadius:10,padding:'7px 14px',fontSize:13,fontWeight:isActive?700:500,cursor:'pointer',minWidth:140,textAlign:'left',whiteSpace:'nowrap',transition:'all .15s'}}>
+      {btnLabel} <span style={{fontSize:9,opacity:.5}}>▾</span>
+    </button>
+    {open&&<div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:999,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:14,boxShadow:'0 12px 40px '+t.shadow,width:300,maxHeight:440,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{padding:'10px 12px',borderBottom:'1px solid '+t.divider,display:'flex',gap:8,alignItems:'center'}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ASIN..." autoFocus
+          style={{flex:1,padding:'8px 12px',border:'1.5px solid '+t.inputBorder,borderRadius:8,fontSize:13,background:t.inputBg,color:t.text,outline:'none'}}
+          onFocus={e=>e.target.style.borderColor=t.primary} onBlur={e=>e.target.style.borderColor=t.inputBorder}/>
+        {sel.length>0&&<button onClick={clearAll} style={{fontSize:10,color:t.red,background:'transparent',border:'none',cursor:'pointer',whiteSpace:'nowrap',fontWeight:700}}>Clear</button>}
       </div>
-      {options.length>10&&<div style={{padding:"8px 14px",borderTop:"1px solid "+t.divider,fontSize:11,color:t.textMuted,textAlign:"center",fontWeight:600}}>{options.length} total</div>}
+      <div style={{padding:'4px 8px',borderBottom:'1px solid '+t.divider}}>
+        <div onClick={clearAll} style={{padding:'8px 10px',fontSize:13,cursor:'pointer',fontWeight:sel.length===0?700:400,color:sel.length===0?t.primary:t.text,borderRadius:8,background:sel.length===0?t.primaryLight:'transparent'}}
+          onMouseEnter={e=>e.currentTarget.style.background=sel.length===0?t.primaryLight:t.tableHover}
+          onMouseLeave={e=>e.currentTarget.style.background=sel.length===0?t.primaryLight:'transparent'}>
+          {label} {sel.length===0&&'✓'}
+        </div>
+      </div>
+      <div style={{overflowY:'auto',flex:1,padding:'4px 8px'}}>
+        {filtered.length>0&&<div style={{padding:'4px 10px',fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase'}}>{filtered.length} ASINs</div>}
+        {filtered.map(o=>{const a=o.asin||o;const isSel=sel.includes(a);return<div key={a} onClick={()=>toggle(a)}
+          style={{padding:'7px 10px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',borderRadius:8,background:isSel?t.primaryLight:'transparent'}}
+          onMouseEnter={e=>e.currentTarget.style.background=isSel?t.primaryLight:t.tableHover}
+          onMouseLeave={e=>e.currentTarget.style.background=isSel?t.primaryLight:'transparent'}>
+          <div style={{width:15,height:15,borderRadius:4,border:'2px solid '+(isSel?t.primary:t.inputBorder),background:isSel?t.primary:'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {isSel&&<span style={{color:'#fff',fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+          </div>
+          <span style={{fontSize:13,fontWeight:isSel?700:400,color:isSel?t.primary:t.text,letterSpacing:.2}}>{a}</span>
+        </div>;})}
+        {filtered.length===0&&<div style={{padding:'20px',textAlign:'center',color:t.textMuted,fontSize:12}}>No ASINs found</div>}
+      </div>
+      <div style={{padding:'8px 14px',borderTop:'1px solid '+t.divider,fontSize:11,color:t.textMuted,display:'flex',justifyContent:'space-between'}}>
+        <span>{(options||[]).length} total</span>
+        {sel.length>0&&<span style={{color:t.primary,fontWeight:600}}>{sel.length} selected</span>}
+      </div>
     </div>}
   </div>;
 }
@@ -4013,6 +4049,7 @@ function Dashboard({authUser,onLogout}){
   const[selectedStores,setSelectedStores]=useState(()=>new Set());
   const[seller,setSeller]=useState("All");
   const[asinF,setAsinF]=useState("All");
+  const[asinSelList,setAsinSelList]=useState([]); // multi-select list, client-side filter
   const storeStr=Array.from(selectedStores).join(',') || 'All';
   const store=storeStr;
   const setStore=str=>setSelectedStores(str==='All'||!str?new Set():new Set(str.split(',').map(s=>s.trim()).filter(Boolean)));
@@ -4026,6 +4063,7 @@ function Dashboard({authUser,onLogout}){
   const[prevPeriod,setPrevPeriod]=useState({s:'',e:''});
   const[fDaily,setFDaily]=useState([]);
   const[fAsin,setFAsin]=useState([]);
+  const filteredFAsin=useMemo(()=>asinSelList.length>0?fAsin.filter(a=>asinSelList.includes(a.a)):fAsin,[fAsin,asinSelList]);
   const[fShopData,setFShopData]=useState([]);
   const[fSeller,setFSeller]=useState([]);
   const[invData,setInvData]=useState({});
@@ -4363,7 +4401,7 @@ function Dashboard({authUser,onLogout}){
           {pg==="plan"&&<><Sel value={planYear} onChange={setPlanYear} options={planYearOpts} label="All Years" t={t}/></>}
           {showShopFilter&&<Sel value={store} onChange={setStore} options={opts.stores} label={shopLabel} t={t}/>}
           {showSeller&&<Sel value={seller} onChange={setSeller} options={opts.sellers} label="All Sellers" t={t}/>}
-          {showAsin&&<AsinSel value={asinF} onChange={setAsinF} options={opts.asins} label="All ASINs" t={t}/>}
+          {showAsin&&<AsinSel value={asinF} onChange={v=>{setAsinF(v);}} onMultiChange={setAsinSelList} options={opts.asins} label="All ASINs" t={t}/>}
         </div>}
       </div>
 
@@ -4371,7 +4409,7 @@ function Dashboard({authUser,onLogout}){
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
         {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin}
-          fAsin={fAsin} fShop={fShopRev} fDaily={fDaily}
+          fAsin={filteredFAsin} fShop={fShopRev} fDaily={fDaily}
           em={{...em,...execDetail}} sd={sd} ed={ed} setSd={setSd} setEd={setEd}
           prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob}
           splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}
@@ -4388,11 +4426,11 @@ function Dashboard({authUser,onLogout}){
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
-        {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
+        {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={filteredFAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
         {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
-        {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={fAsin} em={em} monthPlanData={monthPlanState} monthlyLY={monthlyLYState} sd={sd} ed={ed}/>}
+        {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={filteredFAsin} em={em} monthPlanData={monthPlanState} monthlyLY={monthlyLYState} sd={sd} ed={ed}/>}
         <div style={{height:30}}/>
       </div>
     </div>
