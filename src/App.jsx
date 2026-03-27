@@ -32,6 +32,7 @@ const ZONE_A_PRESETS=[
   {key:'week',        label:'This week / Last week / 2 weeks ago / 3 weeks ago'},
   {key:'month',       label:'Month to date / Last month / 2 months ago / 3 months ago'},
   {key:'qtr',         label:'This quarter / Last quarter / 2 quarters ago / 3 quarters ago'},
+  {key:'custom',      label:'Custom range'},
 ];
 function getZoneAPeriods(presetKey, refDateStr){
   const ref=new Date((refDateStr||new Date().toISOString().slice(0,10))+'T12:00:00');
@@ -401,6 +402,7 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
 function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,pctChg,mob,onAsinClick,splyEm,dailyLY,shopExt,
   store,seller,setStore,setSeller,storeOpts,sellerOpts,onApplyZoneB,
   zoneATileData,setZoneATileData,zoneAPreset,setZoneAPreset,zoneALoading,selectedStores,setSelectedStores,
+  customStart,setCustomStart,customEnd,setCustomEnd,customCompare,setCustomCompare,
 }){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
@@ -727,13 +729,29 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <span style={{fontSize:9,color:'#f97316',flexShrink:0,transition:'transform .2s',transform:presetOpen?'rotate(180deg)':'none'}}>▾</span>
             </button>
             {presetOpen&&ReactDOM.createPortal(<div data-preset-dropdown="true" style={{position:'fixed',top:presetPos.top,left:presetPos.left,background:t.card,border:'1px solid '+BD,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.15)',zIndex:99990,overflow:'hidden',minWidth:430}}>
-              {ZONE_A_PRESETS.map(p=><div key={p.key} onClick={()=>{setZoneAPreset(p.key);setPresetOpen(false)}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',cursor:'pointer',fontSize:12,color:zoneAPreset===p.key?t.primary:S,borderBottom:'1px solid '+DIV,background:zoneAPreset===p.key?t.primaryGhost:'transparent',fontWeight:zoneAPreset===p.key?700:400,transition:'background .1s'}}
+              {ZONE_A_PRESETS.map(p=><div key={p.key} onClick={()=>{setZoneAPreset(p.key);setPresetOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',cursor:'pointer',fontSize:12,color:zoneAPreset===p.key?t.primary:S,borderBottom:'1px solid '+DIV,background:zoneAPreset===p.key?t.primaryGhost:'transparent',fontWeight:zoneAPreset===p.key?700:400,transition:'background .1s'}}
                 onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background=zoneAPreset===p.key?t.primaryGhost:'transparent'}>
                 <span style={{width:13,flexShrink:0,fontSize:11,color:t.primary}}>{zoneAPreset===p.key?'✓':''}</span>
                 {p.label}
               </div>)}
             </div>,document.body)}
           </div>
+          {/* Custom range date pickers */}
+          {zoneAPreset==='custom'&&<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>From</span>
+              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{padding:'5px 8px',borderRadius:7,border:'1px solid '+BD,background:t.card,color:t.text,fontSize:12,outline:'none'}}/>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <span style={{fontSize:11,color:t.textMuted,fontWeight:600}}>To</span>
+              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{padding:'5px 8px',borderRadius:7,border:'1px solid '+BD,background:t.card,color:t.text,fontSize:12,outline:'none'}}/>
+            </div>
+            <select value={customCompare} onChange={e=>setCustomCompare(e.target.value)} style={{padding:'5px 8px',borderRadius:7,border:'1px solid '+BD,background:t.card,color:t.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+              <option value="none">Do not compare</option>
+              <option value="prev">Compare with previous period</option>
+              <option value="lm">Compare with same period last year</option>
+            </select>
+          </div>}
           {/* Expand All / Collapse All button — Zone A */}
           <button onClick={()=>{
             const allIds=zoneATileData.map(tile=>tile.id);
@@ -3703,9 +3721,11 @@ function Dashboard({authUser,onLogout}){
 
   // ═══ ZONE A STATE ═══
   const[zoneAPreset,setZoneAPreset]=useState('tod_7_14_30');
-  // zoneAStore is derived from selectedStores (shared with Zone B)
   const[zoneATileData,setZoneATileData]=useState([]);
   const[zoneALoading,setZoneALoading]=useState(false);
+  const[customStart,setCustomStart]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().slice(0,10);});
+  const[customEnd,setCustomEnd]=useState(()=>new Date().toISOString().slice(0,10));
+  const[customCompare,setCustomCompare]=useState('none'); // 'none' | 'prev' | 'lm'
 
   const opts=useBidirectionalFilters(store,seller,asinF,masterList);
   // ═══ Favicon + Tab Title ═══
@@ -3841,6 +3861,7 @@ function Dashboard({authUser,onLogout}){
     if(!live||dbConnecting)return;
     let cancelled=false;
     const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
+    if(_preset==='custom')return; // custom range handled separately
     const periods=getZoneAPeriods(_preset, dbToday);
     if(!periods.length)return;
     setZoneALoading(true);
@@ -3857,6 +3878,41 @@ function Dashboard({authUser,onLogout}){
     });
     return()=>{cancelled=true};
   },[zoneAPreset,storeStr,live,dbConnecting]);
+
+  // ═══════════ ZONE A — CUSTOM RANGE FETCH ═══════════
+  useEffect(()=>{
+    if(!live||dbConnecting||zoneAPreset!=='custom')return;
+    if(!customStart||!customEnd)return;
+    let cancelled=false;
+    const storeParam=storeStr==='All'?undefined:storeStr;
+    const fmt=d=>{const dt=new Date(d+'T12:00:00');return MS[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();};
+    setZoneALoading(true);
+    setZoneATileData([]);
+    // Build periods: main + optional compare
+    const periods=[{id:'custom',label:'Custom range',start:customStart,end:customEnd,dateLabel:fmt(customStart)+' – '+fmt(customEnd)}];
+    if(customCompare==='prev'){
+      const days=Math.round((new Date(customEnd)-new Date(customStart))/86400000)+1;
+      const ps=new Date(customStart);ps.setDate(ps.getDate()-days);
+      const pe=new Date(customEnd);pe.setDate(pe.getDate()-days);
+      const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      periods.push({id:'custom_prev',label:'Previous period',start:fmtD(ps),end:fmtD(pe),dateLabel:fmt(fmtD(ps))+' – '+fmt(fmtD(pe))});
+    } else if(customCompare==='lm'){
+      const ps=new Date(customStart);ps.setFullYear(ps.getFullYear()-1);
+      const pe=new Date(customEnd);pe.setFullYear(pe.getFullYear()-1);
+      const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      periods.push({id:'custom_ly',label:'Same period last year',start:fmtD(ps),end:fmtD(pe),dateLabel:fmt(fmtD(ps))+' – '+fmt(fmtD(pe))});
+    }
+    Promise.allSettled(periods.map(p=>
+      api('exec/summary',{start:p.start,end:p.end,store:storeParam})
+        .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
+        .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
+    )).then(results=>{
+      if(cancelled)return;
+      setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:periods[0]));
+      setZoneALoading(false);
+    });
+    return()=>{cancelled=true};
+  },[zoneAPreset,customStart,customEnd,customCompare,storeStr,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
@@ -3999,6 +4055,9 @@ function Dashboard({authUser,onLogout}){
           onApplyZoneB={()=>setFetchTrigger(v=>v+1)}
           zoneATileData={zoneATileData} setZoneATileData={setZoneATileData} zoneAPreset={zoneAPreset} setZoneAPreset={setZoneAPreset}
           zoneALoading={zoneALoading}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd} setCustomEnd={setCustomEnd}
+          customCompare={customCompare} setCustomCompare={setCustomCompare}
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
