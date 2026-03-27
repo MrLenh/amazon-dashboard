@@ -416,6 +416,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const[groupBy,setGroupBy]=useState('ASIN');
   const[asinShopF,setAsinShopF]=useState('All');
   const[asinSellerF,setAsinSellerF]=useState('All');
+  const[asinBSortKey,setAsinBSortKey]=useState('r');
+  const[asinBSortDir,setAsinBSortDir]=useState(-1);
+  const sortAsinB=k=>{if(asinBSortKey===k)setAsinBSortDir(d=>-d);else{setAsinBSortKey(k);setAsinBSortDir(-1);}};
+  const sIcoB=k=>asinBSortKey===k?(asinBSortDir<0?' ↓':' ↑'):'';
   const[sortShop,setSortShop]=useState('Revenue');
   // ── chip-based Sellerboard Summary ──
   const[sbVisible,setSbVisible]=useState(['sales','orders','units','refunds','advCost','estPayout','netProfit']);
@@ -567,7 +571,13 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     let base=fAsin;
     if(asinShopF!=='All')base=base.filter(a=>a.b===asinShopF);
     if(asinSellerF!=='All')base=base.filter(a=>a.sl===asinSellerF);
-    if(groupBy==='ASIN')return base;
+    const sortFn=(a,b)=>{
+      const av=typeof a[asinBSortKey]==='string'?a[asinBSortKey]:( a[asinBSortKey]??0);
+      const bv=typeof b[asinBSortKey]==='string'?b[asinBSortKey]:( b[asinBSortKey]??0);
+      if(typeof av==='string')return asinBSortDir*(av.localeCompare(bv));
+      return asinBSortDir*(av<bv?-1:av>bv?1:0);
+    };
+    if(groupBy==='ASIN')return [...base].sort(sortFn);
     const map={};
     base.forEach(a=>{
       const key=groupBy==='Shop'?a.b:groupBy==='Seller'?a.sl:a.a;
@@ -578,8 +588,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       g.ro=g.ac>0?100/g.ac:0;
       g.cr=g._cr_sum/g._cnt;
     });
-    return Object.values(map).sort((a,b)=>b.r-a.r);
-  },[fAsin,groupBy,asinShopF,asinSellerF]);
+    return Object.values(map).sort(sortFn);
+  },[fAsin,groupBy,asinShopF,asinSellerF,asinBSortKey,asinBSortDir]);
 
 
 
@@ -1283,8 +1293,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
-              <th style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>ROAS</th>
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend'].map((h,i)=>{
+              const keyMap={Revenue:'r','Net Profit':'n','Margin%':'m',Units:'u','CR%':'cr','ACoS':'ac','TACoS':'tacos','Profit/Unit':'ppu','Avg Price':'ap','Ads Spend':'adv',Shop:'b',[groupBy]:'a'};
+              const k=keyMap[h];
+              const active=k&&asinBSortKey===k;
+              return<th key={i} onClick={k?()=>sortAsinB(k):undefined} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:active?t.primary:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',cursor:k?'pointer':'default',userSelect:'none'}}>
+                {h}{active?sIcoB(k):''}
+              </th>;
+            })}
+              <th style={{padding:'9px 12px',textAlign:'right',fontSize:10,fontWeight:700,color:asinBSortKey==='ro'?t.primary:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}} onClick={()=>sortAsinB('ro')}>ROAS{sIcoB('ro')}</th>
           </tr></thead>
           <tbody>{groupedAsins.map((r,i)=>{
             const isHL=highlightedAsin===r.a;
