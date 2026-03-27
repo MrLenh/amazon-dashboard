@@ -926,7 +926,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <input type="date" value={ed} onChange={e=>setEd(e.target.value)} style={{...inputStyle,width:130}}/>
           {/* Quick date range button — Amazon Ads style */}
           {(()=>{
-            const now=new Date();
+            // Use dbToday (latest date in DB) as reference — accounts for Sellerboard delay + timezone
+            const now=dbToday?new Date(dbToday+'T12:00:00'):new Date();
             const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             const soM=d=>new Date(d.getFullYear(),d.getMonth(),1);
             const eoM=d=>new Date(d.getFullYear(),d.getMonth()+1,0);
