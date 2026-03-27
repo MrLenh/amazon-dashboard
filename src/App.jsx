@@ -102,13 +102,14 @@ function getZoneAPeriods(presetKey, refDateStr){
       const m0s=soMonth(realNow);
       const lyStart=new Date(m0s);lyStart.setFullYear(lyStart.getFullYear()-1);
       const lyEnd=new Date(ref);lyEnd.setFullYear(lyEnd.getFullYear()-1);
-      const ly7s=sub(lyEnd,6);const ly30s=sub(lyEnd,29);
+      const ly7s=sub(lyEnd,6);
       return[
-        {id:'mtd',    label:'This month',          start:fmt(m0s),        end:today,        dateLabel:rangeLabel(fmt(m0s),today)},
-        {id:'mtd_ly', label:'Same period LY',      start:fmt(lyStart),    end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(lyStart),fmt(lyEnd))+' (LY)'},
-        {id:'7d',     label:'Last 7 days',          start:fmt(sub(ref,6)), end:today,        dateLabel:rangeLabel(fmt(sub(ref,6)),today)},
-        {id:'7d_ly',  label:'Same 7 days LY',       start:fmt(ly7s),       end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(ly7s),fmt(lyEnd))+' (LY)'},
+        {id:'mtd',    label:'This month',     start:fmt(m0s),        end:today,        dateLabel:rangeLabel(fmt(m0s),today)},
+        {id:'mtd_ly', label:'Same period LY', start:fmt(lyStart),    end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(lyStart),fmt(lyEnd))+' (LY)'},
+        {id:'7d',     label:'Last 7 days',    start:fmt(sub(ref,6)), end:today,        dateLabel:rangeLabel(fmt(sub(ref,6)),today)},
+        {id:'7d_ly',  label:'Same 7 days LY', start:fmt(ly7s),       end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(ly7s),fmt(lyEnd))+' (LY)'},
       ];}
+    case 'qtr':{
       const tqs=soQ(ref);const tqe=eoQ(ref);
       const lq=sub(tqs,1);const lqs=soQ(lq);const lqe=eoQ(lq);
       const q2=sub(lqs,1);const q2s=soQ(q2);const q2e=eoQ(q2);
@@ -120,7 +121,7 @@ function getZoneAPeriods(presetKey, refDateStr){
         {id:'2q', label:'2 quarters ago', start:fmt(q2s), end:fmt(q2e), dateLabel:qLabel(q2s)},
         {id:'3q', label:'3 quarters ago', start:fmt(q3s), end:fmt(q3e), dateLabel:qLabel(q3s)},
       ];}
-    case 'yoy':{
+    case 'yoy_month':{
       const m0s=soMonth(realNow);const m0e=eoMonth(realNow);
       const ly0s=new Date(m0s);ly0s.setFullYear(ly0s.getFullYear()-1);
       const ly0e=new Date(m0e);ly0e.setFullYear(ly0e.getFullYear()-1);
