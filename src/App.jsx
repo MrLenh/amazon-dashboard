@@ -2768,10 +2768,57 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick}){
   // Detect seller group boundaries for visual separator
   const sellerBreaks=useMemo(()=>{const s=new Set();asinData.forEach((r,i)=>{if(i>0&&r.sl!==asinData[i-1].sl)s.add(i);});return s;},[asinData]);
   const noActuals=useMemo(()=>{const raw=asinPlanBkData||[];return raw.length>0&&raw.every(r=>!r.ga&&!r.ra&&!r.aa&&!r.ua);},[asinPlanBkData]);
+  const[teamTrendMetrics,setTeamTrendMetrics]=useState({revenue:true,netProfit:false,advCost:false,units:false,cr:false,tacos:false,roas:false,acos:false});
+  const teamChartData=useMemo(()=>fDaily.map(d=>({...d,
+    advCost:Math.abs(d.advCost||0),
+    cr:d.sessions>0?(d.units/d.sessions*100):0,
+    tacos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0,
+    roas:Math.abs(d.advCost||0)>0?(d.revenue/Math.abs(d.advCost||0)):0,
+    acos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0,
+  })),[fDaily]);
   return<div>
-    {noActuals&&<div style={{padding:"10px 14px",marginBottom:12,borderRadius:8,background:t.orange+"18",border:"1px solid "+t.orange+"44",fontSize:12,color:t.orange}}>⚠️ Actuals data = $0 — API may have failed or is still loading. Check browser console (F12) for errors.</div>}
+    {noActuals&&<div style={{padding:"10px 14px",marginBottom:12,borderRadius:8,background:t.orange+"18",border:"1px solid "+t.orange+"44",fontSize:12,color:t.orange}}>Actuals data = $0 — API may have failed or is still loading.</div>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:16}}><KpiCard title="Total Revenue" value={$(fSeller.reduce((s,x)=>s+x.r,0))} icon="" t={t} tip={TIPS.teamRev}/><KpiCard title="Total GP" value={$(fSeller.reduce((s,x)=>s+x.n,0))} icon="" t={t} tip={TIPS.teamNP}/><KpiCard title="Avg Margin" value={(fSeller.length?(fSeller.reduce((s,x)=>s+x.m,0)/fSeller.length).toFixed(2):0)+"%"} icon="" t={t} tip={TIPS.teamMargin}/></div>
-    <Sec title="Revenue Trend" icon="" t={t}><TrendChart data={fDaily} t={t} keys={[{dk:"revenue",n:"Revenue",c:t.primary,g:"url(#gRv)"}]}/></Sec>
+    <Sec title="Daily Performance Trend" icon="" t={t}>
+      <Cd t={t}>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+          {[{k:'revenue',l:'Revenue',c:'#2563EB',type:'bar'},{k:'netProfit',l:'Net Profit',c:'#16A34A',type:'bar'},
+            {k:'advCost',l:'Ads',c:'#EA580C',type:'line'},{k:'units',l:'Units',c:'#0891B2',type:'bar'},
+            {k:'cr',l:'CR%',c:'#7C3AED',type:'line'},{k:'tacos',l:'TACoS',c:'#B45309',type:'line'},
+            {k:'roas',l:'ROAS',c:'#DB2777',type:'line'},{k:'acos',l:'ACoS',c:'#DC2626',type:'line'},
+          ].map(m=><button key={m.k} onClick={()=>setTeamTrendMetrics(p=>({...p,[m.k]:!p[m.k]}))}
+            style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(teamTrendMetrics[m.k]?m.c:t.inputBorder),background:teamTrendMetrics[m.k]?m.c+'18':'transparent',color:teamTrendMetrics[m.k]?m.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+            {m.l}
+          </button>)}
+        </div>
+        {(()=>{
+          const pctMetrics=['cr','tacos','acos'];
+          const roasMetrics=['roas'];
+          const hasPct=(['cr','tacos','acos']).some(k=>teamTrendMetrics[k]);
+          const hasRoas=teamTrendMetrics.roas&&!hasPct;
+          const METRICS=[{k:'revenue',l:'Revenue',c:'#2563EB',type:'bar'},{k:'netProfit',l:'Net Profit',c:'#16A34A',type:'bar'},
+            {k:'advCost',l:'Ads',c:'#EA580C',type:'line'},{k:'units',l:'Units',c:'#0891B2',type:'bar'},
+            {k:'cr',l:'CR%',c:'#7C3AED',type:'line'},{k:'tacos',l:'TACoS',c:'#B45309',type:'line'},
+            {k:'roas',l:'ROAS',c:'#DB2777',type:'line'},{k:'acos',l:'ACoS',c:'#DC2626',type:'line'},
+          ];
+          return<ResponsiveContainer width="100%" height={240}>
+            <ComposedChart data={teamChartData} margin={{bottom:8}}>
+              <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
+              <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor(teamChartData.length/8))}/>
+              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+              {(hasPct||hasRoas)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>hasPct?v.toFixed(1)+'%':v.toFixed(1)+'x'}/>}
+              <Tooltip content={<CT t={t}/>}/>
+              <Legend wrapperStyle={{fontSize:10}}/>
+              {METRICS.filter(m=>teamTrendMetrics[m.k]).map(m=>
+                m.type==='bar'
+                  ?<Bar key={m.k} yAxisId="l" dataKey={m.k} name={m.l} fill={m.c} radius={[3,3,0,0]}/>
+                  :<Line key={m.k} yAxisId={pctMetrics.includes(m.k)||roasMetrics.includes(m.k)?'r':'l'} type="monotone" dataKey={m.k} name={m.l} stroke={m.c} strokeWidth={2} dot={false}/>
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>;
+        })()}
+      </Cd>
+    </Sec>
     <Sec title="Seller Performance (A / P / Gap)" icon="" t={t} action={<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:10,color:t.textMuted}}>Month:</span><Sel value={teamMonth} onChange={setTeamMonth} options={MS} label="All Months" t={t}/></div>}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead><tr>{THDSL.map((h,i)=><th key={i} style={{position:"sticky",top:0,zIndex:2,padding:"11px 14px",textAlign:i===0?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?80:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{sellerSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={{transition:"background .1s"}}><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.sl}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600,color:mC(r.margin,t)}}>{r.margin.toFixed(2)}%</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600}}>{r.cnt}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / Plan / <span style={{color:t.green}}>Gap</span> · Stock Value = current snapshot · Ads: lower = better</div></div></Sec>
     {asinData.length>0&&<Sec title="ASIN Detail by Seller (A / P / Gap)" icon="" t={t}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:520,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead style={{position:"sticky",top:0,zIndex:2}}><tr>{THDASIN.map((h,i)=><th key={i} style={{padding:"11px 14px",textAlign:i<=2?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i<=2?70:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{asinData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={sellerBreaks.has(i)?{borderTop:"2px solid "+t.divider}:{transition:"background .1s"}}><td style={{padding:"11px 14px",fontSize:13,fontWeight:600,letterSpacing:.3,borderBottom:"1px solid "+t.divider,color:t.textSec}}><AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/></td><td style={{padding:"11px 14px",fontWeight:600,borderBottom:"1px solid "+t.divider,fontSize:11.5,color:t.primary}}>{r.sl||"—"}</td><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.br}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider,background:t.card}}>{asinData.length} ASINs · Grouped by seller · Stock Value = current snapshot</div></div></Sec>}
     <div style={{marginTop:14}}><Alerts t={t} alerts={genSellerAlerts(fSeller,t)}/></div>
