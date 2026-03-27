@@ -201,7 +201,7 @@ const P_ADS    = 'COALESCE(p.sponsoredProducts,0)+COALESCE(p.sponsoredDisplay,0)
 function pWhere(sd, ed, accIds, seller, af) {
   let w = 'WHERE p.date BETWEEN ? AND ?'; const p = [sd, ed];
   const ac = accIdClause('p', accIds); w += ac.w; p.push(...ac.p);
-  if (seller && seller !== 'All') { w += ' AND a.seller = ?'; p.push(seller); }
+  if (seller && seller !== 'All') { w += ' AND p.seller = ?'; p.push(seller); }
   if (af && af !== 'All') { w += ' AND p.asin = ?'; p.push(af); }
   return { w, p };
 }
@@ -564,7 +564,7 @@ app.get('/api/exec/summary', async (req, res) => {
         SUM(COALESCE(p.amazonFees,0)) as amazonFees, SUM(COALESCE(p.costOfGoods,0)) as cogs,
         SUM(COALESCE(p.netProfit,0)) as netProfit, SUM(COALESCE(p.estimatedPayout,0)) as estPayout,
         SUM(COALESCE(p.sessions,0)) as sessions, SUM(COALESCE(p.grossProfit,0)) as grossProfit
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w}`;
+        FROM seller_board_product p ${f.w}`;
       rows = await summaryLimiter(()=>qc(sql, f.p, 55000));
       // Orders, shippingCost, refundCost not in product table — fetch from sales table (date+account filter only)
       try {
@@ -626,7 +626,7 @@ app.get('/api/exec/daily', async (req, res) => {
         SUM(${P_UNITS}) as units,
         SUM(ABS(COALESCE(p.sponsoredProducts,0))+ABS(COALESCE(p.sponsoredBrands,0))+ABS(COALESCE(p.sponsoredBrandsVideo,0))+ABS(COALESCE(p.sponsoredDisplay,0))) as advCost,
         SUM(COALESCE(p.sessions,0)) as sessions
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
+        FROM seller_board_product p ${f.w} GROUP BY p.date ORDER BY p.date`, f.p, 45000);
     } else {
       const f = scWhere(s, e, accId);
       rows = await qc(`SELECT sc.date,
@@ -736,7 +736,7 @@ app.get('/api/shops', async (req, res) => {
       ? (()=>{ const f=pWhere(s,e,accId,seller,af);
           return qc(`SELECT p.accountId, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
             SUM(${P_UNITS}) as units, 0 as orders
-            FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p); })()
+            FROM seller_board_product p ${f.w} GROUP BY p.accountId ORDER BY revenue DESC`, f.p); })()
       : (()=>{ const f=scWhere(s,e,accId);
           return qc(`SELECT sc.accountId, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
             SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders
@@ -1463,7 +1463,7 @@ app.get('/api/ops/daily', async (req, res) => {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units, 0 as orders, SUM(${P_ADS}) as adSpend
-        FROM seller_board_product p LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci=a.asin ${f.w} GROUP BY p.date ORDER BY p.date DESC LIMIT 60`, f.p);
+        FROM seller_board_product p ${f.w} GROUP BY p.date ORDER BY p.date DESC LIMIT 60`, f.p);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
