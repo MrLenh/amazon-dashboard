@@ -171,6 +171,18 @@ function accIdClauseRaw(accIds) {
   return { w: ` AND accountId IN (${accIds.map(()=>'?').join(',')})`, p: accIds };
 }
 
+// Get ASIN list for seller filter (used by inventory endpoints)
+async function getSellerAsins(seller, accId) {
+  if (!seller || seller === 'All') return null;
+  try {
+    let w = 'WHERE p.seller = ?'; const p = [seller];
+    const ac = accIdClauseRaw(accId); w += ac.w; p.push(...ac.p);
+    const rows = await q(`SELECT DISTINCT asin FROM seller_board_product p ${w}`, p, 15000);
+    return rows.map(r => r.asin);
+  } catch(e) { return null; }
+}
+
+
 // Concurrency limiter — at most N simultaneous heavy queries
 function makeLimiter(n) {
   let running = 0; const queue = [];
@@ -836,9 +848,17 @@ app.get('/api/team', async (req, res) => {
 /* ═══════════ INVENTORY ═══════════ */
 app.get('/api/inventory/snapshot', async (req, res) => {
   try {
-    const accId = await storeToAccIds(req.query.store);
+    const { store, seller } = req.query;
+    const accId = await storeToAccIds(store);
     let extra = ''; const params = [];
     { const _ac=accIdClause('f',accId); extra=_ac.w; params.push(..._ac.p); }
+    // Seller filter via ASIN list
+    const sellerAsins = await getSellerAsins(seller, accId);
+    if (sellerAsins) {
+      if (sellerAsins.length === 0) return res.json({fbaStock:0,availableInv:0,reserved:0,inbound:0,criticalSkus:0,avgDaysOfSupply:0,age0_90:0,age91_180:0,age181_270:0,age271_365:0,age365plus:0,ageCnt0:0,ageCnt91:0,ageCnt181:0,ageCnt271:0,ageCnt365:0,storageFee:0,avgSellThrough:0});
+      extra += ` AND f.asin IN (${sellerAsins.map(()=>'?').join(',')})`;
+      params.push(...sellerAsins);
+    }
 
     // FBA Stock from seller_board_stock (snapshot table, no date column)
     let fbaFromStock = 0;
@@ -988,10 +1008,17 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
 
 app.get('/api/inventory/by-shop', async (req, res) => {
   try {
+    const { store, seller } = req.query;
     const shopMap = await getShopMap();
-    const accId = await storeToAccIds(req.query.store);
+    const accId = await storeToAccIds(store);
     let accFilter = ''; const accParams = [];
     { const _ac=accIdClauseRaw(accId); accFilter=_ac.w; accParams.push(..._ac.p); }
+    // Seller filter
+    const sellerAsins = await getSellerAsins(seller, accId);
+    if (sellerAsins) {
+      const asinIn = sellerAsins.length > 0 ? ` AND asin IN (${sellerAsins.map(()=>'?').join(',')})` : ' AND 1=0';
+      accFilter += asinIn; accParams.push(...sellerAsins);
+    }
     // Separate qualified filter for JOIN queries on fba_iventory_planning (alias f)
     const { w: invFilter, p: invParams } = accIdClause('f', accId);
 
