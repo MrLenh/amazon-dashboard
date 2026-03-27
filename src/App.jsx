@@ -771,14 +771,26 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           const dr=isOpen&&tile.detail!==null?buildDetailRows(tile.em,tile.detail||{}):null;
           const expRows=tileExpandedRows[tile.id]||new Set();
           const loadingDetail=isOpen&&tile.detail===null&&!tileErr;
+          // % change vs previous tile
+          const prevTile=ti>0?zoneATileData[ti-1]:null;
+          const prevSales=prevTile?.em?.sales||0;
+          const prevNP=prevTile?.em?.netProfit||0;
+          const salesChg=prevSales>0?((tileSales-prevSales)/prevSales*100):null;
+          const npChg=prevNP!==0?((tileNP-prevNP)/Math.abs(prevNP)*100):null;
           return<div key={tile.id} style={{flex:1,minWidth:220,maxWidth:320,borderRight:ti<zoneATileData.length-1?'1px solid '+DIV:'none',display:'flex',flexDirection:'column'}}>
             {/* Color bar */}
             <div style={{height:4,background:tileColor,flexShrink:0}}/>
             {/* Tile summary */}
             <div style={{padding:'14px 14px 10px',display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:1}}>{tile.label}</div>
-              <div style={{fontSize:10,color:t.textMuted,marginBottom:10,lineHeight:1.4}}>
-                {tile.dateLabel}
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:8,lineHeight:1.4}}>{tile.dateLabel}</div>
+              {/* Sales headline */}
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Sales</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+                  <div style={{fontSize:18,fontWeight:700,color:t.text}}>{$2(tileSales)}</div>
+                  {salesChg!=null&&<span style={{fontSize:11,fontWeight:700,color:salesChg>=0?t.green:t.red}}>{salesChg>=0?'+':''}{salesChg.toFixed(1)}%</span>}
+                </div>
               </div>
               {/* Orders/Units + Refunds */}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
@@ -805,7 +817,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               {/* Net profit */}
               <div style={{paddingTop:6,borderTop:'1px solid '+DIV}}>
                 <div style={{fontSize:9,color:t.textMuted,textTransform:'uppercase',fontWeight:700,letterSpacing:.4,marginBottom:2}}>Net Profit</div>
-                <div style={{fontSize:15,fontWeight:700,color:tileNP>=0?t.green:t.red}}>{$2(tileNP)}</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+                  <div style={{fontSize:15,fontWeight:700,color:tileNP>=0?t.green:t.red}}>{$2(tileNP)}</div>
+                  {npChg!=null&&<span style={{fontSize:11,fontWeight:700,color:npChg>=0?t.green:t.red}}>{npChg>=0?'+':''}{npChg.toFixed(1)}%</span>}
+                </div>
                 <div style={{fontSize:10,fontWeight:600,color:tileNP>=0?t.green:t.red}}>{tile.em?.margin!=null?((tile.em.margin||0).toFixed(1)+'%'):'—'} margin</div>
               </div>
             </div>
@@ -1319,6 +1334,10 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
     {(()=>{
       const doh=Math.round(d.avgDaysOfSupply||0);
       const crit=d.criticalSkus||0;
+      // Use latest month from Storage Fee History (same source as the table below)
+      const latestFeeMonth=feeHist.length>0?[...feeHist].sort((a,b)=>b.month.localeCompare(a.month))[0]:null;
+      const fee=latestFeeMonth?.fee||d.storageFee||0;
+      const feeLabel=latestFeeMonth?`${MS[parseInt(latestFeeMonth.month.split('-')[1])-1]} ${latestFeeMonth.month.split('-')[0]}`:'per month';
       // cols: [label, value, color, tip, sub, flex-weight]
       const metrics=[
         {label:"FBA Stock",     value:N(d.fbaStock||0),     color:t.primary,                          tip:TIPS.fbaStock,    sub:"total units",    w:1.4},
@@ -1327,7 +1346,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
         {label:"Inbound",       value:N(d.inbound||0),      color:t.blue,                             tip:TIPS.invInbound,  sub:"all stages",     w:1},
         {label:"Critical SKUs", value:N(crit),              color:crit>0?t.red:t.green,               tip:TIPS.invCritical, sub:crit>0?"need restock":"all healthy", w:1.1},
         {label:"Days of Supply",value:doh>0?doh+"d":"—",    color:doh>0&&doh<30?t.red:doh<60?t.orange:t.green, tip:TIPS.invDaysSupply, sub:doh<30?"restock soon":doh<60?"monitor":"healthy", w:1.2},
-        {label:"Storage Fee",   value:$2(fee),              color:fee>10000?t.red:fee>5000?t.orange:t.text, tip:TIPS.storageFee, sub:"per month", w:1.5},
+        {label:"Storage Fee",   value:$2(fee),              color:fee>10000?t.red:fee>5000?t.orange:t.text, tip:"Actual FBA storage fee. Source: seller_board_product → fbaStorageFee (last snapshot per ASIN per month)", sub:feeLabel, w:1.5},
       ];
       const totalW=metrics.reduce((s,m)=>s+m.w,0);
       return<div style={{display:"flex",gap:0,marginBottom:16,background:t.card,borderRadius:16,border:"1px solid "+t.cardBorder,overflow:"hidden",boxShadow:"0 2px 12px "+t.shadow}}>
