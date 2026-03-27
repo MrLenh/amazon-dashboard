@@ -29,9 +29,13 @@ const TIPS={sales:"Total revenue from all sales",units:"Total units sold",refund
 const ZONE_A_PRESETS=[
   {key:'tod_7_14_30', label:'Today / Yesterday / 7 days / 14 days / 30 days'},
   {key:'tod_yd_mtd',  label:'Today / Yesterday / Month to date / This month (forecast) / Last month'},
+  {key:'tod_yd_2_3',  label:'Today / Yesterday / 2 days ago / 3 days ago'},
+  {key:'tod_yd_7_8',  label:'Today / Yesterday / 7 days ago / 8 days ago'},
   {key:'week',        label:'This week / Last week / 2 weeks ago / 3 weeks ago'},
   {key:'month',       label:'Month to date / Last month / 2 months ago / 3 months ago'},
   {key:'qtr',         label:'This quarter / Last quarter / 2 quarters ago / 3 quarters ago'},
+  {key:'yoy',         label:'This month vs Same month last year (YoY)'},
+  {key:'yoy_q',       label:'This quarter vs Same quarter last year (YoY)'},
   {key:'custom',      label:'Custom range'},
 ];
 function getZoneAPeriods(presetKey, refDateStr){
@@ -81,7 +85,30 @@ function getZoneAPeriods(presetKey, refDateStr){
         {id:'2m',  label:'2 months ago',  start:fmt(m2s),  end:fmt(m2e), dateLabel:MS[m2s.getMonth()]+' '+m2s.getFullYear()},
         {id:'3m',  label:'3 months ago',  start:fmt(m3s),  end:fmt(m3e), dateLabel:MS[m3s.getMonth()]+' '+m3s.getFullYear()},
       ];}
-    case 'qtr':{
+    case 'tod_yd_2_3': return[
+      {id:'today', label:'Today',      start:today,          end:today,          dateLabel:fmtLabel(ref)},
+      {id:'yday',  label:'Yesterday',  start:yday,           end:yday,           dateLabel:fmtLabel(sub(ref,1))},
+      {id:'2d',    label:'2 days ago', start:fmt(sub(ref,2)),end:fmt(sub(ref,2)),dateLabel:fmtLabel(sub(ref,2))},
+      {id:'3d',    label:'3 days ago', start:fmt(sub(ref,3)),end:fmt(sub(ref,3)),dateLabel:fmtLabel(sub(ref,3))},
+    ];
+    case 'tod_yd_7_8': return[
+      {id:'today', label:'Today',      start:today,          end:today,          dateLabel:fmtLabel(ref)},
+      {id:'yday',  label:'Yesterday',  start:yday,           end:yday,           dateLabel:fmtLabel(sub(ref,1))},
+      {id:'7d',    label:'7 days ago', start:fmt(sub(ref,7)),end:fmt(sub(ref,7)),dateLabel:fmtLabel(sub(ref,7))},
+      {id:'8d',    label:'8 days ago', start:fmt(sub(ref,8)),end:fmt(sub(ref,8)),dateLabel:fmtLabel(sub(ref,8))},
+    ];
+    case 'yoy':{
+      // Current period = MTD, plus same period last year
+      const m0s=soMonth(realNow);
+      const lyStart=new Date(m0s);lyStart.setFullYear(lyStart.getFullYear()-1);
+      const lyEnd=new Date(ref);lyEnd.setFullYear(lyEnd.getFullYear()-1);
+      const ly7s=sub(lyEnd,6);const ly30s=sub(lyEnd,29);
+      return[
+        {id:'mtd',    label:'This month',          start:fmt(m0s),        end:today,        dateLabel:rangeLabel(fmt(m0s),today)},
+        {id:'mtd_ly', label:'Same period LY',      start:fmt(lyStart),    end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(lyStart),fmt(lyEnd))+' (LY)'},
+        {id:'7d',     label:'Last 7 days',          start:fmt(sub(ref,6)), end:today,        dateLabel:rangeLabel(fmt(sub(ref,6)),today)},
+        {id:'7d_ly',  label:'Same 7 days LY',       start:fmt(ly7s),       end:fmt(lyEnd),   dateLabel:rangeLabel(fmt(ly7s),fmt(lyEnd))+' (LY)'},
+      ];}
       const tqs=soQ(ref);const tqe=eoQ(ref);
       const lq=sub(tqs,1);const lqs=soQ(lq);const lqe=eoQ(lq);
       const q2=sub(lqs,1);const q2s=soQ(q2);const q2e=eoQ(q2);
@@ -92,6 +119,23 @@ function getZoneAPeriods(presetKey, refDateStr){
         {id:'lq', label:'Last quarter',   start:fmt(lqs), end:fmt(lqe), dateLabel:qLabel(lqs)},
         {id:'2q', label:'2 quarters ago', start:fmt(q2s), end:fmt(q2e), dateLabel:qLabel(q2s)},
         {id:'3q', label:'3 quarters ago', start:fmt(q3s), end:fmt(q3e), dateLabel:qLabel(q3s)},
+      ];}
+    case 'yoy':{
+      const m0s=soMonth(realNow);const m0e=eoMonth(realNow);
+      const ly0s=new Date(m0s);ly0s.setFullYear(ly0s.getFullYear()-1);
+      const ly0e=new Date(m0e);ly0e.setFullYear(ly0e.getFullYear()-1);
+      return[
+        {id:'ytd_cur', label:MS[m0s.getMonth()]+' '+m0s.getFullYear(),   start:fmt(m0s),  end:today,      dateLabel:rangeLabel(fmt(m0s),today)+' (this year)'},
+        {id:'ytd_ly',  label:MS[ly0s.getMonth()]+' '+ly0s.getFullYear(), start:fmt(ly0s), end:fmt(ly0e),  dateLabel:rangeLabel(fmt(ly0s),fmt(ly0e))+' (last year)'},
+      ];}
+    case 'yoy_q':{
+      const tqs=soQ(realNow);const tqe=eoQ(realNow);
+      const lyqs=new Date(tqs);lyqs.setFullYear(lyqs.getFullYear()-1);
+      const lyqe=new Date(tqe);lyqe.setFullYear(lyqe.getFullYear()-1);
+      const qLabel=d=>`Q${Math.floor(d.getMonth()/3)+1} ${d.getFullYear()}`;
+      return[
+        {id:'yoy_q_cur', label:qLabel(tqs)+' (This year)',  start:fmt(tqs),  end:today,      dateLabel:qLabel(tqs)+' vs last year'},
+        {id:'yoy_q_ly',  label:qLabel(lyqs)+' (Last year)', start:fmt(lyqs), end:fmt(lyqe),  dateLabel:qLabel(lyqs)},
       ];}
     default: return[];
   }
@@ -655,6 +699,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
 
   /* ═══ ZONE A — TILE DRAWER STATE ═══ */
   const[openTiles,setOpenTiles]=useState(new Set());
+  const[zoneAView,setZoneAView]=useState('tiles'); // 'tiles' | 'table'
   const[tileExpandedRows,setTileExpandedRows]=useState({});
   const[tileErrors,setTileErrors]=useState({});
   const toggleTile=(id,tile)=>{
@@ -789,6 +834,12 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           }} style={{display:'flex',alignItems:'center',gap:5,background:openTiles.size>0?'#f97316':t.card,border:'1.5px solid #f97316',borderRadius:9,padding:'6px 12px',fontSize:11,fontWeight:700,color:openTiles.size>0?'#fff':'#c2410c',cursor:'pointer',transition:'all .15s',flexShrink:0}}>
             Detail metrics <span style={{fontSize:10,transition:'transform .2s',display:'inline-block',transform:openTiles.size>0?'rotate(180deg)':'none'}}>▾</span>
           </button>
+          {/* Table / Tiles view toggle */}
+          <div style={{display:'flex',border:'1.5px solid #f97316',borderRadius:9,overflow:'hidden',flexShrink:0}}>
+            {['tiles','table'].map(v=><button key={v} onClick={()=>setZoneAView(v)} style={{padding:'6px 12px',fontSize:11,fontWeight:700,border:'none',background:zoneAView===v?'#f97316':'transparent',color:zoneAView===v?'#fff':'#c2410c',cursor:'pointer',fontFamily:'inherit',transition:'all .15s'}}>
+              {v==='tiles'?'Tiles':'Table'}
+            </button>)}
+          </div>
           {/* Zone A store filter — shared selectedStores, synced with Zone B */}
           <StoreMultiSelect selected={selectedStores} onChange={setSelectedStores} opts={storeOpts||[]}
             accentColor="#f97316" accentBorder="#f97316" accentText="#c2410c" t={t} zIndex={600}/>
@@ -796,7 +847,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       </div>
 
       {/* Tiles + per-tile detail drawer — all in one flex row, each tile is its own column */}
-      <div style={{display:'flex',overflowX:'auto',alignItems:'flex-start'}}>
+      {zoneAView==='tiles'&&<div style={{display:'flex',overflowX:'auto',alignItems:'flex-start'}}>
         {zoneALoading&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>Loading...</div>}
         {!zoneALoading&&zoneATileData.map((tile,ti)=>{
           const tileColor=TILE_COLORS[ti%TILE_COLORS.length];
@@ -915,7 +966,46 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           </div>;
         })}
         {!zoneALoading&&zoneATileData.length===0&&<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data. Select a preset above and ensure DB is connected.</div>}
-      </div>
+      </div>}
+
+      {/* Table view */}
+      {zoneAView==='table'&&<div style={{overflowX:'auto',padding:'0 0 4px'}}>
+        {zoneALoading?<div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>Loading...</div>:
+        zoneATileData.length>0?(()=>{
+          const ROWS=[
+            {k:'sales',     l:'Sales',        fmt:$2,  color:(v)=>v>0?t.text:t.textMuted},
+            {k:'orders',    l:'Orders',       fmt:N,   color:()=>t.text},
+            {k:'units',     l:'Units',        fmt:N,   color:()=>t.text},
+            {k:'refunds',   l:'Refunds',      fmt:N,   color:(v)=>v>5?t.orange:t.text},
+            {k:'advCost',   l:'Adv. Cost',    fmt:v=>$2(Math.abs(v||0)), color:()=>t.text},
+            {k:'estPayout', l:'Est. Payout',  fmt:$2,  color:()=>t.text},
+            {k:'netProfit', l:'Net Profit',   fmt:$2,  color:(v)=>v>=0?t.green:t.red},
+            {k:'margin',    l:'Margin %',     fmt:v=>(v||0).toFixed(1)+'%', color:(v)=>v>15?t.green:v>5?t.orange:t.red},
+          ];
+          return<table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
+            <thead><tr>
+              <th style={{padding:'10px 16px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+DIV,background:t.tableBg,whiteSpace:'nowrap',position:'sticky',left:0,zIndex:3}}>Metric</th>
+              {zoneATileData.map((tile,ti)=><th key={ti} style={{padding:'10px 16px',textAlign:'right',fontSize:11,fontWeight:700,color:TILE_COLORS[ti%TILE_COLORS.length],borderBottom:'2px solid '+DIV,background:t.tableBg,whiteSpace:'nowrap',minWidth:160,borderLeft:'1px solid '+DIV}}>
+                <div>{tile.label}</div>
+                <div style={{fontSize:9.5,color:t.textMuted,fontWeight:400}}>{tile.dateLabel}</div>
+              </th>)}
+            </tr></thead>
+            <tbody>{ROWS.map((row,ri)=><tr key={ri} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'9px 16px',fontWeight:600,borderBottom:'1px solid '+DIV,background:t.tableBg,position:'sticky',left:0,zIndex:2,color:t.textSec,fontSize:11,textTransform:'uppercase',letterSpacing:.3}}>{row.l}</td>
+              {zoneATileData.map((tile,ti)=>{
+                const val=tile.em?.[row.k]??0;
+                const prev=ti>0?(zoneATileData[ti-1].em?.[row.k]??0):null;
+                const chg=prev!=null&&prev!==0?((val-prev)/Math.abs(prev)*100):null;
+                return<td key={ti} style={{padding:'9px 16px',textAlign:'right',borderBottom:'1px solid '+DIV,borderLeft:'1px solid '+DIV}}>
+                  <div style={{fontWeight:700,color:row.color(val)}}>{row.fmt(val)}</div>
+                  {chg!=null&&<div style={{fontSize:10,fontWeight:600,color:chg>=0?t.green:t.red}}>{chg>=0?'+':''}{chg.toFixed(1)}%</div>}
+                </td>;
+              })}
+            </tr>)}</tbody>
+          </table>;
+        })():
+        <div style={{padding:'32px 24px',color:t.textMuted,fontSize:12}}>No data.</div>}
+      </div>}
 
     </div>
 
