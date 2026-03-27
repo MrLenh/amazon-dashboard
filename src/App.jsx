@@ -2227,6 +2227,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const[selAsin,setSelAsin]=useState(null);
   const[drillData,setDrillData]=useState([]);
   const[drillLoading,setDrillLoading]=useState(false);
+  const[drillMetrics,setDrillMetrics]=useState({revenue:true,netProfit:false,advCost:false,units:false,cr:true,tacos:false});
   const[sortKey,setSortKey]=useState('r');
   const[sortDir,setSortDir]=useState(-1);
   const[search,setSearch]=useState('');
@@ -2480,21 +2481,37 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                       </div>
                       {/* Right: Chart */}
                       <div style={{background:isDark?'rgba(255,255,255,.04)':'rgba(255,255,255,.75)',borderRadius:10,padding:'14px 16px',border:'1px solid '+(isDark?'#2A3058':'#D8DFF5')}}>
-                        <div style={{fontSize:10,fontWeight:700,color:isDark?'#7B8DD0':'#5B6AAA',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>Revenue & Conv. Rate — daily</div>
-                        <div style={{display:'flex',gap:14,marginBottom:8,fontSize:10,color:t.textSec}}>
-                          <span><span style={{display:'inline-block',width:9,height:9,borderRadius:2,background:isDark?'#6B7FD7':'#5B6AAA',opacity:.7,marginRight:4,verticalAlign:'middle'}}/>Revenue</span>
-                          <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:t.green,marginRight:4,verticalAlign:'middle'}}/>Conv. Rate %</span>
+                        <div style={{fontSize:10,fontWeight:700,color:isDark?'#7B8DD0':'#5B6AAA',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>Daily Trend</div>
+                        {/* Metric toggles */}
+                        <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
+                          {[{k:'revenue',l:'Revenue',c:isDark?'#6B7FD7':'#5B6AAA',type:'bar'},
+                            {k:'netProfit',l:'Profit',c:t.green,type:'bar'},
+                            {k:'advCost',l:'Ads',c:'#EA580C',type:'line'},
+                            {k:'units',l:'Units',c:'#0891B2',type:'bar'},
+                            {k:'cr',l:'CR%',c:t.green,type:'line'},
+                            {k:'tacos',l:'TACoS',c:'#B45309',type:'line'},
+                          ].map(m=>{
+                            const on=drillMetrics[m.k];
+                            return<button key={m.k} onClick={()=>setDrillMetrics(p=>({...p,[m.k]:!p[m.k]}))}
+                              style={{padding:'2px 8px',borderRadius:6,border:'1px solid '+(on?m.c:t.inputBorder),background:on?m.c+'22':'transparent',color:on?m.c:t.textMuted,fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                              {m.l}
+                            </button>;
+                          })}
                         </div>
                         {drillLoading?<div style={{padding:16,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>:
                         drillData.length>0?<ResponsiveContainer width="100%" height={150}>
-                          <ComposedChart data={drillData} margin={{top:4,right:40,bottom:0,left:0}}>
+                          <ComposedChart data={drillData.map(d=>({...d,advCost:Math.abs(d.advCost||0),tacos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0}))} margin={{top:4,right:40,bottom:0,left:0}}>
                             <CartesianGrid strokeDasharray="3 3" stroke={isDark?'#252C50':'#E0E6F5'} vertical={false}/>
                             <XAxis dataKey="label" tick={{fontSize:9.5,fill:t.textMuted}} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
                             <YAxis yAxisId="l" tick={{fontSize:9.5,fill:t.textMuted}} tickLine={false} axisLine={false} tickFormatter={v=>v>=1000?'$'+(v/1000).toFixed(0)+'k':'$'+v}/>
-                            <YAxis yAxisId="r" orientation="right" tick={{fontSize:9.5,fill:t.green}} tickLine={false} axisLine={false} tickFormatter={v=>v+'%'}/>
-                            <Tooltip formatter={(v,n)=>n==='CR%'?v.toFixed(2)+'%':'$'+v.toLocaleString()} contentStyle={{background:isDark?'#1A1F38':t.card,border:'1px solid '+(isDark?'#2E3A6B':'#D0D8F0'),borderRadius:8,fontSize:11}}/>
-                            <Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={isDark?'#6B7FD7':'#5B6AAA'} opacity={0.6} radius={[3,3,0,0]}/>
-                            <Line yAxisId="r" type="monotone" dataKey="cr" name="CR%" stroke={t.green} strokeWidth={2} dot={false}/>
+                            {(drillMetrics.cr||drillMetrics.tacos)&&<YAxis yAxisId="r" orientation="right" tick={{fontSize:9.5,fill:t.green}} tickLine={false} axisLine={false} tickFormatter={v=>v.toFixed(1)+'%'}/>}
+                            <Tooltip formatter={(v,n)=>['CR%','TACoS'].includes(n)?v.toFixed(2)+'%':n==='Units'?N(v):'$'+v.toLocaleString()} contentStyle={{background:isDark?'#1A1F38':t.card,border:'1px solid '+(isDark?'#2E3A6B':'#D0D8F0'),borderRadius:8,fontSize:11}}/>
+                            {drillMetrics.revenue&&<Bar yAxisId="l" dataKey="revenue" name="Revenue" fill={isDark?'#6B7FD7':'#5B6AAA'} opacity={0.6} radius={[3,3,0,0]}/>}
+                            {drillMetrics.netProfit&&<Bar yAxisId="l" dataKey="netProfit" name="Profit" fill={t.green} opacity={0.7} radius={[3,3,0,0]}/>}
+                            {drillMetrics.units&&<Bar yAxisId="l" dataKey="units" name="Units" fill="#0891B2" opacity={0.6} radius={[3,3,0,0]}/>}
+                            {drillMetrics.advCost&&<Line yAxisId="l" type="monotone" dataKey="advCost" name="Ads" stroke="#EA580C" strokeWidth={2} dot={false}/>}
+                            {drillMetrics.cr&&<Line yAxisId="r" type="monotone" dataKey="cr" name="CR%" stroke={t.green} strokeWidth={2} dot={false}/>}
+                            {drillMetrics.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS" stroke="#B45309" strokeWidth={2} dot={false}/>}
                           </ComposedChart>
                         </ResponsiveContainer>:<div style={{padding:14,color:t.textMuted,fontSize:11,textAlign:'center'}}>No daily data for this ASIN in selected period</div>}
                       </div>
