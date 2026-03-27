@@ -4422,7 +4422,7 @@ function Dashboard({authUser,onLogout}){
   // "Brand" = same as Store (account.shop), just different label
   const showShopFilter=[/*exec removed*/"prod","shops","team","daily","inv","plan","analytics"].includes(pg);
   const shopLabel="All Shops";
-  const showSeller=[/*exec removed*/"prod","shops","team","plan","daily","analytics"].includes(pg);
+  const showSeller=[/*exec removed*/"prod","shops","team","plan","daily","analytics","inv"].includes(pg);
   const showAsin=["plan","prod","shops","team","daily","analytics"].includes(pg);
 
   if(dbConnecting)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:t.bg}}><Spinner t={t} text="Connecting..."/></div>;
