@@ -196,9 +196,10 @@ function PeriodBtns({onSelect,active,t,refDate}){
 function ClearBtn({onClick,t}){return<button onClick={onClick} style={{padding:"4px 8px",borderRadius:6,border:"1px solid "+t.red,fontSize:10,cursor:"pointer",fontWeight:600,background:"transparent",color:t.red,whiteSpace:"nowrap"}}>✕ Clear</button>}
 const Sel=({value,onChange,options,label,t,renderLabel})=><select value={value} onChange={e=>onChange(e.target.value)} style={{background:t.card,color:value==="All"?t.textMuted:t.text,border:"1px solid "+(value==="All"?t.inputBorder:t.primary+"66"),borderRadius:10,padding:"7px 14px",fontSize:12,fontWeight:value==="All"?500:600,cursor:"pointer",transition:"all .15s"}}><option value="All">{label}</option>{options.map(o=><option key={o} value={o}>{renderLabel?renderLabel(o):o}</option>)}</select>;
 function AsinSel({value,onChange,onMultiChange,options,label,t}){
-  const[open,setOpen]=useState(false);const[q,setQ]=useState('');const ref=useRef(null);
+  const[open,setOpen]=useState(false);const[q,setQ]=useState('');const ref=useRef(null);const btnRef=useRef(null);
+  const[pos,setPos]=useState({top:0,left:0});
   const[sel,setSel]=useState([]);
-  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
+  useEffect(()=>{const h=e=>{if(!btnRef.current?.contains(e.target)&&!document.getElementById('asin-sel-portal')?.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
   const filtered=useMemo(()=>q?(options||[]).filter(o=>(o.asin||o).toLowerCase().includes(q.toLowerCase())):(options||[]),[options,q]);
   const toggle=a=>{
     setSel(prev=>{
@@ -209,44 +210,52 @@ function AsinSel({value,onChange,onMultiChange,options,label,t}){
     });
   };
   const clearAll=()=>{setSel([]);onChange('All');if(onMultiChange)onMultiChange([]);};
+  const openDropdown=()=>{
+    if(btnRef.current){const r=btnRef.current.getBoundingClientRect();setPos({top:r.bottom+4,left:r.left});}
+    setOpen(v=>!v);setQ('');
+  };
   const btnLabel=sel.length===0?label:sel.length===1?sel[0]:`${sel.length} ASINs selected`;
   const isActive=sel.length>0;
   return<div ref={ref} style={{position:'relative',display:'inline-block'}}>
-    <button onClick={()=>{setOpen(!open);setQ('');}} style={{background:t.card,color:isActive?t.primary:t.textMuted,border:'1px solid '+(isActive?t.primary:t.inputBorder),borderRadius:10,padding:'7px 14px',fontSize:13,fontWeight:isActive?700:500,cursor:'pointer',minWidth:140,textAlign:'left',whiteSpace:'nowrap',transition:'all .15s'}}>
+    <button ref={btnRef} onClick={openDropdown} style={{background:t.card,color:isActive?t.primary:t.textMuted,border:'1px solid '+(isActive?t.primary:t.inputBorder),borderRadius:10,padding:'7px 14px',fontSize:13,fontWeight:isActive?700:500,cursor:'pointer',minWidth:140,textAlign:'left',whiteSpace:'nowrap',transition:'all .15s'}}>
       {btnLabel} <span style={{fontSize:9,opacity:.5}}>▾</span>
     </button>
-    {open&&<div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:999,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:14,boxShadow:'0 12px 40px '+t.shadow,width:300,maxHeight:440,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{padding:'10px 12px',borderBottom:'1px solid '+t.divider,display:'flex',gap:8,alignItems:'center'}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ASIN..." autoFocus
-          style={{flex:1,padding:'8px 12px',border:'1.5px solid '+t.inputBorder,borderRadius:8,fontSize:13,background:t.inputBg,color:t.text,outline:'none'}}
-          onFocus={e=>e.target.style.borderColor=t.primary} onBlur={e=>e.target.style.borderColor=t.inputBorder}/>
-        {sel.length>0&&<button onClick={clearAll} style={{fontSize:10,color:t.red,background:'transparent',border:'none',cursor:'pointer',whiteSpace:'nowrap',fontWeight:700}}>Clear</button>}
-      </div>
-      <div style={{padding:'4px 8px',borderBottom:'1px solid '+t.divider}}>
-        <div onClick={clearAll} style={{padding:'8px 10px',fontSize:13,cursor:'pointer',fontWeight:sel.length===0?700:400,color:sel.length===0?t.primary:t.text,borderRadius:8,background:sel.length===0?t.primaryLight:'transparent'}}
-          onMouseEnter={e=>e.currentTarget.style.background=sel.length===0?t.primaryLight:t.tableHover}
-          onMouseLeave={e=>e.currentTarget.style.background=sel.length===0?t.primaryLight:'transparent'}>
-          {label} {sel.length===0&&'✓'}
+    {open&&ReactDOM.createPortal(
+      <div id="asin-sel-portal" onMouseDown={e=>e.stopPropagation()} style={{position:'fixed',top:pos.top,left:pos.left,width:300,zIndex:99999,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:14,boxShadow:'0 12px 40px rgba(0,0,0,.18)',maxHeight:440,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{padding:'10px 12px',borderBottom:'1px solid '+t.divider,display:'flex',gap:8,alignItems:'center'}}>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ASIN..." autoFocus
+            style={{flex:1,padding:'8px 12px',border:'1.5px solid '+t.inputBorder,borderRadius:8,fontSize:13,background:t.inputBg,color:t.text,outline:'none'}}
+            onFocus={e=>e.target.style.borderColor=t.primary} onBlur={e=>e.target.style.borderColor=t.inputBorder}/>
+          {sel.length>0&&<button onMouseDown={e=>{e.preventDefault();clearAll();}} style={{fontSize:10,color:t.red,background:'transparent',border:'none',cursor:'pointer',whiteSpace:'nowrap',fontWeight:700}}>Clear</button>}
         </div>
-      </div>
-      <div style={{overflowY:'auto',flex:1,padding:'4px 8px'}}>
-        {filtered.length>0&&<div style={{padding:'4px 10px',fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase'}}>{filtered.length} ASINs</div>}
-        {filtered.map(o=>{const a=o.asin||o;const isSel=sel.includes(a);return<div key={a} onClick={()=>toggle(a)}
-          style={{padding:'7px 10px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',borderRadius:8,background:isSel?t.primaryLight:'transparent'}}
-          onMouseEnter={e=>e.currentTarget.style.background=isSel?t.primaryLight:t.tableHover}
-          onMouseLeave={e=>e.currentTarget.style.background=isSel?t.primaryLight:'transparent'}>
-          <div style={{width:15,height:15,borderRadius:4,border:'2px solid '+(isSel?t.primary:t.inputBorder),background:isSel?t.primary:'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-            {isSel&&<span style={{color:'#fff',fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+        <div style={{padding:'4px 8px',borderBottom:'1px solid '+t.divider}}>
+          <div onMouseDown={e=>{e.preventDefault();clearAll();}} style={{padding:'8px 10px',fontSize:13,cursor:'pointer',fontWeight:sel.length===0?700:400,color:sel.length===0?t.primary:t.text,borderRadius:8,background:sel.length===0?t.primaryLight:'transparent',userSelect:'none'}}
+            onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+            onMouseLeave={e=>e.currentTarget.style.background=sel.length===0?t.primaryLight:'transparent'}>
+            {label} {sel.length===0&&'✓'}
           </div>
-          <span style={{fontSize:13,fontWeight:isSel?700:400,color:isSel?t.primary:t.text,letterSpacing:.2}}>{a}</span>
-        </div>;})}
-        {filtered.length===0&&<div style={{padding:'20px',textAlign:'center',color:t.textMuted,fontSize:12}}>No ASINs found</div>}
-      </div>
-      <div style={{padding:'8px 14px',borderTop:'1px solid '+t.divider,fontSize:11,color:t.textMuted,display:'flex',justifyContent:'space-between'}}>
-        <span>{(options||[]).length} total</span>
-        {sel.length>0&&<span style={{color:t.primary,fontWeight:600}}>{sel.length} selected</span>}
-      </div>
-    </div>}
+        </div>
+        <div style={{overflowY:'auto',flex:1,padding:'4px 8px'}}>
+          {filtered.length>0&&<div style={{padding:'4px 10px',fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase'}}>{filtered.length} ASINs</div>}
+          {filtered.map(o=>{const a=o.asin||o;const isSel=sel.includes(a);
+            return<div key={a} onMouseDown={e=>{e.preventDefault();toggle(a);}}
+              style={{padding:'7px 10px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',borderRadius:8,background:isSel?t.primaryLight:'transparent',userSelect:'none'}}
+              onMouseEnter={e=>e.currentTarget.style.background=isSel?t.primaryLight:t.tableHover}
+              onMouseLeave={e=>e.currentTarget.style.background=isSel?t.primaryLight:'transparent'}>
+              <div style={{width:15,height:15,borderRadius:4,border:'2px solid '+(isSel?t.primary:t.inputBorder),background:isSel?t.primary:'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+                {isSel&&<span style={{color:'#fff',fontSize:9,fontWeight:900,lineHeight:1}}>✓</span>}
+              </div>
+              <span style={{fontSize:13,fontWeight:isSel?700:400,color:isSel?t.primary:t.text,letterSpacing:.2,pointerEvents:'none'}}>{a}</span>
+            </div>;
+          })}
+          {filtered.length===0&&<div style={{padding:'20px',textAlign:'center',color:t.textMuted,fontSize:12}}>No ASINs found</div>}
+        </div>
+        <div style={{padding:'8px 14px',borderTop:'1px solid '+t.divider,fontSize:11,color:t.textMuted,display:'flex',justifyContent:'space-between'}}>
+          <span>{(options||[]).length} total</span>
+          {sel.length>0&&<span style={{color:t.primary,fontWeight:600}}>{sel.length} selected</span>}
+        </div>
+      </div>,document.body
+    )}
   </div>;
 }
 
