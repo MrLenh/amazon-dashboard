@@ -2223,7 +2223,7 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
 }
 
 /* ═══════════ PRODUCT ═══════════ */
-function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed}){
+function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const[selAsin,setSelAsin]=useState(null);
   const[drillData,setDrillData]=useState([]);
   const[drillLoading,setDrillLoading]=useState(false);
@@ -2231,6 +2231,13 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed}){
   const[sortDir,setSortDir]=useState(-1);
   const[search,setSearch]=useState('');
   const[shopF,setShopF]=useState('All');
+  const[trendMetrics,setTrendMetrics]=useState({revenue:true,netProfit:true,advCost:false,units:false,cr:false,tacos:false});
+
+  // Sync shopF with top-level store filter
+  useEffect(()=>{
+    if(store&&store!=='All')setShopF(store);
+    else setShopF('All');
+  },[store]);
 
   const tR=fAsin.reduce((s,a)=>s+a.r,0),tN=fAsin.reduce((s,a)=>s+a.n,0),tU=fAsin.reduce((s,a)=>s+a.u,0);
   const avgCr=useMemo(()=>{const arr=fAsin.filter(a=>a.cr>0);return arr.length?(arr.reduce((s,a)=>s+a.cr,0)/arr.length):0;},[fAsin]);
@@ -2294,8 +2301,51 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed}){
       </div>
     </div>
 
-    {/* Trend Chart */}
-    <Sec title="Revenue & Net Profit Trend" icon="" t={t}><TrendChart data={fDaily} t={t}/></Sec>
+    {/* Trend Chart with metric toggles */}
+    <Sec title="Revenue & Net Profit Trend" icon="" t={t}>
+      <Cd t={t}>
+        {(()=>{
+          const METRICS=[
+            {k:'revenue',   l:'Revenue',   c:'#2563EB', type:'bar'},
+            {k:'netProfit', l:'Net Profit', c:'#16A34A', type:'bar'},
+            {k:'advCost',   l:'Ads',        c:'#EA580C', type:'line'},
+            {k:'units',     l:'Units',      c:'#0891B2', type:'bar'},
+            {k:'cr',        l:'CR%',        c:'#7C3AED', type:'line'},
+            {k:'tacos',     l:'TACoS',      c:'#B45309', type:'line'},
+          ];
+          const chartData=fDaily.map(d=>({...d,
+            advCost:Math.abs(d.advCost||0),
+            cr:d.sessions>0?(d.units/d.sessions*100):0,
+            tacos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0,
+          }));
+          const pctMetrics=['cr','tacos'];
+          const hasPct=METRICS.some(m=>trendMetrics[m.k]&&pctMetrics.includes(m.k));
+          return<>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+              {METRICS.map(m=><button key={m.k} onClick={()=>setTrendMetrics(p=>({...p,[m.k]:!p[m.k]}))}
+                style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendMetrics[m.k]?m.c:t.inputBorder),background:trendMetrics[m.k]?m.c+'18':'transparent',color:trendMetrics[m.k]?m.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+                {m.l}
+              </button>)}
+            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
+                <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor(chartData.length/8))}/>
+                <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+                {hasPct&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'}/>}
+                <Tooltip content={<CT t={t}/>}/>
+                <Legend wrapperStyle={{fontSize:10}}/>
+                {METRICS.filter(m=>trendMetrics[m.k]).map(m=>
+                  m.type==='bar'
+                    ?<Bar key={m.k} yAxisId="l" dataKey={m.k} name={m.l} fill={m.c} radius={[3,3,0,0]}/>
+                    :<Line key={m.k} yAxisId={pctMetrics.includes(m.k)?'r':'l'} type="monotone" dataKey={m.k} name={m.l} stroke={m.c} strokeWidth={2} dot={{r:2}}/>
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </>;
+        })()}
+      </Cd>
+    </Sec>
 
     {/* ASIN Table */}
     <Sec title="ASIN Table" icon="" t={t} action={
@@ -4128,7 +4178,7 @@ function Dashboard({authUser,onLogout}){
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
-        {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily} sd={sd} ed={ed}/>}
+        {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={fAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
         {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
