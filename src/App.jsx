@@ -680,6 +680,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const[presetOpen,setPresetOpen]=useState(false);
   const[presetPos,setPresetPos]=useState({top:0,left:0});
   const presetRef=useRef(null);
+  const[drOpen,setDrOpen]=useState(false);
+  const[drPos,setDrPos]=useState({top:0,left:0});
+  // Close drOpen on outside click
+  useEffect(()=>{
+    if(!drOpen)return;
+    const h=e=>{if(!e.target.closest('[data-dr-dropdown]'))setDrOpen(false);};
+    document.addEventListener('mousedown',h);
+    return()=>document.removeEventListener('mousedown',h);
+  },[drOpen]);
   useEffect(()=>{
     if(!presetOpen)return;
     const h=e=>{
@@ -906,7 +915,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
 
       {/* Zone B header with filter controls */}
       <div style={{background:t.bg==='#0D0F1A'?'#0f1429':'linear-gradient(135deg,#eef1fd,#e0e7ff)',borderBottom:'1px solid '+t.primary+'44',borderRadius:'12px 12px 0 0',padding:'11px 18px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>\
           <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,padding:'3px 10px',borderRadius:20,border:'1.5px solid '+t.primary+'55',background:t.primaryGhost,color:t.primary}}>Zone B</span>
           <span style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:1.2,color:t.primary}}>Analytics Dashboard</span>
         </div>
@@ -915,6 +924,57 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <input type="date" value={sd} onChange={e=>setSd(e.target.value)} style={{...inputStyle,width:130}}/>
           <span style={{fontSize:10,fontWeight:700,color:t.primary,textTransform:'uppercase',letterSpacing:.6}}>End:</span>
           <input type="date" value={ed} onChange={e=>setEd(e.target.value)} style={{...inputStyle,width:130}}/>
+          {/* Quick date range button — Amazon Ads style */}
+          {(()=>{
+            const now=new Date();
+            const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const soM=d=>new Date(d.getFullYear(),d.getMonth(),1);
+            const eoM=d=>new Date(d.getFullYear(),d.getMonth()+1,0);
+            const soW=d=>{const r=new Date(d);r.setDate(d.getDate()-((d.getDay()+6)%7));return r;};
+            const soQ=d=>new Date(d.getFullYear(),Math.floor(d.getMonth()/3)*3,1);
+            const eoQ=d=>new Date(d.getFullYear(),Math.floor(d.getMonth()/3)*3+3,0);
+            const sub=(d,n)=>{const r=new Date(d);r.setDate(r.getDate()-n);return r;};
+            const today=fmt(now); const yday=fmt(sub(now,1));
+            const lm1=sub(soM(now),1);
+            const lq1=sub(soQ(now),1);
+            const PRESETS=[
+              {l:'Today',         s:today,            e:today},
+              {l:'Yesterday',     s:yday,              e:yday},
+              {l:'Last 7 days',   s:fmt(sub(now,6)),   e:today},
+              {l:'Last 14 days',  s:fmt(sub(now,13)),  e:today},
+              {l:'Last 30 days',  s:fmt(sub(now,29)),  e:today},
+              {l:'This week',     s:fmt(soW(now)),     e:today},
+              {l:'Last week',     s:fmt(soW(sub(soW(now),1))), e:fmt(sub(soW(now),1))},
+              {l:'This month',    s:fmt(soM(now)),     e:today},
+              {l:'Last month',    s:fmt(soM(lm1)),     e:fmt(eoM(lm1))},
+              {l:'This quarter',  s:fmt(soQ(now)),     e:today},
+              {l:'Last quarter',  s:fmt(soQ(lq1)),     e:fmt(eoQ(lq1))},
+              {l:'This year',     s:`${now.getFullYear()}-01-01`, e:today},
+            ];
+            const active=PRESETS.find(p=>p.s===sd&&p.e===ed);
+            const label=active?active.l:'Custom range';
+            return<div style={{position:'relative'}} ref={el=>el&&(el._drRef=true)}>
+              <button onClick={e=>{const btn=e.currentTarget;const r=btn.getBoundingClientRect();setDrOpen(v=>!v);setDrPos({top:r.bottom+4,left:r.left});}}
+                style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+t.primary,borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:700,color:t.primary,cursor:'pointer',whiteSpace:'nowrap'}}>
+                {label} <span style={{fontSize:9,transition:'transform .2s',transform:drOpen?'rotate(180deg)':'none'}}>▾</span>
+              </button>
+              {drOpen&&ReactDOM.createPortal(
+                <div onMouseDown={e=>e.stopPropagation()} data-dr-dropdown="true" style={{position:'fixed',top:drPos.top,left:drPos.left,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.18)',zIndex:99995,overflow:'hidden',minWidth:200}}>
+                  {PRESETS.map(p=>{
+                    const isAct=sd===p.s&&ed===p.e;
+                    return<div key={p.l} onClick={()=>{setSd(p.s);setEd(p.e);setDrOpen(false);setTimeout(()=>onApplyZoneB(),50);}}
+                      style={{padding:'9px 16px',cursor:'pointer',fontSize:12,fontWeight:isAct?700:400,color:isAct?t.primary:t.text,background:isAct?t.primaryGhost:'transparent',borderBottom:'1px solid '+t.divider,display:'flex',alignItems:'center',gap:8}}
+                      onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+                      onMouseLeave={e=>e.currentTarget.style.background=isAct?t.primaryGhost:'transparent'}>
+                      <span style={{width:14,fontSize:10,color:t.primary}}>{isAct?'✓':''}</span>{p.l}
+                    </div>;
+                  })}
+                  {!active&&<div style={{padding:'9px 16px',fontSize:11,color:t.primary,fontWeight:700,background:t.primaryGhost,borderTop:'1px solid '+t.divider,display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{width:14,fontSize:10}}>✓</span>Custom range
+                  </div>}
+                </div>,document.body)}
+            </div>;
+          })()}
           <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
           {/* Store dropdown — shared selectedStores, synced with Zone A */}
           <StoreMultiSelect selected={selectedStores} onChange={v=>{setSelectedStores(v);setTimeout(()=>onApplyZoneB(),50);}} opts={storeOpts||[]}
@@ -1069,25 +1129,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <span style={{fontSize:11}}>⇔</span> Slicer
           </button>
         </div>
-        {/* Quick date filter buttons */}
-        {(()=>{
-          const now=new Date();
-          const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-          const dAgo=n=>{const d=new Date(now);d.setDate(d.getDate()-n);return fmt(d);};
-          const QUICK=[
-            {l:'7D',s:dAgo(6),e:fmt(now)},
-            {l:'30D',s:dAgo(29),e:fmt(now)},
-            {l:'MTD',s:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`,e:fmt(now)},
-            {l:'Last Month',s:(()=>{const d=new Date(now.getFullYear(),now.getMonth()-1,1);return fmt(d);})(),e:(()=>{const d=new Date(now.getFullYear(),now.getMonth(),0);return fmt(d);})()},
-            {l:'YTD',s:`${now.getFullYear()}-01-01`,e:fmt(now)},
-          ];
-          return<div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
-            {QUICK.map(q=>{
-              const active=sd===q.s&&ed===q.e;
-              return<button key={q.l} onClick={()=>{setSd(q.s);setEd(q.e);setTimeout(()=>onApplyZoneB(),50);}} style={{padding:'3px 10px',borderRadius:7,border:'1px solid '+(active?t.primary:t.inputBorder),background:active?t.primaryGhost:'transparent',color:active?t.primary:t.textMuted,fontSize:10,fontWeight:active?700:500,cursor:'pointer',transition:'all .12s'}}>{q.l}</button>;
-            })}
-          </div>;
-        })()}
         {/* Row 2: series toggles */}
         <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
           {[{k:'revenue',l:'Revenue',c:'#2563EB'},{k:'netProfit',l:'Net Profit',c:'#16A34A'},{k:'advCost',l:'Ad Spend',c:'#EA580C'},{k:'units',l:'Units',c:'#0891B2'}].map(b=><button key={b.k} onClick={()=>setTrendBars(p=>({...p,[b.k]:!p[b.k]}))} style={{padding:'4px 10px',borderRadius:8,border:'1px solid '+(trendBars[b.k]?b.c:t.inputBorder),background:trendBars[b.k]?b.c+'18':'transparent',color:trendBars[b.k]?b.c:t.textMuted,fontSize:10,fontWeight:600,cursor:'pointer'}}>{b.l}</button>)}
