@@ -954,12 +954,11 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             const active=PRESETS.find(p=>p.s===sd&&p.e===ed);
             const label=active?active.l:'Custom range';
             return<div style={{position:'relative'}} ref={el=>el&&(el._drRef=true)}>
-              <button onClick={e=>{const btn=e.currentTarget;const r=btn.getBoundingClientRect();setDrOpen(v=>!v);setDrPos({top:r.bottom+4,left:r.left});}}
+              <button onClick={e=>{e.stopPropagation();setDrOpen(v=>!v);}}
                 style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+t.primary,borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:700,color:t.primary,cursor:'pointer',whiteSpace:'nowrap'}}>
                 {label} <span style={{fontSize:9,transition:'transform .2s',transform:drOpen?'rotate(180deg)':'none'}}>▾</span>
               </button>
-              {drOpen&&ReactDOM.createPortal(
-                <div onMouseDown={e=>e.stopPropagation()} data-dr-dropdown="true" style={{position:'fixed',top:drPos.top,left:drPos.left,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.18)',zIndex:99995,overflow:'hidden',minWidth:200}}>
+              {drOpen&&<div data-dr-dropdown="true" style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:t.card,border:'1px solid '+t.cardBorder,borderRadius:12,boxShadow:'0 12px 40px rgba(20,24,36,.18)',zIndex:99995,overflow:'hidden',minWidth:200}}>
                   {PRESETS.map(p=>{
                     const isAct=sd===p.s&&ed===p.e;
                     return<div key={p.l} onClick={()=>{setSd(p.s);setEd(p.e);setDrOpen(false);setTimeout(()=>onApplyZoneB(),50);}}
@@ -972,7 +971,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
                   {!active&&<div style={{padding:'9px 16px',fontSize:11,color:t.primary,fontWeight:700,background:t.primaryGhost,borderTop:'1px solid '+t.divider,display:'flex',alignItems:'center',gap:8}}>
                     <span style={{width:14,fontSize:10}}>✓</span>Custom range
                   </div>}
-                </div>,document.body)}
+                </div>}
             </div>;
           })()}
           <div style={{width:1,height:22,background:t.primary+'44',flexShrink:0}}/>
