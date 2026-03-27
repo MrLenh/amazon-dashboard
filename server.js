@@ -735,12 +735,6 @@ app.get('/api/product/asins', async (req, res) => {
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
         avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
-        revenue: rev, netProfit: np, units,
-        margin: rev>0?Math.round(np/rev*1000)/10:0,
-        acos, roas: acos>0?Math.round(100/acos*100)/100:0,
-        cr, sessions: parseInt(r.sessions)||0,
-        advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
