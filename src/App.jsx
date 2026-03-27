@@ -197,15 +197,16 @@ function ClearBtn({onClick,t}){return<button onClick={onClick} style={{padding:"
 const Sel=({value,onChange,options,label,t,renderLabel})=><select value={value} onChange={e=>onChange(e.target.value)} style={{background:t.card,color:value==="All"?t.textMuted:t.text,border:"1px solid "+(value==="All"?t.inputBorder:t.primary+"66"),borderRadius:10,padding:"7px 14px",fontSize:12,fontWeight:value==="All"?500:600,cursor:"pointer",transition:"all .15s"}}><option value="All">{label}</option>{options.map(o=><option key={o} value={o}>{renderLabel?renderLabel(o):o}</option>)}</select>;
 function AsinSel({value,onChange,onMultiChange,options,label,t}){
   const[open,setOpen]=useState(false);const[q,setQ]=useState('');const ref=useRef(null);
-  const[sel,setSel]=useState(()=>value&&value!=='All'?[value]:[]);
-  useEffect(()=>{if(value==='All')setSel([]);},[value]);
+  const[sel,setSel]=useState([]);
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
-  const filtered=useMemo(()=>q?options.filter(o=>(o.asin||o).toLowerCase().includes(q.toLowerCase())):options,[options,q]);
+  const filtered=useMemo(()=>q?(options||[]).filter(o=>(o.asin||o).toLowerCase().includes(q.toLowerCase())):(options||[]),[options,q]);
   const toggle=a=>{
-    const next=sel.includes(a)?sel.filter(x=>x!==a):[...sel,a];
-    setSel(next);
-    onChange(next.length===1?next[0]:'All');
-    if(onMultiChange)onMultiChange(next);
+    setSel(prev=>{
+      const next=prev.includes(a)?prev.filter(x=>x!==a):[...prev,a];
+      onChange(next.length===1?next[0]:'All');
+      if(onMultiChange)onMultiChange(next);
+      return next;
+    });
   };
   const clearAll=()=>{setSel([]);onChange('All');if(onMultiChange)onMultiChange([]);};
   const btnLabel=sel.length===0?label:sel.length===1?sel[0]:`${sel.length} ASINs selected`;
