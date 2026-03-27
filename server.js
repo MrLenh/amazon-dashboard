@@ -696,6 +696,7 @@ app.get('/api/product/asin-daily', async (req, res) => {
       `SELECT p.date,
          SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
          SUM(${P_UNITS}) as units,
+         SUM(ABS(${P_ADS})) as advCost,
          SUM(COALESCE(t.sessions,0)) as sessions,
          AVG(CASE WHEN t.unitSessionPercentage>0 THEN t.unitSessionPercentage END) as cr,
          AVG(CASE WHEN t.buyBoxPercentage>0 THEN t.buyBoxPercentage END) as buyBox
@@ -712,6 +713,7 @@ app.get('/api/product/asin-daily', async (req, res) => {
         label:isNaN(dt)?ds:MS2[dt.getMonth()]+' '+dt.getDate(),
         revenue:parseFloat(r.revenue)||0,
         netProfit:parseFloat(r.netProfit)||0,
+        advCost:parseFloat(r.advCost)||0,
         units:parseInt(r.units)||0,
         sessions:parseInt(r.sessions)||0,
         cr:Math.round((parseFloat(r.cr)||0)*100)/100,
