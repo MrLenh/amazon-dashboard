@@ -1288,12 +1288,15 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
         {shopView==='table'?<div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:13.5}}>
             <thead><tr style={{position:'sticky',top:0,zIndex:2}}>
-              {['Shop','Revenue','GP','Ads','Units','CR%','AOV','Profit/Unit','Margin','FBA Stock','% Rev'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}
+              {['Shop','Revenue','GP','Net Profit','Ads','Units','CR%','AOV','Profit/Unit','Margin','FBA Stock','% Rev'].map((h,i)=><th key={i} style={{padding:'9px 12px',textAlign:i===0?'left':'right',fontSize:11,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>
+                {h==='GP'?<span title="Gross Profit = Revenue − COGS − Amazon Fees (before Ads, Shipping, Overhead)" style={{borderBottom:'1px dashed '+t.textMuted,cursor:'help'}}>{h}</span>:h}
+              </th>)}
             </tr></thead>
             <tbody>{sortedShop.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'10px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.s}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(r.r)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:(r.gp||r.n||0)>=0?t.green:t.red,borderBottom:'1px solid '+t.divider}}>{$(r.gp||r.n||0)}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:(r.n||0)>=0?t.green:t.red,borderBottom:'1px solid '+t.divider}}>{$(r.n||0)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{$(Math.abs(r.ad||0))}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{N(r.u||0)}</td>
               <td style={{padding:'10px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textMuted}}>{r.cr>0?r.cr.toFixed(2)+'%':r.ses>0?(r.u/r.ses*100).toFixed(2)+'%':'—'}</td>
