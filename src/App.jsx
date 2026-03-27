@@ -2461,7 +2461,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                       </div>
                       <button onClick={e=>{e.stopPropagation();closeDrill();}} style={{fontSize:11,padding:'3px 10px',borderRadius:7,border:'1px solid '+(isDark?'#3A4470':'#C5D0F0'),background:'transparent',color:t.textMuted,cursor:'pointer',fontFamily:'inherit'}}>Close ✕</button>
                     </div>
-                    <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:16,minHeight:170}}>
+                    <div style={{display:'grid',gridTemplateColumns:'200px 1fr',gap:14,alignItems:'stretch'}}>
                       {/* Left: Key Metrics */}
                       <div style={{background:isDark?'rgba(255,255,255,.04)':'rgba(255,255,255,.75)',borderRadius:10,padding:'14px 16px',border:'1px solid '+(isDark?'#2A3058':'#D8DFF5')}}>
                         <div style={{fontSize:10,fontWeight:700,color:isDark?'#7B8DD0':'#5B6AAA',textTransform:'uppercase',letterSpacing:.8,marginBottom:10}}>Key Metrics</div>
@@ -2480,7 +2480,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                         </div>)}
                       </div>
                       {/* Right: Chart */}
-                      <div style={{background:isDark?'rgba(255,255,255,.04)':'rgba(255,255,255,.75)',borderRadius:10,padding:'14px 16px',border:'1px solid '+(isDark?'#2A3058':'#D8DFF5')}}>
+                      <div style={{background:isDark?'rgba(255,255,255,.04)':'rgba(255,255,255,.75)',borderRadius:10,padding:'12px 12px 8px',border:'1px solid '+(isDark?'#2A3058':'#D8DFF5'),display:'flex',flexDirection:'column'}}>
                         <div style={{fontSize:10,fontWeight:700,color:isDark?'#7B8DD0':'#5B6AAA',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>Daily Trend</div>
                         {/* Metric toggles */}
                         <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
@@ -2498,8 +2498,8 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                             </button>;
                           })}
                         </div>
-                        {drillLoading?<div style={{padding:16,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>:
-                        drillData.length>0?<ResponsiveContainer width="100%" height={150}>
+                        {drillLoading?<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:t.textMuted,fontSize:12}}>Loading…</div>:
+                        drillData.length>0?<div style={{flex:1,minHeight:180}}><ResponsiveContainer width="100%" height="100%">
                           <ComposedChart data={drillData.map(d=>({...d,advCost:Math.abs(d.advCost||0),tacos:d.revenue>0?(Math.abs(d.advCost||0)/d.revenue*100):0}))} margin={{top:4,right:40,bottom:0,left:0}}>
                             <CartesianGrid strokeDasharray="3 3" stroke={isDark?'#252C50':'#E0E6F5'} vertical={false}/>
                             <XAxis dataKey="label" tick={{fontSize:9.5,fill:t.textMuted}} tickLine={false} axisLine={false} interval="preserveStartEnd"/>
@@ -2513,7 +2513,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                             {drillMetrics.cr&&<Line yAxisId="r" type="monotone" dataKey="cr" name="CR%" stroke={t.green} strokeWidth={2} dot={false}/>}
                             {drillMetrics.tacos&&<Line yAxisId="r" type="monotone" dataKey="tacos" name="TACoS" stroke="#B45309" strokeWidth={2} dot={false}/>}
                           </ComposedChart>
-                        </ResponsiveContainer>:<div style={{padding:14,color:t.textMuted,fontSize:11,textAlign:'center'}}>No daily data for this ASIN in selected period</div>}
+                        </ResponsiveContainer></div>:<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:t.textMuted,fontSize:11}}>No daily data for this ASIN in selected period</div>}
                       </div>
                     </div>
                   </div>
