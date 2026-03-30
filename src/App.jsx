@@ -484,48 +484,16 @@ function MiniDonut({slices,t,size=72}){
 /* ══ StoreMultiSelect — shared checkbox dropdown for Zone A & Zone B ══ */
 function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,accentText,t,zIndex=500}){
   const[open,setOpen]=useState(false);
-  const[dropPos,setDropPos]=useState({top:0,left:0,minWidth:220,openUp:false});
   const ref=useRef(null);
-  const rafRef=useRef(null);
-  const dropId=useRef('sms-'+Math.random().toString(36).slice(2,8)).current;
-
-  // RAF loop: continuously track button position while dropdown is open
-  // This handles scroll inside ANY container (not just window), resize, etc.
-  useEffect(()=>{
-    if(!open){if(rafRef.current)cancelAnimationFrame(rafRef.current);return;}
-    const update=()=>{
-      if(ref.current){
-        const r=ref.current.getBoundingClientRect();
-        const spaceBelow=window.innerHeight-r.bottom;
-        const dropH=Math.min(380,opts.length*41+80);
-        const openUp=spaceBelow<dropH&&r.top>dropH;
-        const top=openUp?r.top-dropH-4:r.bottom+4;
-        const left=Math.min(r.left,window.innerWidth-240);
-        const minWidth=Math.max(220,r.width);
-        setDropPos(p=>
-          p.top===top&&p.left===left&&p.minWidth===minWidth&&p.openUp===openUp ? p
-          : {top,left,minWidth,openUp}
-        );
-      }
-      rafRef.current=requestAnimationFrame(update);
-    };
-    rafRef.current=requestAnimationFrame(update);
-    return()=>{if(rafRef.current)cancelAnimationFrame(rafRef.current);};
-  },[open,opts.length]);
 
   // Close on outside click
   useEffect(()=>{
     if(!open)return;
-    const h=e=>{
-      if(ref.current&&ref.current.contains(e.target))return;
-      if(e.target.closest&&e.target.closest('[data-sms-id="'+dropId+'"]'))return;
-      setOpen(false);
-    };
+    const h=e=>{ if(ref.current&&!ref.current.contains(e.target))setOpen(false); };
     document.addEventListener('mousedown',h);
     return()=>document.removeEventListener('mousedown',h);
   },[open]);
 
-  const openDrop=()=>setOpen(v=>!v);
   const toggle=s=>{
     const next=new Set(selected);
     if(next.has(s))next.delete(s); else next.add(s);
@@ -535,12 +503,12 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
   const label=allSelected?'All Shops':selected.size===1?Array.from(selected)[0]:selected.size+' Shops';
   const active=!allSelected;
   const BD=t.cardBorder; const DIV=t.divider; const S=t.text;
-  return<div ref={ref} style={{position:'relative'}}>
-    <button onClick={openDrop} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(active?accentBorder:accentBorder+'88'),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:active?700:600,color:active?accentText:S,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s'}}>
-      <span style={{fontSize:10}}>{active?'':'​'}{label}</span>
+  return<div ref={ref} style={{position:'relative',display:'inline-block'}}>
+    <button onClick={()=>setOpen(v=>!v)} style={{display:'flex',alignItems:'center',gap:6,background:t.card,border:'1.5px solid '+(active?accentBorder:accentBorder+'88'),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:active?700:600,color:active?accentText:S,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s'}}>
+      <span style={{fontSize:10}}>{label}</span>
       <span style={{fontSize:9,color:accentText,transition:'transform .2s',transform:open?'rotate(180deg)':'none'}}>▾</span>
     </button>
-    {open&&ReactDOM.createPortal(<div data-sms-id={dropId} style={{position:'fixed',top:dropPos.top,left:dropPos.left,background:t.card,border:'1px solid '+BD,borderRadius:13,boxShadow:'0 16px 48px rgba(20,24,36,.18)',zIndex:99990,minWidth:dropPos.minWidth,overflow:'hidden'}}>
+    {open&&<div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:t.card,border:'1px solid '+BD,borderRadius:13,boxShadow:'0 16px 48px rgba(20,24,36,.18)',zIndex:99990,minWidth:Math.max(220,0),overflow:'hidden',width:'max-content'}}>
       {/* All Shops row */}
       <div onClick={()=>{onChange(new Set());setOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid '+DIV,background:allSelected?accentColor+'18':'transparent',transition:'background .1s'}}
         onMouseEnter={e=>e.currentTarget.style.background=allSelected?accentColor+'28':t.tableHover}
@@ -550,7 +518,7 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
         </div>
         <span style={{fontSize:12,fontWeight:allSelected?700:500,color:allSelected?accentText:S}}>All Shops</span>
       </div>
-      {/* Divider + individual shops */}
+      {/* Individual shops */}
       <div style={{maxHeight:260,overflowY:'auto'}}>
         {opts.map(s=>{
           const checked=selected.has(s);
@@ -564,7 +532,7 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
           </div>;
         })}
       </div>
-      {/* Footer: count + Clear */}
+      {/* Footer */}
       {!allSelected&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 14px',borderTop:'1px solid '+DIV,background:t.tableBg}}>
         <span style={{fontSize:11,color:accentText,fontWeight:600}}>{selected.size} selected</span>
         <button onClick={()=>{onChange(new Set());}} style={{fontSize:11,fontWeight:700,color:accentColor,background:'transparent',border:'none',cursor:'pointer',padding:'2px 8px',borderRadius:6}}>Clear all</button>
