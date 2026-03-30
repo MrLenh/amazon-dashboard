@@ -717,9 +717,11 @@ app.get('/api/product/asins', async (req, res) => {
       SUM(ABS(${P_ADS})) as advCost,
       SUM(COALESCE(p.sessions,0)) as sessions,
       AVG(CASE WHEN p.unitSessionPercentage > 0 THEN p.unitSessionPercentage END) as cr,
-      CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
+      CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice,
+      MAX(JSON_UNQUOTE(JSON_EXTRACT(li.images, '$[0].src'))) AS imageUrl
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
+      LEFT JOIN listing_info li ON li.asin = p.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
@@ -734,7 +736,8 @@ app.get('/api/product/asins', async (req, res) => {
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
+        imageUrl: r.imageUrl||null };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -1175,10 +1178,14 @@ app.get('/api/inventory/by-asin', async (req, res) => {
       WHERE p.seller IS NOT NULL AND p.seller != ''${accW}
       GROUP BY p.asin, p.seller`;
 
-    const [stockRows, planRows, sellerRows] = await Promise.all([
+    const imageSQL = `SELECT li.asin, JSON_UNQUOTE(JSON_EXTRACT(li.images, '$[0].src')) AS imageUrl
+      FROM listing_info li WHERE li.images IS NOT NULL AND li.images != 'null'`;
+
+    const [stockRows, planRows, sellerRows, imageRows] = await Promise.all([
       q(stockSQL, accP, 60000).catch(()=>[]),
       q(planSQL, accP, 60000).catch(()=>[]),
       q(sellerSQL, accP, 20000).catch(()=>[]),
+      q(imageSQL, [], 15000).catch(()=>[]),
     ]);
 
     const planMap = {};
@@ -1186,6 +1193,9 @@ app.get('/api/inventory/by-asin', async (req, res) => {
 
     const sellerMap = {};
     sellerRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
+
+    const imageMap = {};
+    imageRows.forEach(r => { if(r.imageUrl) imageMap[r.asin] = r.imageUrl; });
 
     const result = stockRows.map(r => {
       const plan = planMap[r.asin+'_'+r.accountId] || {};
@@ -1200,6 +1210,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         asin: r.asin, name: (r.name||'').substring(0,60), sku: r.sku||'',
         shop: shopMap[r.accountId]||`Account ${r.accountId}`,
         seller: sellerMap[r.asin]||'', accountId: r.accountId,
+        imageUrl: imageMap[r.asin]||null,
         fba, available, reserved, inbound,
         stockValue: parseFloat(r.stockValue)||0,
         velocity: Math.round((parseFloat(r.velocity)||0)*100)/100,
