@@ -1829,12 +1829,13 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
 
     {/* ⑥ Storage fee history + sell-through chart */}
     <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
-      <Sec title="Storage Fee History" icon="" t={t}>
+      <Sec title="Storage & Long-Term Fee History" icon="" t={t}>
         <Cd t={t}>
-          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_product → fbaStorageFee</code> · Monthly FBA storage fees. Uses last snapshot per ASIN per month.</div>
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.6}}>Source: <code style={{fontSize:10,background:t.tableBg,padding:'1px 5px',borderRadius:4}}>seller_board_product → fbaStorageFee + longTermStorageFee</code> · Monthly fees. Uses last snapshot per ASIN per month. LT Fee = Amazon long-term storage fee (charged monthly since 2023).</div>
           {(()=>{
             const sorted=[...feeHist].sort((a,b)=>{
               if(feeSort==='month')return feeSortDir*(a.month>b.month?1:-1);
+              if(feeSort==='ltFee')return feeSortDir*((a.ltFee||0)-(b.ltFee||0));
               return feeSortDir*(a.fee-b.fee);
             });
             const thFee=(col,label,align='right')=>{
@@ -1850,16 +1851,23 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                   <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
                     {thFee('month','Month','left')}
                     {thFee('fee','Storage Fee')}
+                    {thFee('ltFee','LT Fee')}
+                    <th style={{padding:"8px 12px",textAlign:'right',color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Total</th>
                     <th style={{padding:"8px 12px",textAlign:'right',color:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Change</th>
                   </tr></thead>
                   <tbody>{sorted.map((r,i)=>{
                     const origIdx=feeHist.findIndex(x=>x.month===r.month);
                     const prev=origIdx>0?feeHist[origIdx-1]:null;
-                    const chg=prev&&prev.fee>0&&r.fee>0?((r.fee-prev.fee)/prev.fee*100):null;
+                    const total=(r.fee||0)+(r.ltFee||0);
+                    const prevTotal=prev?((prev.fee||0)+(prev.ltFee||0)):null;
+                    const chg=prevTotal&&prevTotal>0&&total>0?((total-prevTotal)/prevTotal*100):null;
                     const[y,m]=r.month.split("-");const label=MS[parseInt(m)-1]+" "+y;
+                    const lt=r.ltFee||0;
                     return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       <td style={{padding:"8px 12px",fontWeight:600,borderBottom:"1px solid "+t.divider}}>{label}</td>
                       <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:r.fee>5000?t.red:r.fee===0?t.textMuted:t.text,borderBottom:"1px solid "+t.divider}}>{r.fee===0?"—":$2(r.fee)}</td>
+                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:lt>1000?t.red:lt>0?t.orange:t.textMuted,borderBottom:"1px solid "+t.divider}}>{lt===0?"—":$2(lt)}</td>
+                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:total>10000?t.red:t.text,borderBottom:"1px solid "+t.divider}}>{total===0?"—":$2(total)}</td>
                       <td style={{padding:"8px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}>{chg!==null?<span style={{fontSize:11,fontWeight:600,color:chg>0?t.red:chg<0?t.green:t.textMuted,background:chg>0?t.redBg:chg<0?t.greenBg:"transparent",padding:"2px 8px",borderRadius:10}}>{chg>0?"+":""}{chg.toFixed(1)}%</span>:<span style={{fontSize:10,color:t.textMuted}}>—</span>}</td>
                     </tr>;
                   })}</tbody>
