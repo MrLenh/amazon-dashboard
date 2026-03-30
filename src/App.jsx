@@ -324,6 +324,18 @@ const CT=({active,payload,label,t:th})=>{if(!active||!payload?.length)return nul
 function APG({actual,plan,t,isMoney=true,suffix="",reverse=false}){if(actual==null)return<div><div style={{fontSize:14,fontWeight:700,color:t.textMuted}}>—</div><div style={{fontSize:11,color:t.textMuted}}>Plan: {isMoney?$(plan):N(plan)+suffix}</div></div>;const gap=typeof actual==="number"?actual-plan:null;const gc=gap!=null?(reverse?(gap<=0?t.green:t.red):(gap>=0?t.green:t.red)):t.textMuted;const fA=isMoney?$(actual):(typeof actual==="number"?actual.toLocaleString():actual)+suffix;const fP=isMoney?$(plan):(typeof plan==="number"?plan.toLocaleString():plan)+suffix;const fG=gap!=null?(isMoney?$(gap):(gap>=0?"+":"")+gap.toLocaleString()+suffix):"—";return<div style={{lineHeight:1.6}}><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fA}</div><div style={{fontSize:11.5,color:t.textSec}}>Plan: {fP}</div><div style={{fontSize:11.5,fontWeight:700,color:gc}}>{fG}</div></div>}
 function StockVal({sv,gp,t}){const ratio=gp&&gp!==0?(sv||0)/Math.abs(gp):null;let c=t.green,bg=t.greenBg,lb="Healthy";if(ratio===null){c=t.textMuted;bg=t.cardBorder;lb="N/A";}else if(ratio>3){c=t.red;bg=t.redBg;lb="High";}else if(ratio>1.5){c=t.orange;bg=t.orangeBg;lb="Watch";}return<div style={{lineHeight:1.5}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>{$(sv||0)}</div><div style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:2}}><span style={{fontSize:9,fontWeight:600,color:c,background:bg,padding:"1px 6px",borderRadius:8}}>{lb}</span>{ratio!==null&&<span style={{fontSize:9,color:t.textMuted}}>{ratio.toFixed(1)}x GP</span>}</div></div>}
 function AsinLink({asin,onClick,t}){return<span style={{cursor:"pointer",color:t.primary,fontWeight:600,fontSize:13,letterSpacing:.3}} onClick={()=>onClick(asin)} onMouseEnter={e=>e.target.style.textDecoration="underline"} onMouseLeave={e=>e.target.style.textDecoration="none"}>{asin}</span>}
+
+/* AsinImg — listing_info URL first, fallback Amazon widget, fallback placeholder */
+function AsinImg({img,asin,size=32,t}){
+  const widget=`https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&ServiceVersion=20070822&ID=AsinImage&WS=1&Format=SL75`;
+  const[src,setSrc]=useState(img||widget);
+  const[failed,setFailed]=useState(false);
+  useEffect(()=>{setSrc(img||widget);setFailed(false);},[img,asin]);
+  if(failed)return<div style={{width:size,height:size,borderRadius:4,background:t.tableBg,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:size*0.35,opacity:.25}}>📦</span></div>;
+  return<img src={src} alt="" width={size} height={size}
+    style={{objectFit:'contain',borderRadius:4,background:t.tableBg,flexShrink:0,display:'block'}}
+    onError={()=>{ if(src!==widget)setSrc(widget); else setFailed(true); }}/>;
+}
 function StockModal({asin,t,onClose}){
   const[data,setData]=useState(null);const[loading,setLoading]=useState(true);const[err,setErr]=useState(null);
   useEffect(()=>{if(!asin)return;setLoading(true);setErr(null);
@@ -1517,8 +1529,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               style={{background:isHL?t.primary+'22':'transparent',outline:isHL?'2px solid '+t.primary:'none',transition:'background .3s,outline .3s'}}
               onMouseEnter={e=>{if(!isHL)e.currentTarget.style.background=t.tableHover}}
               onMouseLeave={e=>{e.currentTarget.style.background=isHL?t.primary+'22':'transparent'}}>
-            <td style={{padding:'7px 8px',borderBottom:'1px solid '+t.divider,width:36}}>
-              {groupBy==='ASIN'&&r.a?<img src={`https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${r.a}&ServiceVersion=20070822&ID=AsinImage&WS=1&Format=SL75`} alt="" style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:t.tableBg}} onError={e=>{e.target.style.display='none';}}/>:null}
+            <td style={{padding:'7px 8px',borderBottom:'1px solid '+t.divider,width:40}}>
+              {groupBy==='ASIN'&&r.a?<AsinImg img={r.img} asin={r.a} size={32} t={t}/>:null}
             </td>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
@@ -1774,6 +1786,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
         <div style={{overflowX:'auto',maxHeight:480,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
             <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
+              <th style={{padding:'9px 8px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',width:44}}>Img</th>
               <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',minWidth:190}}>ASIN / Name</th>
               <th style={{padding:'9px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>Shop</th>
 
@@ -1792,9 +1805,12 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
               {thSort('longTermFee','LT Fee')}
               {thSort('stockValue','Stock Value')}
             </tr></thead>
-            <tbody>{filteredAsin.length===0?<tr><td colSpan={17} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
+            <tbody>{filteredAsin.length===0?<tr><td colSpan={18} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
               const oos=r.oos45;
               return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{background:oos?t.redBg+'55':'transparent'}}>
+                <td style={{padding:'8px 8px',borderBottom:'1px solid '+t.divider,width:44}}>
+                  <AsinImg img={r.imageUrl} asin={r.asin} size={34} t={t}/>
+                </td>
                 <td style={{padding:'8px 12px',borderBottom:'1px solid '+t.divider}}>
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     {oos&&<span title="OOS risk <45 days" style={{color:t.red,fontSize:10,fontWeight:700}}>⚠</span>}
@@ -2635,6 +2651,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0}}>
             <thead style={{position:'sticky',top:0,zIndex:2}}>
               <tr>
+                <th style={{...TH,textAlign:'left',cursor:'default',width:44}}>Image</th>
                 <th style={{...TH,textAlign:'left'}} onClick={()=>sortBy('a')}>ASIN{sIco('a')}</th>
                 <th style={{...TH,textAlign:'left'}} onClick={()=>sortBy('b')}>Shop{sIco('b')}</th>
                 <th style={{...TH,textAlign:'left'}}>Seller</th>
@@ -2659,6 +2676,9 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                   onMouseEnter={e=>e.currentTarget.style.background=isSel?'transparent':t.tableHover}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}
                   style={{cursor:'pointer',background:'transparent',transition:'background .1s'}}>
+                  <td style={{...TD,padding:'7px 8px',width:44,borderBottom:isSel?'none':TD.borderBottom}}>
+                    <AsinImg img={r.img} asin={r.a} size={34} t={t}/>
+                  </td>
                   <td style={{...TD,fontWeight:700,color:t.primary,borderBottom:isSel?'none':TD.borderBottom}} onClick={e=>e.stopPropagation()}><AsinLink asin={r.a} onClick={()=>isSel?closeDrill():selectAsin(r)} t={t}/></td>
                   <td style={{...TD,color:t.textSec,fontSize:12,borderBottom:isSel?'none':TD.borderBottom}}>{r.b}</td>
                   <td style={{...TD,color:t.textSec,fontSize:12,borderBottom:isSel?'none':TD.borderBottom}}>{r.sl||'—'}</td>
@@ -2677,7 +2697,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                     <span style={{background:hb.bg,color:hb.c,padding:'2px 9px',borderRadius:10,fontSize:10,fontWeight:700}}>{hb.lbl}</span>
                   </td>
                 </tr>
-                {isSel&&<tr ref={drillRef}><td colSpan={12} style={{padding:0,border:'none'}}>
+                {isSel&&<tr ref={drillRef}><td colSpan={13} style={{padding:0,border:'none'}}>
                   <div style={{background:isDark?'linear-gradient(135deg,#111830,#151D38)':'linear-gradient(135deg,#F6F8FE,#EEF2FB)',borderTop:'2px solid '+(isDark?'#2E3A6B':'#C5D0F0'),borderBottom:'2px solid '+(isDark?'#2E3A6B':'#C5D0F0'),padding:'16px 20px'}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -2745,7 +2765,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
                 </td></tr>}
                 </React.Fragment>;
               })}
-              {filtered.length===0&&<tr><td colSpan={12} style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>No data</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={13} style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>No data</td></tr>}
             </tbody>
           </table>
         </div>
