@@ -484,23 +484,36 @@ function MiniDonut({slices,t,size=72}){
 /* ══ StoreMultiSelect — shared checkbox dropdown for Zone A & Zone B ══ */
 function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,accentText,t,zIndex=500}){
   const[open,setOpen]=useState(false);
-  const[dropPos,setDropPos]=useState({top:0,left:0,minWidth:220});
+  const[dropPos,setDropPos]=useState({top:0,left:0,minWidth:220,openUp:false});
   const ref=useRef(null);
+  const rafRef=useRef(null);
   const dropId=useRef('sms-'+Math.random().toString(36).slice(2,8)).current;
 
-  const calcPos=useCallback(()=>{
-    if(!ref.current)return;
-    const r=ref.current.getBoundingClientRect();
-    const spaceBelow=window.innerHeight-r.bottom;
-    const dropH=Math.min(360,opts.length*41+80);
-    const openUp=spaceBelow<dropH&&r.top>dropH;
-    setDropPos({
-      top:openUp?r.top-dropH-4:r.bottom+4,
-      left:Math.min(r.left,window.innerWidth-240),
-      minWidth:Math.max(220,r.width)
-    });
-  },[opts.length]);
+  // RAF loop: continuously track button position while dropdown is open
+  // This handles scroll inside ANY container (not just window), resize, etc.
+  useEffect(()=>{
+    if(!open){if(rafRef.current)cancelAnimationFrame(rafRef.current);return;}
+    const update=()=>{
+      if(ref.current){
+        const r=ref.current.getBoundingClientRect();
+        const spaceBelow=window.innerHeight-r.bottom;
+        const dropH=Math.min(380,opts.length*41+80);
+        const openUp=spaceBelow<dropH&&r.top>dropH;
+        const top=openUp?r.top-dropH-4:r.bottom+4;
+        const left=Math.min(r.left,window.innerWidth-240);
+        const minWidth=Math.max(220,r.width);
+        setDropPos(p=>
+          p.top===top&&p.left===left&&p.minWidth===minWidth&&p.openUp===openUp ? p
+          : {top,left,minWidth,openUp}
+        );
+      }
+      rafRef.current=requestAnimationFrame(update);
+    };
+    rafRef.current=requestAnimationFrame(update);
+    return()=>{if(rafRef.current)cancelAnimationFrame(rafRef.current);};
+  },[open,opts.length]);
 
+  // Close on outside click
   useEffect(()=>{
     if(!open)return;
     const h=e=>{
@@ -508,18 +521,11 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
       if(e.target.closest&&e.target.closest('[data-sms-id="'+dropId+'"]'))return;
       setOpen(false);
     };
-    const rePos=()=>calcPos();
     document.addEventListener('mousedown',h);
-    window.addEventListener('scroll',rePos,true);
-    window.addEventListener('resize',rePos);
-    return()=>{
-      document.removeEventListener('mousedown',h);
-      window.removeEventListener('scroll',rePos,true);
-      window.removeEventListener('resize',rePos);
-    };
-  },[open,calcPos]);
+    return()=>document.removeEventListener('mousedown',h);
+  },[open]);
 
-  const openDrop=()=>{ calcPos(); setOpen(v=>!v); };
+  const openDrop=()=>setOpen(v=>!v);
   const toggle=s=>{
     const next=new Set(selected);
     if(next.has(s))next.delete(s); else next.add(s);
