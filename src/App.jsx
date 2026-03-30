@@ -537,7 +537,7 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
         <span style={{fontSize:11,color:accentText,fontWeight:600}}>{selected.size} selected</span>
         <button onClick={()=>{onChange(new Set());}} style={{fontSize:11,fontWeight:700,color:accentColor,background:'transparent',border:'none',cursor:'pointer',padding:'2px 8px',borderRadius:6}}>Clear all</button>
       </div>}
-    </div>,document.body)}
+    </div>}
   </div>;
 }
 
