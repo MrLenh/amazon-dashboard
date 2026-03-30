@@ -487,30 +487,39 @@ function StoreMultiSelect({selected,onChange,opts=[],accentColor,accentBorder,ac
   const[dropPos,setDropPos]=useState({top:0,left:0,minWidth:220});
   const ref=useRef(null);
   const dropId=useRef('sms-'+Math.random().toString(36).slice(2,8)).current;
+
+  const calcPos=useCallback(()=>{
+    if(!ref.current)return;
+    const r=ref.current.getBoundingClientRect();
+    const spaceBelow=window.innerHeight-r.bottom;
+    const dropH=Math.min(360,opts.length*41+80);
+    const openUp=spaceBelow<dropH&&r.top>dropH;
+    setDropPos({
+      top:openUp?r.top-dropH-4:r.bottom+4,
+      left:Math.min(r.left,window.innerWidth-240),
+      minWidth:Math.max(220,r.width)
+    });
+  },[opts.length]);
+
   useEffect(()=>{
     if(!open)return;
     const h=e=>{
-      // Check if click landed inside trigger OR inside portal (via data attribute on DOM)
       if(ref.current&&ref.current.contains(e.target))return;
       if(e.target.closest&&e.target.closest('[data-sms-id="'+dropId+'"]'))return;
       setOpen(false);
     };
-    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
-  },[open]);
-  const openDrop=()=>{
-    if(ref.current){
-      const r=ref.current.getBoundingClientRect();
-      const spaceBelow=window.innerHeight-r.bottom;
-      const dropH=Math.min(360,opts.length*41+80);
-      const openUp=spaceBelow<dropH&&r.top>dropH;
-      setDropPos({
-        top:openUp?r.top-dropH-4:r.bottom+4,
-        left:Math.min(r.left,window.innerWidth-240),
-        minWidth:Math.max(220,r.width)
-      });
-    }
-    setOpen(v=>!v);
-  };
+    const rePos=()=>calcPos();
+    document.addEventListener('mousedown',h);
+    window.addEventListener('scroll',rePos,true);
+    window.addEventListener('resize',rePos);
+    return()=>{
+      document.removeEventListener('mousedown',h);
+      window.removeEventListener('scroll',rePos,true);
+      window.removeEventListener('resize',rePos);
+    };
+  },[open,calcPos]);
+
+  const openDrop=()=>{ calcPos(); setOpen(v=>!v); };
   const toggle=s=>{
     const next=new Set(selected);
     if(next.has(s))next.delete(s); else next.add(s);
@@ -1531,8 +1540,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               style={{background:isHL?t.primary+'22':'transparent',outline:isHL?'2px solid '+t.primary:'none',transition:'background .3s,outline .3s'}}
               onMouseEnter={e=>{if(!isHL)e.currentTarget.style.background=t.tableHover}}
               onMouseLeave={e=>{e.currentTarget.style.background=isHL?t.primary+'22':'transparent'}}>
-            <td style={{padding:'7px 8px',borderBottom:'1px solid '+t.divider,width:36}}>
-              {groupBy==='ASIN'&&r.a?<img src={`https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${r.a}&ServiceVersion=20070822&ID=AsinImage&WS=1&Format=SL75`} alt="" style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:t.tableBg}} onError={e=>{e.target.style.display='none';}}/>:null}
+            <td style={{padding:'4px 6px',borderBottom:'1px solid '+t.divider,width:40,height:42,verticalAlign:'middle',lineHeight:0}}>
+              {groupBy==='ASIN'&&r.a?<img src={`https://m.media-amazon.com/images/P/${r.a}.01._SL75_.jpg`} alt="" style={{width:32,height:32,objectFit:'contain',borderRadius:4,background:t.tableBg,display:'block',flexShrink:0}} onError={e=>{e.target.style.opacity='0';}}/>:<div style={{width:32,height:32}}/>}
             </td>
             <td style={{padding:'7px 12px',fontWeight:600,color:t.primary,borderBottom:'1px solid '+t.divider,letterSpacing:.2}}>{groupBy==='ASIN'?<AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/>:r.a}</td>
             <td style={{padding:'7px 12px',fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.b}</td>
