@@ -491,6 +491,7 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login' || req.path === '/health') return next();
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+$/)) return next(); // GET verify invite
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+\/accept$/)) return next(); // POST accept invite
+  if (req.path.startsWith('/debug/')) return next(); // debug endpoints — no auth needed
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Authentication required' });
@@ -721,6 +722,7 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
+    console.log(`[product/asins] rows=${rows.length} | ${params[0]}→${params[1]} | store=${store||'All'} | seller=${seller||'All'}`);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
