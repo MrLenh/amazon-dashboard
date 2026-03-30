@@ -1038,22 +1038,27 @@ app.get('/api/inventory/storage-monthly', async (req, res) => {
     const accId = await storeToAccIds(req.query.store);
     let extra = ''; const params = [];
     { const _ac=accIdClause('p',accId); extra=_ac.w; params.push(..._ac.p); }
-    // seller_board_product.fbaStorageFee: negative values = costs. Use MAX(date) per ASIN per month to avoid double-counting
+    // Use MAX(date) per ASIN per month to avoid double-counting
     const rows = await q(`
       SELECT DATE_FORMAT(p.date,'%Y-%m') as ym,
-        ABS(SUM(p.fbaStorageFee)) as fee
+        ABS(SUM(p.fbaStorageFee)) as fee,
+        ABS(SUM(COALESCE(p.longTermStorageFee,0))) as ltFee
       FROM seller_board_product p
       JOIN (
         SELECT asin, accountId, DATE_FORMAT(date,'%Y-%m') as ym2, MAX(date) as maxDate
         FROM seller_board_product
-        WHERE fbaStorageFee < 0
+        WHERE fbaStorageFee < 0 OR longTermStorageFee < 0
         GROUP BY asin, accountId, DATE_FORMAT(date,'%Y-%m')
       ) latest ON p.asin=latest.asin AND p.accountId=latest.accountId AND p.date=latest.maxDate
-      WHERE p.fbaStorageFee < 0 ${extra}
+      WHERE (p.fbaStorageFee < 0 OR p.longTermStorageFee < 0) ${extra}
       GROUP BY DATE_FORMAT(p.date,'%Y-%m')
       ORDER BY ym
     `, params);
-    res.json((rows||[]).map(r => ({ month: r.ym, fee: Math.round((parseFloat(r.fee)||0)*100)/100 })));
+    res.json((rows||[]).map(r => ({
+      month: r.ym,
+      fee: Math.round((parseFloat(r.fee)||0)*100)/100,
+      ltFee: Math.round((parseFloat(r.ltFee)||0)*100)/100,
+    })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
