@@ -546,6 +546,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   zoneATileData,setZoneATileData,zoneAPreset,setZoneAPreset,zoneALoading,selectedStores,setSelectedStores,
   customStart,setCustomStart,customEnd,setCustomEnd,customCompare,setCustomCompare,
   dbToday,
+  productType,setProductType,niche,setNiche,filterOpts,
 }){
   const[selMetrics,setSelMetrics]=useState(['SALES','ADV.COST','NET PROFIT','SESSIONS']);
   const[expandedRows,setExpandedRows]=useState(new Set());
@@ -1199,6 +1200,16 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               })}
             </div>}
           </div>
+          {/* Product Type filter */}
+          {(filterOpts?.productTypes||[]).length>0&&<select value={productType} onChange={e=>{setProductType(e.target.value);setNiche('All');}} style={{background:productType!=='All'?t.primaryLight:t.card,color:productType!=='All'?t.primary:t.text,border:'1.5px solid '+(productType!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:productType!=='All'?700:500,cursor:'pointer',outline:'none'}}>
+            <option value="All">All Types</option>
+            {(filterOpts?.productTypes||[]).map(o=><option key={o} value={o}>{o}</option>)}
+          </select>}
+          {/* Niche filter */}
+          {(filterOpts?.niches||[]).length>0&&<select value={niche} onChange={e=>setNiche(e.target.value)} style={{background:niche!=='All'?t.primaryLight:t.card,color:niche!=='All'?t.primary:t.text,border:'1.5px solid '+(niche!=='All'?t.primary:t.inputBorder),borderRadius:9,padding:'6px 12px',fontSize:12,fontWeight:niche!=='All'?700:500,cursor:'pointer',outline:'none'}}>
+            <option value="All">All Niches</option>
+            {(filterOpts?.niches||[]).filter(o=>productType==='All'||true).map(o=><option key={o} value={o}>{o}</option>)}
+          </select>}
           <button onClick={onApplyZoneB} style={{background:t.primary,color:'#fff',border:'none',borderRadius:8,padding:'7px 18px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Apply</button>
         </div>
       </div>
@@ -2759,20 +2770,132 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
 }
 
 /* ═══════════ SHOP ═══════════ */
-function ShopPage({t,fShopData,fDaily}){
+function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
   const tGP=fShopData.reduce((s,x)=>s+(x.gp||0),0),tSV=fShopData.reduce((s,x)=>s+(x.sv||0),0);
   const THDSHOP=["Shop","⭐ GP","REVENUE","ADS","UNITS","FBA STOCK","MARGIN","HEALTH","STOCK VALUE"];
+
+  // ── Comparison table state ──
+  const[cmpGran,setCmpGran]=useState('week'); // 'day'|'week'|'month'
+  const[cmpData,setCmpData]=useState(null);   // [{label, shops:{name:{rev,gp,units}}}]
+  const[cmpLoading,setCmpLoading]=useState(false);
+  const[cmpMetric,setCmpMetric]=useState('revenue'); // revenue|gp|units
+
+  const buildPeriods=useCallback((gran)=>{
+    const endD=new Date(ed+'T00:00:00');
+    const periods=[];
+    if(gran==='day'){
+      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s});}
+    } else if(gran==='week'){
+      for(let i=3;i>=0;i--){const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);const s2=new Date(e2);s2.setDate(s2.getDate()-6);periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:s2.toISOString().slice(0,10),e:e2.toISOString().slice(0,10)});}
+    } else {
+      for(let i=2;i>=0;i--){const d=new Date(endD);d.setMonth(d.getMonth()-i);const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10);const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2});}
+    }
+    return periods;
+  },[ed]);
+
+  useEffect(()=>{
+    setCmpLoading(true);setCmpData(null);
+    const periods=buildPeriods(cmpGran);
+    const params={store,seller};
+    Promise.all(periods.map(p=>api('shops',{...params,start:p.s,end:p.e}).catch(()=>[])))
+      .then(results=>{
+        const rows=periods.map((p,i)=>({label:p.label,shops:{}}));
+        results.forEach((shopArr,pi)=>{
+          (shopArr||[]).forEach(s=>{rows[pi].shops[s.shop]={rev:s.revenue||0,gp:s.grossProfit||s.netProfit||0,units:s.units||0};});
+        });
+        setCmpData(rows);setCmpLoading(false);
+      }).catch(()=>setCmpLoading(false));
+  },[cmpGran,sd,ed,store,seller]);
+
+  const shopNames=useMemo(()=>[...new Set(fShopData.map(s=>s.s))],[fShopData]);
+  const fmt=v=>cmpMetric==='units'?N(v):$(v);
+
   return<div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:12,marginBottom:16}}><KpiCard title="Total GP" value={$(tGP)} icon="" t={t} tip={TIPS.gp}/><div style={{background:t.card,borderRadius:12,padding:"16px 18px",border:"2px solid "+t.orange+"55"}}><div style={{fontSize:10,color:t.orange,textTransform:"uppercase",letterSpacing:.8,fontWeight:700,marginBottom:8}}>Stock Value</div><div style={{fontSize:20,fontWeight:700,color:t.text}}>{$(tSV)}</div>{tGP!==0&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>{(tSV/Math.abs(tGP)).toFixed(1)}x GP</div>}</div><KpiCard title="Total Revenue" value={$(fShopData.reduce((s,x)=>s+x.r,0))} icon="" t={t} tip={TIPS.revenue}/><KpiCard title="FBA Stock" value={N(fShopData.reduce((s,x)=>s+x.f,0))} icon="" t={t} tip={TIPS.shopFba}/></div>
     <Sec title="Revenue Trend" icon="" t={t}><TrendChart data={fDaily} t={t} keys={[{dk:"revenue",n:"Revenue",c:t.primary,g:"url(#gRv)"}]}/></Sec>
     <Sec title="Shop Table (A / P / Gap)" icon="" t={t}><div style={{borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:440,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{THDSHOP.map((h,i)=><th key={i} style={{position:"sticky",top:0,zIndex:2,padding:"10px 12px",textAlign:i===0?"left":i===7?"center":"right",color:h.includes("STOCK VALUE")?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:h.includes("STOCK VALUE")?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap"}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{fShopData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"10px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.s}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gp} plan={r.gpP||0} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.r} plan={r.rvP||0} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ad} plan={r.adP||0} t={t} reverse/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.u} plan={r.unP||0} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600}}>{N(r.f)}</td><td style={{padding:"10px 12px",textAlign:"right",color:mC(r.m,t),borderBottom:"1px solid "+t.divider,fontWeight:600}}>{r.m.toFixed(2)}%</td><td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider,textAlign:"center"}}>{r.m>10?<span style={{background:t.greenBg,color:t.green,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Good</span>:r.m>0?<span style={{background:t.orangeBg,color:t.orange,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Fair</span>:<span style={{background:t.redBg,color:t.red,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Poor</span>}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.gp} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / Plan / <span style={{color:t.green}}>Gap</span> · Stock Health: <span style={{color:t.green}}>●</span> &lt;1.5x · <span style={{color:t.orange}}>●</span> 1.5-3x · <span style={{color:t.red}}>●</span> &gt;3x GP</div></div></Sec>
+
+    {/* ── Comparison Table ── */}
+    <Sec title="Shop Performance Comparison" icon="" t={t}>
+      <div style={{marginBottom:12,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        {['day','week','month'].map(g=><button key={g} onClick={()=>setCmpGran(g)} style={{padding:'5px 14px',borderRadius:8,border:'1px solid '+(cmpGran===g?t.primary:t.cardBorder),background:cmpGran===g?t.primaryLight:'transparent',color:cmpGran===g?t.primary:t.textSec,fontWeight:cmpGran===g?700:400,fontSize:12,cursor:'pointer',textTransform:'capitalize'}}>{g==='day'?'Last 7 Days':g==='week'?'Last 4 Weeks':'Last 3 Months'}</button>)}
+        <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+          {['revenue','gp','units'].map(m=><button key={m} onClick={()=>setCmpMetric(m)} style={{padding:'4px 12px',borderRadius:7,border:'1px solid '+(cmpMetric===m?t.primary:t.cardBorder),background:cmpMetric===m?t.primaryLight:'transparent',color:cmpMetric===m?t.primary:t.textSec,fontSize:11,fontWeight:cmpMetric===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>{m==='gp'?'Net Profit':m}</button>)}
+        </div>
+      </div>
+      {cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
+      :cmpData&&cmpData.length>0?<div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
+          <thead><tr>
+            <th style={{padding:'9px 12px',textAlign:'left',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Shop</th>
+            {cmpData.map((p,i)=><th key={i} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>{p.label}</th>)}
+            <th style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Δ vs Prev</th>
+          </tr></thead>
+          <tbody>{shopNames.map(shop=>{
+            const vals=cmpData.map(p=>p.shops[shop]?p.shops[shop][cmpMetric]:0);
+            const last=vals[vals.length-1]||0;
+            const prev=vals[vals.length-2]||0;
+            const chg=prev>0?((last-prev)/prev*100):null;
+            return<tr key={shop} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{shop}</td>
+              {vals.map((v,i)=>{
+                const vprev=vals[i-1];
+                const pct=vprev>0?((v-vprev)/vprev*100):null;
+                return<td key={i} style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>
+                  <div style={{fontWeight:700}}>{v>0?fmt(v):<span style={{color:t.textMuted}}>—</span>}</div>
+                  {i>0&&pct!==null&&<div style={{fontSize:10,fontWeight:600,color:pct>0?t.green:pct<0?t.red:t.textMuted}}>{pct>0?'+':''}{pct.toFixed(1)}%</div>}
+                </td>;
+              })}
+              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>
+                {chg!==null?<span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:10,background:chg>0?t.greenBg:chg<0?t.redBg:'transparent',color:chg>0?t.green:chg<0?t.red:t.textMuted}}>{chg>0?'+':''}{chg.toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}
+              </td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>:<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>No data</div>}
+    </Sec>
     <div style={{marginTop:14}}><Alerts t={t} alerts={genShopAlerts(fShopData,t)}/></div>
   </div>;
 }
 
 /* ═══════════ TEAM ═══════════ */
-function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick}){
+function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,seller}){
   const[teamMonth,setTeamMonth]=useState("All");
+
+  // ── Seller comparison state ──
+  const[cmpGran,setCmpGran]=useState('week');
+  const[cmpData,setCmpData]=useState(null);
+  const[cmpLoading,setCmpLoading]=useState(false);
+  const[cmpMetric,setCmpMetric]=useState('revenue');
+
+  const buildPeriods=useCallback((gran)=>{
+    const endD=new Date((ed||new Date().toISOString().slice(0,10))+'T00:00:00');
+    const periods=[];
+    if(gran==='day'){
+      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s});}
+    } else if(gran==='week'){
+      for(let i=3;i>=0;i--){const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);const s2=new Date(e2);s2.setDate(s2.getDate()-6);periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:s2.toISOString().slice(0,10),e:e2.toISOString().slice(0,10)});}
+    } else {
+      for(let i=2;i>=0;i--){const d=new Date(endD);d.setMonth(d.getMonth()-i);const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10);const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2});}
+    }
+    return periods;
+  },[ed]);
+
+  useEffect(()=>{
+    setCmpLoading(true);setCmpData(null);
+    const periods=buildPeriods(cmpGran);
+    Promise.all(periods.map(p=>api('team',{start:p.s,end:p.e,store,seller}).catch(()=>[])))
+      .then(results=>{
+        const rows=periods.map((p,i)=>({label:p.label,sellers:{}}));
+        results.forEach((arr,pi)=>{
+          (arr||[]).forEach(s=>{rows[pi].sellers[s.seller]={revenue:s.revenue||0,gp:s.netProfit||0,units:s.units||0};});
+        });
+        setCmpData(rows);setCmpLoading(false);
+      }).catch(()=>setCmpLoading(false));
+  },[cmpGran,sd,ed,store,seller]);
+
+  const sellerNames=useMemo(()=>[...new Set(fSeller.map(s=>s.sl))],[fSeller]);
+  const fmt=v=>cmpMetric==='units'?N(v):$(v);
   const asinData=useMemo(()=>{
     const raw=asinPlanBkData||[];
     let filtered=raw;
@@ -2860,6 +2983,47 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick}){
     </Sec>
     <Sec title="Seller Performance (A / P / Gap)" icon="" t={t} action={<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:10,color:t.textMuted}}>Month:</span><Sel value={teamMonth} onChange={setTeamMonth} options={MS} label="All Months" t={t}/></div>}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead><tr>{THDSL.map((h,i)=><th key={i} style={{position:"sticky",top:0,zIndex:2,padding:"11px 14px",textAlign:i===0?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?80:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{sellerSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={{transition:"background .1s"}}><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.sl}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600,color:mC(r.margin,t)}}>{r.margin.toFixed(2)}%</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600}}>{r.cnt}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / Plan / <span style={{color:t.green}}>Gap</span> · Stock Value = current snapshot · Ads: lower = better</div></div></Sec>
     {asinData.length>0&&<Sec title="ASIN Detail by Seller (A / P / Gap)" icon="" t={t}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:520,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead style={{position:"sticky",top:0,zIndex:2}}><tr>{THDASIN.map((h,i)=><th key={i} style={{padding:"11px 14px",textAlign:i<=2?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i<=2?70:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{asinData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={sellerBreaks.has(i)?{borderTop:"2px solid "+t.divider}:{transition:"background .1s"}}><td style={{padding:"11px 14px",fontSize:13,fontWeight:600,letterSpacing:.3,borderBottom:"1px solid "+t.divider,color:t.textSec}}><AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/></td><td style={{padding:"11px 14px",fontWeight:600,borderBottom:"1px solid "+t.divider,fontSize:11.5,color:t.primary}}>{r.sl||"—"}</td><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.br}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider,background:t.card}}>{asinData.length} ASINs · Grouped by seller · Stock Value = current snapshot</div></div></Sec>}
+
+    {/* ── Seller Comparison Table ── */}
+    <Sec title="Seller Performance Comparison" icon="" t={t}>
+      <div style={{marginBottom:12,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        {['day','week','month'].map(g=><button key={g} onClick={()=>setCmpGran(g)} style={{padding:'5px 14px',borderRadius:8,border:'1px solid '+(cmpGran===g?t.primary:t.cardBorder),background:cmpGran===g?t.primaryLight:'transparent',color:cmpGran===g?t.primary:t.textSec,fontWeight:cmpGran===g?700:400,fontSize:12,cursor:'pointer'}}>{g==='day'?'Last 7 Days':g==='week'?'Last 4 Weeks':'Last 3 Months'}</button>)}
+        <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+          {['revenue','gp','units'].map(m=><button key={m} onClick={()=>setCmpMetric(m)} style={{padding:'4px 12px',borderRadius:7,border:'1px solid '+(cmpMetric===m?t.primary:t.cardBorder),background:cmpMetric===m?t.primaryLight:'transparent',color:cmpMetric===m?t.primary:t.textSec,fontSize:11,fontWeight:cmpMetric===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>{m==='gp'?'Net Profit':m}</button>)}
+        </div>
+      </div>
+      {cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
+      :cmpData&&cmpData.length>0?<div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
+          <thead><tr>
+            <th style={{padding:'9px 12px',textAlign:'left',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Seller</th>
+            {cmpData.map((p,i)=><th key={i} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>{p.label}</th>)}
+            <th style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Δ vs Prev</th>
+          </tr></thead>
+          <tbody>{sellerNames.map(sl=>{
+            const vals=cmpData.map(p=>p.sellers[sl]?p.sellers[sl][cmpMetric]:0);
+            const last=vals[vals.length-1]||0;
+            const prev=vals[vals.length-2]||0;
+            const chg=prev>0?((last-prev)/prev*100):null;
+            return<tr key={sl} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{sl}</td>
+              {vals.map((v,i)=>{
+                const vprev=vals[i-1];
+                const pct=vprev>0?((v-vprev)/vprev*100):null;
+                return<td key={i} style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>
+                  <div style={{fontWeight:700}}>{v>0?fmt(v):<span style={{color:t.textMuted}}>—</span>}</div>
+                  {i>0&&pct!==null&&<div style={{fontSize:10,fontWeight:600,color:pct>0?t.green:pct<0?t.red:t.textMuted}}>{pct>0?'+':''}{pct.toFixed(1)}%</div>}
+                </td>;
+              })}
+              <td style={{padding:'9px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>
+                {chg!==null?<span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:10,background:chg>0?t.greenBg:chg<0?t.redBg:'transparent',color:chg>0?t.green:chg<0?t.red:t.textMuted}}>{chg>0?'+':''}{chg.toFixed(1)}%</span>:<span style={{color:t.textMuted}}>—</span>}
+              </td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>:<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>No data</div>}
+    </Sec>
+
     <div style={{marginTop:14}}><Alerts t={t} alerts={genSellerAlerts(fSeller,t)}/></div>
   </div>;
 }
@@ -4517,12 +4681,14 @@ function Dashboard({authUser,onLogout}){
           customEnd={customEnd} setCustomEnd={setCustomEnd}
           customCompare={customCompare} setCustomCompare={setCustomCompare}
           dbToday={dbToday}
+          productType={productType} setProductType={setProductType}
+          niche={niche} setNiche={setNiche} filterOpts={filterOpts}
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
         {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
         {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={filteredFAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
-        {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
-        {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState}/>}
+        {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily} sd={sd} ed={ed} store={store} seller={seller}/>}
+        {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState} sd={sd} ed={ed} store={store} seller={seller}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
         {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={filteredFAsin} em={em} monthPlanData={monthPlanState} monthlyLY={monthlyLYState} sd={sd} ed={ed}/>}
         <div style={{height:30}}/>
