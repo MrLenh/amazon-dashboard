@@ -535,16 +535,38 @@ app.get('/api/debug/filters', async (req, res) => {
 /* ═══════════ DATE RANGE ═══════════ */
 app.get('/api/date-range', async (req, res) => {
   try {
-    const rows = await q(`SELECT MIN(sc.date) as minDate, MAX(sc.date) as maxDate FROM ${salesFrom()}`);
-    const r = rows[0] || {};
-    const maxDate = r.maxDate ? new Date(r.maxDate).toISOString().slice(0,10) : null;
-    const minDate = r.minDate ? new Date(r.minDate).toISOString().slice(0,10) : null;
-    // today = ngày mới nhất trong DB (không dùng đồng hồ server vì Railway chạy UTC, data lag 1-3 ngày)
+    // Query BOTH tables — product/asins uses seller_board_product, exec uses seller_board_sales
+    const [salesRows, productRows] = await Promise.all([
+      q(`SELECT MIN(sc.date) as minDate, MAX(sc.date) as maxDate FROM ${salesFrom()}`).catch(()=>[{}]),
+      q(`SELECT MIN(p.date) as minDate, MAX(p.date) as maxDate FROM seller_board_product p`).catch(()=>[{}]),
+    ]);
+    const sr = salesRows[0] || {}, pr = productRows[0] || {};
+
+    // Use the LATER of the two minDates (data must exist in both tables)
+    // Use the EARLIER of the two maxDates (so product/asins always has data)
+    const salesMax  = sr.maxDate ? new Date(sr.maxDate).toISOString().slice(0,10) : null;
+    const productMax = pr.maxDate ? new Date(pr.maxDate).toISOString().slice(0,10) : null;
+    const salesMin  = sr.minDate ? new Date(sr.minDate).toISOString().slice(0,10) : null;
+    const productMin = pr.minDate ? new Date(pr.minDate).toISOString().slice(0,10) : null;
+
+    // maxDate = min of both (ensures product table has data up to this date)
+    const maxDate = salesMax && productMax
+      ? (salesMax < productMax ? salesMax : productMax)
+      : (salesMax || productMax);
+    // minDate = max of both mins
+    const minDate = salesMin && productMin
+      ? (salesMin > productMin ? salesMin : productMin)
+      : (salesMin || productMin);
+
+    console.log(`[date-range] sales=${salesMin}→${salesMax} | product=${productMin}→${productMax} | using today=${maxDate}`);
+
     const today = maxDate || new Date().toISOString().slice(0,10);
     const todayMs = new Date(today+'T00:00:00').getTime();
     let defaultStart = new Date(todayMs-29*86400000).toISOString().slice(0,10);
     if (minDate && defaultStart < minDate) defaultStart = minDate;
-    res.json({ minDate, maxDate, defaultStart, defaultEnd: today, today });
+    res.json({ minDate, maxDate, defaultStart, defaultEnd: today, today,
+      // expose both for debugging
+      salesMaxDate: salesMax, productMaxDate: productMax });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
