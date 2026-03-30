@@ -710,6 +710,7 @@ app.get('/api/product/asins', async (req, res) => {
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
     if (productType && productType !== 'All') { w += ' AND a.productType = ?'; params.push(productType); }
     if (niche && niche !== 'All') { w += ' AND a.seasonAndNiche = ?'; params.push(niche); }
+    // ── Main query: NO listing_info join — keeps aggregation correct ──
     const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
       a.productType, a.seasonAndNiche,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
@@ -717,12 +718,24 @@ app.get('/api/product/asins', async (req, res) => {
       SUM(ABS(${P_ADS})) as advCost,
       SUM(COALESCE(p.sessions,0)) as sessions,
       AVG(CASE WHEN p.unitSessionPercentage > 0 THEN p.unitSessionPercentage END) as cr,
-      CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice,
-      MAX(JSON_UNQUOTE(JSON_EXTRACT(li.images, '$[0].src'))) AS imageUrl
+      CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
-      LEFT JOIN listing_info li ON li.asin = p.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
+    // ── Image lookup: separate query, scoped to result ASINs, fails gracefully ──
+    let imgMap = {};
+    try {
+      if (rows.length > 0) {
+        const asinList = [...new Set(rows.map(r => r.asin))];
+        const ph = asinList.map(() => '?').join(',');
+        const imgRows = await qc(
+          `SELECT asin, JSON_UNQUOTE(JSON_EXTRACT(images, '$[0].src')) AS imageUrl
+           FROM listing_info WHERE asin IN (${ph}) AND images IS NOT NULL AND images != 'null'`,
+          asinList, 15000
+        );
+        imgRows.forEach(r => { if (r.imageUrl) imgMap[r.asin] = r.imageUrl; });
+      }
+    } catch(imgErr) { console.warn('product/asins img lookup (non-fatal):', imgErr.message); }
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
@@ -737,7 +750,7 @@ app.get('/api/product/asins', async (req, res) => {
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
         avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
-        imageUrl: r.imageUrl||null };
+        imageUrl: imgMap[r.asin]||null };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -1178,14 +1191,10 @@ app.get('/api/inventory/by-asin', async (req, res) => {
       WHERE p.seller IS NOT NULL AND p.seller != ''${accW}
       GROUP BY p.asin, p.seller`;
 
-    const imageSQL = `SELECT li.asin, JSON_UNQUOTE(JSON_EXTRACT(li.images, '$[0].src')) AS imageUrl
-      FROM listing_info li WHERE li.images IS NOT NULL AND li.images != 'null'`;
-
-    const [stockRows, planRows, sellerRows, imageRows] = await Promise.all([
+    const [stockRows, planRows, sellerRows] = await Promise.all([
       q(stockSQL, accP, 60000).catch(()=>[]),
       q(planSQL, accP, 60000).catch(()=>[]),
       q(sellerSQL, accP, 20000).catch(()=>[]),
-      q(imageSQL, [], 15000).catch(()=>[]),
     ]);
 
     const planMap = {};
@@ -1194,8 +1203,20 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     const sellerMap = {};
     sellerRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
 
+    // ── Image lookup: scoped to actual ASINs, fails gracefully ──
     const imageMap = {};
-    imageRows.forEach(r => { if(r.imageUrl) imageMap[r.asin] = r.imageUrl; });
+    try {
+      if (stockRows.length > 0) {
+        const asinList = [...new Set(stockRows.map(r => r.asin))];
+        const ph = asinList.map(() => '?').join(',');
+        const imageRows = await q(
+          `SELECT asin, JSON_UNQUOTE(JSON_EXTRACT(images, '$[0].src')) AS imageUrl
+           FROM listing_info WHERE asin IN (${ph}) AND images IS NOT NULL AND images != 'null'`,
+          asinList, 15000
+        );
+        imageRows.forEach(r => { if (r.imageUrl) imageMap[r.asin] = r.imageUrl; });
+      }
+    } catch(imgErr) { console.warn('inventory/by-asin img lookup (non-fatal):', imgErr.message); }
 
     const result = stockRows.map(r => {
       const plan = planMap[r.asin+'_'+r.accountId] || {};
