@@ -491,7 +491,6 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login' || req.path === '/health') return next();
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+$/)) return next(); // GET verify invite
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+\/accept$/)) return next(); // POST accept invite
-  if (req.path.startsWith('/debug/')) return next(); // debug — no auth needed
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Authentication required' });
@@ -712,7 +711,7 @@ app.get('/api/product/asins', async (req, res) => {
     if (productType && productType !== 'All') { w += ' AND a.productType = ?'; params.push(productType); }
     if (niche && niche !== 'All') { w += ' AND a.seasonAndNiche = ?'; params.push(niche); }
     const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
-      a.productType, a.seasonAndNiche,
+      MAX(a.productType) as productType, MAX(a.seasonAndNiche) as seasonAndNiche,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
       SUM(ABS(${P_ADS})) as advCost,
@@ -1236,31 +1235,6 @@ app.get('/api/debug/all', async (req, res) => {
   await test('stock_sample', () => q('SELECT * FROM seller_board_stock LIMIT 2'));
   await test('stock_daily_sample', () => q('SELECT * FROM seller_board_stock_daily ORDER BY date DESC LIMIT 2'));
   res.json(R);
-});
-
-/* ═══════════ DEBUG: TEST PRODUCT/ASINS QUERY DIRECTLY ═══════════ */
-app.get('/api/debug/asins', async (req, res) => {
-  try {
-    const ed = new Date().toISOString().slice(0,10);
-    const sd = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
-    // Test 1: raw count in date range
-    const cnt = await q(`SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD
-      FROM seller_board_product WHERE date BETWEEN ? AND ?`, [sd, ed]);
-    // Test 2: grouped by asin (mimics product/asins)
-    const sample = await q(`SELECT p.asin, SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue
-      FROM seller_board_product p
-      WHERE p.date BETWEEN ? AND ?
-      GROUP BY p.asin ORDER BY revenue DESC LIMIT 5`, [sd, ed]);
-    // Test 3: with LEFT JOIN asin (like product/asins)
-    const withJoin = await q(`SELECT p.asin, a.productType,
-      SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue
-      FROM seller_board_product p
-      LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
-      WHERE p.date BETWEEN ? AND ?
-      GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC LIMIT 5`, [sd, ed]);
-    res.json({ sd, ed, rawCount: cnt[0], sampleRows: sample, withJoinRows: withJoin,
-      msg: sample.length > 0 ? '✅ Query works' : '❌ Query returns 0 rows' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/debug/plan', async (req, res) => {
