@@ -1924,7 +1924,7 @@ function PlanSortTh({label,col,sortCol,sortDir,onSort,align="right",minW=95,chil
 }
 
 const PLAN_PAGE_SIZE=25;
-function PlanAlertsTab({alerts,t,onAsinClick}){
+function PlanAlertsTab({alerts,t,onAsinClick,asinImgMap={}}){
   const[sevF,setSevF]=useState("All");
   const[sellerF,setSellerF]=useState("All");
   const[brandF,setBrandF]=useState("All");
@@ -2029,7 +2029,7 @@ function PlanAlertsTab({alerts,t,onAsinClick}){
                 onMouseLeave={e=>e.currentTarget.style.background=i%2===1?t.tableHover+"88":"transparent"}
                 onClick={()=>onAsinClick&&onAsinClick(r.a)}>
                 <td style={{padding:"8px 10px",borderBottom:`1px solid ${t.divider}`,textAlign:"center",fontSize:14}}>{isCrit?"🔴":"🟡"}</td>
-                <td style={{padding:"8px 8px",width:44,borderBottom:`1px solid ${t.divider}`}}><AsinImg img={null} asin={r.a} size={30} t={t}/></td>
+                <td style={{padding:"8px 8px",width:44,borderBottom:`1px solid ${t.divider}`}}><AsinImg img={asinImgMap[r.a]||null} asin={r.a} size={30} t={t}/></td>
                 <td style={{padding:"8px 10px",borderBottom:`1px solid ${t.divider}`}}><AsinLink asin={r.a} onClick={()=>onAsinClick&&onAsinClick(r.a)} t={t}/></td>
                 <td style={{padding:"8px 10px",borderBottom:`1px solid ${t.divider}`,fontWeight:600,fontSize:11}}>{r.br||"—"}</td>
                 <td style={{padding:"8px 10px",borderBottom:`1px solid ${t.divider}`,color:t.primary,fontWeight:600,fontSize:11}}>{r.sl||"—"}</td>
@@ -2087,7 +2087,7 @@ function PlanAlertsTab({alerts,t,onAsinClick}){
 }
 
 /* ═══════════ ASIN PLAN ═══════════ */
-function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onAsinClick,onStoreChange,onSellerChange}){
+function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onAsinClick,onStoreChange,onSellerChange,asinImgMap={}}){
   const isF=(seller&&seller!=="All")||(store&&store!=="All")||(asinF&&asinF!=="All");
   const[trendMetric,setTrendMetric]=useState("gp");
   const[planMonth,setPlanMonth]=useState(MS[new Date().getMonth()]);
@@ -2342,7 +2342,7 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
                 onMouseEnter={e=>e.currentTarget.style.background=isSel?t.primaryLight+"cc":behind?t.redBg+"88":t.tableHover}
                 onMouseLeave={e=>e.currentTarget.style.background=isSel?t.primaryLight:behind?t.redBg+"55":i%2===1?t.tableHover+"55":"transparent"}>
                 <td style={{padding:"8px 8px",width:44,borderBottom:"1px solid "+t.divider}}>
-                  <AsinImg img={null} asin={r.a} size={30} t={t}/>
+                  <AsinImg img={asinImgMap[r.a]||null} asin={r.a} size={30} t={t}/>
                 </td>
                 <td style={{padding:"9px 12px",borderBottom:"1px solid "+t.divider,borderLeft:`2px solid ${isSel?t.primary:"transparent"}`}}>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
@@ -2445,7 +2445,7 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
     </div>}
 
     {/* ── Tab: Alerts ── */}
-    {activeTab==="alerts"&&<PlanAlertsTab alerts={alertRows} t={t} onAsinClick={r=>{if(onAsinClick)onAsinClick(r.a||r);}}/>}
+    {activeTab==="alerts"&&<PlanAlertsTab alerts={alertRows} t={t} onAsinClick={r=>{if(onAsinClick)onAsinClick(r.a||r);}} asinImgMap={asinImgMap}/>}
 
     {/* Footer filter logic note */}
     <div style={{marginTop:12,padding:"8px 14px",borderRadius:8,border:"1px solid "+t.primary+"22",background:t.primaryLight,fontSize:10,color:t.textMuted,lineHeight:1.7}}>
@@ -2802,7 +2802,7 @@ function ShopPage({t,fShopData,fDaily}){
 }
 
 /* ═══════════ TEAM ═══════════ */
-function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick}){
+function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,asinImgMap={}}){
   const[teamMonth,setTeamMonth]=useState("All");
   const asinData=useMemo(()=>{
     const raw=asinPlanBkData||[];
@@ -2890,7 +2890,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick}){
       </Cd>
     </Sec>
     <Sec title="Seller Performance (A / P / Gap)" icon="" t={t} action={<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:10,color:t.textMuted}}>Month:</span><Sel value={teamMonth} onChange={setTeamMonth} options={MS} label="All Months" t={t}/></div>}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead><tr>{THDSL.map((h,i)=><th key={i} style={{position:"sticky",top:0,zIndex:2,padding:"11px 14px",textAlign:i===0?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?80:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{sellerSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={{transition:"background .1s"}}><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.sl}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600,color:mC(r.margin,t)}}>{r.margin.toFixed(2)}%</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600}}>{r.cnt}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / Plan / <span style={{color:t.green}}>Gap</span> · Stock Value = current snapshot · Ads: lower = better</div></div></Sec>
-    {asinData.length>0&&<Sec title="ASIN Detail by Seller (A / P / Gap)" icon="" t={t}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:520,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead style={{position:"sticky",top:0,zIndex:2}}><tr>{THDASIN.map((h,i)=><th key={i} style={{padding:i===0?"9px 8px":"11px 14px",width:i===0?44:undefined,textAlign:i<=3?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?44:i<=3?70:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{asinData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={sellerBreaks.has(i)?{borderTop:"2px solid "+t.divider}:{transition:"background .1s"}}><td style={{padding:"8px 8px",width:44,borderBottom:"1px solid "+t.divider}}><AsinImg img={null} asin={r.a} size={32} t={t}/></td><td style={{padding:"11px 14px",fontSize:13,fontWeight:600,letterSpacing:.3,borderBottom:"1px solid "+t.divider,color:t.textSec}}><AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/></td><td style={{padding:"11px 14px",fontWeight:600,borderBottom:"1px solid "+t.divider,fontSize:11.5,color:t.primary}}>{r.sl||"—"}</td><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.br}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider,background:t.card}}>{asinData.length} ASINs · Grouped by seller · Stock Value = current snapshot</div></div></Sec>}
+    {asinData.length>0&&<Sec title="ASIN Detail by Seller (A / P / Gap)" icon="" t={t}><div style={{borderRadius:12,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:520,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12.5}}><thead style={{position:"sticky",top:0,zIndex:2}}><tr>{THDASIN.map((h,i)=><th key={i} style={{padding:i===0?"9px 8px":"11px 14px",width:i===0?44:undefined,textAlign:i<=3?"left":"right",color:h==="STOCK VALUE"?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:"uppercase",letterSpacing:.5,borderBottom:"2px solid "+t.divider,background:h==="STOCK VALUE"?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap",minWidth:i===0?44:i<=3?70:100}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{asinData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"} style={sellerBreaks.has(i)?{borderTop:"2px solid "+t.divider}:{transition:"background .1s"}}><td style={{padding:"8px 8px",width:44,borderBottom:"1px solid "+t.divider}}><AsinImg img={asinImgMap[r.a]||null} asin={r.a} size={32} t={t}/></td><td style={{padding:"11px 14px",fontSize:13,fontWeight:600,letterSpacing:.3,borderBottom:"1px solid "+t.divider,color:t.textSec}}><AsinLink asin={r.a} onClick={onAsinClick||(()=>{})} t={t}/></td><td style={{padding:"11px 14px",fontWeight:600,borderBottom:"1px solid "+t.divider,fontSize:11.5,color:t.primary}}>{r.sl||"—"}</td><td style={{padding:"11px 14px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.br}</td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.ga} plan={r.gp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ra} plan={r.rp} t={t}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.aa} plan={r.ap} t={t} reverse/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ua} plan={r.up} t={t} isMoney={false}/></td><td style={{padding:"11px 14px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.ga} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10.5,color:t.textMuted,borderTop:"1px solid "+t.divider,background:t.card}}>{asinData.length} ASINs · Grouped by seller · Stock Value = current snapshot</div></div></Sec>}
     <div style={{marginTop:14}}><Alerts t={t} alerts={genSellerAlerts(fSeller,t)}/></div>
   </div>;
 }
@@ -4185,6 +4185,8 @@ function Dashboard({authUser,onLogout}){
   const[fDaily,setFDaily]=useState([]);
   const[fAsin,setFAsin]=useState([]);
   const filteredFAsin=useMemo(()=>asinSelList.length>0?fAsin.filter(a=>asinSelList.includes(a.a)):fAsin,[fAsin,asinSelList]);
+  // Global ASIN→image map built from product/asins response
+  const asinImgMap=useMemo(()=>{const m={};fAsin.forEach(a=>{if(a.img)m[a.a]=a.img;});return m;},[fAsin]);
   const[fShopData,setFShopData]=useState([]);
   const[fSeller,setFSeller]=useState([]);
   const[invData,setInvData]=useState({});
@@ -4550,10 +4552,11 @@ function Dashboard({authUser,onLogout}){
           dbToday={dbToday}
         />}
         {pg==="inv"&&<InvPage t={t} mob={mob} invData={invData} invShop={invShop} invTrend={invTrend} invFeeMonthly={invFeeMonthly} invAsin={invAsin} onAsinClick={setStockAsin}/>}
-        {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller}/>}
+        {pg==="plan"&&<PlanPage t={t} onAsinClick={setStockAsin} planKpi={planKpiState} monthPlanData={monthPlanState} asinPlanBkData={asinPlanBkState} seller={seller} store={store} asinF={asinF} onStoreChange={setStore} onSellerChange={setSeller} asinImgMap={asinImgMap}/>}
+
         {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={filteredFAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily}/>}
-        {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState}/>}
+        {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState} asinImgMap={asinImgMap}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
         {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={filteredFAsin} em={em} monthPlanData={monthPlanState} monthlyLY={monthlyLYState} sd={sd} ed={ed}/>}
         <div style={{height:30}}/>
