@@ -14,7 +14,7 @@ const TH={
 };
 
 /* ═══════════ EMPTY DEFAULTS ═══════════ */
-const EMPTY_EM={sales:0,units:0,orders:0,refunds:0,advCost:0,shippingCost:0,refundCost:0,amazonFees:0,cogs:0,netProfit:0,estPayout:0,grossProfit:0,sessions:0,realAcos:0,pctRefunds:0,margin:0,salesOrganic:0,salesSP:0,salesSD:0,unitsOrganic:0,unitsSP:0,unitsSD:0,adsSP:0,adsSD:0,adsSB:0,adsSBV:0};
+const EMPTY_EM={sales:0,units:0,orders:0,refunds:0,advCost:0,shippingCost:0,refundCost:0,amazonFees:0,cogs:0,netProfit:0,estPayout:0,grossProfit:0,sessions:0,realAcos:0,pctRefunds:0,margin:0};
 
 /* ═══════════ UTILS ═══════════ */
 const $=n=>{if(n==null)return"—";return n<0?"-$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0}):"$"+n.toLocaleString("en-US",{maximumFractionDigits:0})};
@@ -144,17 +144,12 @@ function getZoneAPeriods(presetKey, refDateStr){
 
 /* ═══════════ BUILD DETAIL ROWS — shared between Zone A tiles + Zone B drawer ═══════════ */
 function buildDetailRows(em, detail={}){
-  const merged={...em,...detail,
-    sp:  (em.adsSP||0)+(detail?.adsSP||0),
-    sb:  (em.adsSB||0)+(detail?.adsSB||0),
-    sbv: (em.adsSBV||0)+(detail?.adsSBV||0),
-    sd:  (em.adsSD||0)+(detail?.adsSD||0),
-  };
+  const merged={...em,...detail};
   const cr=merged.sessions>0?(merged.units/merged.sessions*100):0;
   const tacos=merged.sales>0?(Math.abs(merged.advCost||0)/merged.sales*100):0;
   return[
     {id:'sales',     label:'Sales',          val:merged.sales||0,                              fmt:$2,   sub:[{l:'Organic',v:merged.salesOrganic||0,fmt:$2},{l:'Sponsored (PPC)',v:merged.salesPPC||0,fmt:$2}]},
-    {id:'units',     label:'Units',          val:merged.units||0,                              fmt:N,    sub:[{l:'Organic',v:merged.unitsOrganic||0,fmt:N},{l:'SP',v:merged.unitsSP||0,fmt:N},{l:'SD',v:merged.unitsSD||0,fmt:N}]},
+    {id:'units',     label:'Units',          val:merged.units||0,                              fmt:N,    sub:[{l:'Organic',v:merged.unitsOrganic||0,fmt:N},{l:'Sponsored (PPC)',v:merged.unitsSP||0,fmt:N}]},
     {id:'refunds',   label:'Refunds',        val:merged.refunds||0,                            fmt:N,    sub:[]},
     {id:'promo',     label:'Promo',          val:merged.promo||0,                              fmt:$2,   sub:[]},
     {id:'ads',       label:'Adv. Cost',      val:Math.abs(merged.advCost||0),                  fmt:$2,   sub:[{l:'Sponsored Products',v:merged.sp||0,fmt:$2},{l:'Sponsored Brands',v:merged.sb||0,fmt:$2},{l:'Sponsored Brands Video',v:merged.sbv||0,fmt:$2},{l:'Sponsored Display',v:merged.sd||0,fmt:$2}]},
@@ -561,8 +556,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
   const[groupBy,setGroupBy]=useState('ASIN');
   const[asinShopF,setAsinShopF]=useState('All');
   const[asinSellerF,setAsinSellerF]=useState('All');
-  const[asinPtF,setAsinPtF]=useState('All');
-  const[asinNiF,setAsinNiF]=useState('All');
   const[asinBSortKey,setAsinBSortKey]=useState('r');
   const[asinBSortDir,setAsinBSortDir]=useState(-1);
   const sortAsinB=k=>{if(asinBSortKey===k)setAsinBSortDir(d=>-d);else{setAsinBSortKey(k);setAsinBSortDir(-1);}};
@@ -642,13 +635,13 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       {l:'Organic',v:em.salesOrganic||0,fmt:$2},{l:'Sponsored (PPC)',v:em.salesPPC||0,fmt:$2},
     ]},
     {id:'units',    label:'Units',         val:em.units,                         fmt:N,   tip:TIPS.units,     pvk:'units',    sub:[
-      {l:'Organic',v:em.unitsOrganic||0,fmt:N},{l:'SP',v:em.unitsSP||0,fmt:N},{l:'SD',v:em.unitsSD||0,fmt:N},
+      {l:'Organic',v:em.unitsOrganic||0,fmt:N},{l:'Sponsored (PPC)',v:em.unitsSP||0,fmt:N},
     ]},
     {id:'refunds',  label:'Refunds',       val:em.refunds||0,                    fmt:N,   tip:'Number of refunds',    pvk:'refunds',  sub:[]},
     {id:'promo',    label:'Promo',         val:em.promo||0,                      fmt:$2,  tip:'Promotions & coupons', pvk:null,       isNew:true,sub:[]},
     {id:'ads',      label:'Adv. Cost',     val:Math.abs(em.advCost||0),          fmt:$2,  tip:TIPS.advCost,   pvk:'advCost',  sub:[
-      {l:'SP',v:em.adsSP||0,fmt:$2},{l:'SB',v:em.adsSB||0,fmt:$2},
-      {l:'SB Video',v:em.adsSBV||0,fmt:$2},{l:'SD',v:em.adsSD||0,fmt:$2},
+      {l:'Sponsored Products',v:em.sp||0,fmt:$2},{l:'Sponsored Brands',v:em.sb||0,fmt:$2},
+      {l:'Sponsored Brands Video',v:em.sbv||0,fmt:$2},{l:'Sponsored Display',v:em.sd||0,fmt:$2},
     ]},
     {id:'refundCost',label:'Refund Cost',  val:Math.abs(em.refundCost||0),       fmt:$2,  tip:'Cost of processing refunds',  pvk:'refundCost', sub:[]},
     {id:'fees',     label:'Amazon Fees',   val:Math.abs(em.amazonFees||0),       fmt:$2,  tip:TIPS.amazonFees, pvk:'amazonFees', sub:[
@@ -718,8 +711,6 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     let base=fAsin;
     if(asinShopF!=='All')base=base.filter(a=>a.b===asinShopF);
     if(asinSellerF!=='All')base=base.filter(a=>a.sl===asinSellerF);
-    if(asinPtF!=='All')base=base.filter(a=>a.pt===asinPtF);
-    if(asinNiF!=='All')base=base.filter(a=>a.ni===asinNiF);
     const sortFn=(a,b)=>{
       const av=typeof a[asinBSortKey]==='string'?a[asinBSortKey]:( a[asinBSortKey]??0);
       const bv=typeof b[asinBSortKey]==='string'?b[asinBSortKey]:( b[asinBSortKey]??0);
@@ -738,7 +729,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       g.cr=g._cr_sum/g._cnt;
     });
     return Object.values(map).sort(sortFn);
-  },[fAsin,groupBy,asinShopF,asinSellerF,asinPtF,asinNiF,asinBSortKey,asinBSortDir]);
+  },[fAsin,groupBy,asinShopF,asinSellerF,asinBSortKey,asinBSortDir]);
 
 
 
@@ -1480,17 +1471,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <option value="All">All Sellers</option>
             {[...new Set(fAsin.map(a=>a.sl).filter(Boolean))].sort().map(s=><option key={s} value={s}>{s}</option>)}
           </select>
-          {/* Product Type filter */}
-          <select value={asinPtF} onChange={e=>{setAsinPtF(e.target.value);setAsinNiF('All');}} style={{background:asinPtF!=='All'?t.primaryLight:t.card,color:asinPtF!=='All'?t.primary:t.text,border:'1px solid '+(asinPtF!=='All'?t.primary+'66':t.inputBorder),borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer',fontWeight:asinPtF!=='All'?700:400}}>
-            <option value="All">All Types</option>
-            {[...new Set(fAsin.map(a=>a.pt).filter(Boolean))].sort().map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
-          {/* Niche filter */}
-          <select value={asinNiF} onChange={e=>setAsinNiF(e.target.value)} style={{background:asinNiF!=='All'?t.primaryLight:t.card,color:asinNiF!=='All'?t.primary:t.text,border:'1px solid '+(asinNiF!=='All'?t.primary+'66':t.inputBorder),borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer',fontWeight:asinNiF!=='All'?700:400}}>
-            <option value="All">All Niches</option>
-            {[...new Set(fAsin.filter(a=>asinPtF==='All'||a.pt===asinPtF).map(a=>a.ni).filter(Boolean))].sort().map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
-          {(asinShopF!=='All'||asinSellerF!=='All'||asinPtF!=='All'||asinNiF!=='All')&&<button onClick={()=>{setAsinShopF('All');setAsinSellerF('All');setAsinPtF('All');setAsinNiF('All');}} style={{padding:'4px 8px',borderRadius:7,border:'1px solid '+t.inputBorder,background:'transparent',color:t.textSec,fontSize:10,cursor:'pointer'}}>✕ Clear</button>}
+          {(asinShopF!=='All'||asinSellerF!=='All')&&<button onClick={()=>{setAsinShopF('All');setAsinSellerF('All');}} style={{padding:'4px 8px',borderRadius:7,border:'1px solid '+t.inputBorder,background:'transparent',color:t.textSec,fontSize:10,cursor:'pointer'}}>✕ Clear</button>}
           <span style={{fontSize:10,color:t.textMuted,borderLeft:'1px solid '+t.divider,paddingLeft:6}}>Group by:</span>
           <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} style={{background:t.card,color:t.text,border:'1px solid '+t.inputBorder,borderRadius:7,padding:'4px 8px',fontSize:11,cursor:'pointer'}}>
             {['ASIN','Shop','Seller'].map(o=><option key={o}>{o}</option>)}
@@ -2440,8 +2421,6 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
   const[sortDir,setSortDir]=useState(-1);
   const[search,setSearch]=useState('');
   const[shopF,setShopF]=useState('All');
-  const[ptF,setPtF]=useState('All');   // productType filter
-  const[niF,setNiF]=useState('All');   // niche filter
   const[asinMultiF,setAsinMultiF]=useState([]);
   const[trendMetrics,setTrendMetrics]=useState({revenue:true,netProfit:true,advCost:false,units:false,cr:false,tacos:false});
   const[prevEm,setPrevEm]=useState(null);
@@ -2482,15 +2461,13 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
     let arr=[...fAsin];
     if(search)arr=arr.filter(a=>a.a.toLowerCase().includes(search.toLowerCase())||a.b.toLowerCase().includes(search.toLowerCase()));
     if(shopF&&shopF!=='All')arr=arr.filter(a=>a.b===shopF);
-    if(ptF&&ptF!=='All')arr=arr.filter(a=>a.pt===ptF);
-    if(niF&&niF!=='All')arr=arr.filter(a=>a.ni===niF);
     if(asinMultiF.length>0)arr=arr.filter(a=>asinMultiF.includes(a.a));
     arr.sort((a,b)=>{
       const av=a[sortKey]??0,bv=b[sortKey]??0;
       return sortDir*(av<bv?-1:av>bv?1:0);
     });
     return arr;
-  },[fAsin,search,shopF,ptF,niF,asinMultiF,sortKey,sortDir]);
+  },[fAsin,search,shopF,asinMultiF,sortKey,sortDir]);
 
   const sortBy=k=>{if(sortKey===k)setSortDir(d=>-d);else{setSortKey(k);setSortDir(-1);}};
   const sIco=k=>sortKey===k?(sortDir<0?' ↓':' ↑'):'';
@@ -2612,19 +2589,9 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
     {/* ASIN Table */}
     <Sec title="ASIN Table" icon="" t={t} action={
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ASIN…" style={{fontSize:12,padding:'5px 10px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.inputBg,color:t.text,width:150,outline:'none'}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ASIN…" style={{fontSize:12,padding:'5px 10px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.inputBg,color:t.text,width:165,outline:'none'}}/>
         <select value={store&&store!=='All'?store:shopF} onChange={e=>setShopF(e.target.value)} style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+(shopF!=='All'||store&&store!=='All'?t.primary:t.inputBorder),background:t.inputBg,color:t.text2||t.textSec}}>
           {shops.map(s=><option key={s}>{s}</option>)}
-        </select>
-        <select value={ptF} onChange={e=>{setPtF(e.target.value);setNiF('All');}}
-          style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+(ptF!=='All'?t.primary:t.inputBorder),background:t.inputBg,color:ptF!=='All'?t.primary:t.textSec,fontWeight:ptF!=='All'?700:400}}>
-          <option value="All">All Types</option>
-          {[...new Set(fAsin.map(a=>a.pt).filter(Boolean))].sort().map(s=><option key={s}>{s}</option>)}
-        </select>
-        <select value={niF} onChange={e=>setNiF(e.target.value)}
-          style={{fontSize:12,padding:'5px 9px',borderRadius:8,border:'1px solid '+(niF!=='All'?t.primary:t.inputBorder),background:t.inputBg,color:niF!=='All'?t.primary:t.textSec,fontWeight:niF!=='All'?700:400}}>
-          <option value="All">All Niches</option>
-          {[...new Set(fAsin.filter(a=>ptF==='All'||a.pt===ptF).map(a=>a.ni).filter(Boolean))].sort().map(s=><option key={s}>{s}</option>)}
         </select>
         <AsinMultiSel value={asinMultiF} onChange={setAsinMultiF} options={fAsin.map(a=>({asin:a.a,name:''}))} t={t}/>
         <span style={{fontSize:11,color:t.textMuted}}>{filtered.length} ASINs</span>
@@ -4139,9 +4106,6 @@ function Dashboard({authUser,onLogout}){
   const[selectedStores,setSelectedStores]=useState(()=>new Set());
   const[seller,setSeller]=useState("All");
   const[asinF,setAsinF]=useState("All");
-  const[productType,setProductType]=useState("All");
-  const[niche,setNiche]=useState("All");
-  const[filterOpts,setFilterOpts]=useState({productTypes:[],niches:[]});
   const[asinSelList,setAsinSelList]=useState([]); // multi-select list, client-side filter
   const storeStr=Array.from(selectedStores).join(',') || 'All';
   const store=storeStr;
@@ -4238,7 +4202,7 @@ function Dashboard({authUser,onLogout}){
             if(dbT){setDbToday(dbT);setEd(dbT);}
             if(dr.defaultStart)setSd(dr.defaultStart);
           }
-          api("product/filter-options",{store}).then(d=>{if(d)setFilterOpts({productTypes:d.productTypes||[],niches:d.niches||[]})}).catch(()=>{});
+          api("inventory/snapshot",{store}).then(d=>setInvData(d||{})).catch(()=>{});
           api("inventory/by-shop",{store}).then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
           api("inventory/stock-trend",{store}).then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))).catch(()=>{});
           api("inventory/storage-monthly",{store}).then(d=>setInvFeeMonthly(d||[])).catch(()=>{});
@@ -4252,18 +4216,18 @@ function Dashboard({authUser,onLogout}){
   // ═══════════ FETCH DATA when filters/dates change ═══════════
   // Debounced fetch: wait 400ms after last filter change before fetching
   const [fetchTrigger,setFetchTrigger]=useState(0);
-  const fetchParamsRef=useRef({sd,ed,store,seller,asinF,productType,niche});
-  fetchParamsRef.current={sd,ed,store,seller,asinF,productType,niche};
+  const fetchParamsRef=useRef({sd,ed,store,seller,asinF});
+  fetchParamsRef.current={sd,ed,store,seller,asinF};
   useEffect(()=>{
     if(!live||dbConnecting)return;
     const timer=setTimeout(()=>setFetchTrigger(t=>t+1),400);
     return()=>clearTimeout(timer);
-  },[sd,ed,store,seller,asinF,productType,niche,live,dbConnecting]);
+  },[sd,ed,store,seller,asinF,live,dbConnecting]);
   useEffect(()=>{
     if(!live||dbConnecting||fetchTrigger===0)return;
     let cancelled=false;
-    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af,productType:_pt,niche:_ni}=fetchParamsRef.current;
-    const p={start:_sd,end:_ed,store:_st,seller:_sl,asin:_af,productType:_pt,niche:_ni};
+    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
+    const p={start:_sd,end:_ed,store:_st,seller:_sl,asin:_af};
     setLoading(true);setFilterError(null);
     const days=Math.max(1,Math.round((new Date(_ed)-new Date(_sd))/86400000)+1);
     const pe=new Date(new Date(_sd+"T00:00:00").getTime()-86400000);
@@ -4295,7 +4259,7 @@ function Dashboard({authUser,onLogout}){
       api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d)setExecDetail(d)}).catch(()=>{});
       api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d))setShopExt(d)}).catch(()=>{});
       api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d))setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}))}).catch(()=>{});
-      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null})));
+      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null})));
       setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
       setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
     }catch(e){console.error("Fetch error:",e)}
@@ -4312,20 +4276,20 @@ function Dashboard({authUser,onLogout}){
   },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
-  const zoneAParamsRef=useRef({zoneAPreset,storeStr,productType,niche});
-  zoneAParamsRef.current={zoneAPreset,storeStr,productType,niche};
+  const zoneAParamsRef=useRef({zoneAPreset,storeStr});
+  zoneAParamsRef.current={zoneAPreset,storeStr};
   useEffect(()=>{
     if(!live||dbConnecting)return;
     let cancelled=false;
-    const{zoneAPreset:_preset,storeStr:_store,productType:_pt,niche:_ni}=zoneAParamsRef.current;
-    if(_preset==='custom')return;
+    const{zoneAPreset:_preset,storeStr:_store}=zoneAParamsRef.current;
+    if(_preset==='custom')return; // custom range handled separately
     const periods=getZoneAPeriods(_preset, dbToday);
     if(!periods.length)return;
     setZoneALoading(true);
     setZoneATileData([]);
     const storeParam=_store==='All'?undefined:_store;
     Promise.allSettled(periods.map(p=>
-      api('exec/summary',{start:p.start,end:p.end,store:storeParam,productType:_pt!=='All'?_pt:undefined,niche:_ni!=='All'?_ni:undefined})
+      api('exec/summary',{start:p.start,end:p.end,store:storeParam})
         .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
         .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
     )).then(results=>{
@@ -4334,7 +4298,7 @@ function Dashboard({authUser,onLogout}){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,storeStr,productType,niche,live,dbConnecting]);
+  },[zoneAPreset,storeStr,live,dbConnecting]);
 
   // ═══════════ ZONE A — CUSTOM RANGE FETCH ═══════════
   useEffect(()=>{
@@ -4342,8 +4306,6 @@ function Dashboard({authUser,onLogout}){
     if(!customStart||!customEnd)return;
     let cancelled=false;
     const storeParam=storeStr==='All'?undefined:storeStr;
-    const ptParam=productType!=='All'?productType:undefined;
-    const niParam=niche!=='All'?niche:undefined;
     const fmt=d=>{const dt=new Date(d+'T12:00:00');return MS[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();};
     setZoneALoading(true);
     setZoneATileData([]);
@@ -4362,7 +4324,7 @@ function Dashboard({authUser,onLogout}){
       periods.push({id:'custom_ly',label:'Same period last year',start:fmtD(ps),end:fmtD(pe),dateLabel:fmt(fmtD(ps))+' – '+fmt(fmtD(pe))});
     }
     Promise.allSettled(periods.map(p=>
-      api('exec/summary',{start:p.start,end:p.end,store:storeParam,productType:ptParam,niche:niParam})
+      api('exec/summary',{start:p.start,end:p.end,store:storeParam})
         .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
         .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
     )).then(results=>{
@@ -4371,7 +4333,7 @@ function Dashboard({authUser,onLogout}){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,customStart,customEnd,customCompare,storeStr,productType,niche,live,dbConnecting]);
+  },[zoneAPreset,customStart,customEnd,customCompare,storeStr,live,dbConnecting]);
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
@@ -4497,8 +4459,6 @@ function Dashboard({authUser,onLogout}){
           {showShopFilter&&<Sel value={store} onChange={setStore} options={opts.stores} label={shopLabel} t={t}/>}
           {showSeller&&<Sel value={seller} onChange={setSeller} options={opts.sellers} label="All Sellers" t={t}/>}
           {showAsin&&<AsinSel value={asinF} onChange={v=>{setAsinF(v);}} onMultiChange={setAsinSelList} options={opts.asins} label="All ASINs" t={t}/>}
-          {filterOpts.productTypes.length>0&&["prod","exec","shops","team","daily","analytics"].includes(pg)&&<Sel value={productType} onChange={setProductType} options={filterOpts.productTypes} label="All Types" t={t}/>}
-          {filterOpts.niches.length>0&&["prod","exec","shops","team","daily","analytics"].includes(pg)&&<Sel value={niche} onChange={setNiche} options={filterOpts.niches} label="All Niches" t={t}/>}
         </div>}
       </div>
 
