@@ -491,7 +491,7 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login' || req.path === '/health') return next();
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+$/)) return next(); // GET verify invite
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+\/accept$/)) return next(); // POST accept invite
-  if (req.path.startsWith('/debug/')) return next(); // debug endpoints — no auth needed
+  if (req.path.startsWith('/debug/')) return next(); // debug — no auth needed
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Authentication required' });
@@ -535,38 +535,16 @@ app.get('/api/debug/filters', async (req, res) => {
 /* ═══════════ DATE RANGE ═══════════ */
 app.get('/api/date-range', async (req, res) => {
   try {
-    // Query BOTH tables — product/asins uses seller_board_product, exec uses seller_board_sales
-    const [salesRows, productRows] = await Promise.all([
-      q(`SELECT MIN(sc.date) as minDate, MAX(sc.date) as maxDate FROM ${salesFrom()}`).catch(()=>[{}]),
-      q(`SELECT MIN(p.date) as minDate, MAX(p.date) as maxDate FROM seller_board_product p`).catch(()=>[{}]),
-    ]);
-    const sr = salesRows[0] || {}, pr = productRows[0] || {};
-
-    // Use the LATER of the two minDates (data must exist in both tables)
-    // Use the EARLIER of the two maxDates (so product/asins always has data)
-    const salesMax  = sr.maxDate ? new Date(sr.maxDate).toISOString().slice(0,10) : null;
-    const productMax = pr.maxDate ? new Date(pr.maxDate).toISOString().slice(0,10) : null;
-    const salesMin  = sr.minDate ? new Date(sr.minDate).toISOString().slice(0,10) : null;
-    const productMin = pr.minDate ? new Date(pr.minDate).toISOString().slice(0,10) : null;
-
-    // maxDate = min of both (ensures product table has data up to this date)
-    const maxDate = salesMax && productMax
-      ? (salesMax < productMax ? salesMax : productMax)
-      : (salesMax || productMax);
-    // minDate = max of both mins
-    const minDate = salesMin && productMin
-      ? (salesMin > productMin ? salesMin : productMin)
-      : (salesMin || productMin);
-
-    console.log(`[date-range] sales=${salesMin}→${salesMax} | product=${productMin}→${productMax} | using today=${maxDate}`);
-
+    const rows = await q(`SELECT MIN(sc.date) as minDate, MAX(sc.date) as maxDate FROM ${salesFrom()}`);
+    const r = rows[0] || {};
+    const maxDate = r.maxDate ? new Date(r.maxDate).toISOString().slice(0,10) : null;
+    const minDate = r.minDate ? new Date(r.minDate).toISOString().slice(0,10) : null;
+    // today = ngày mới nhất trong DB (không dùng đồng hồ server vì Railway chạy UTC, data lag 1-3 ngày)
     const today = maxDate || new Date().toISOString().slice(0,10);
     const todayMs = new Date(today+'T00:00:00').getTime();
     let defaultStart = new Date(todayMs-29*86400000).toISOString().slice(0,10);
     if (minDate && defaultStart < minDate) defaultStart = minDate;
-    res.json({ minDate, maxDate, defaultStart, defaultEnd: today, today,
-      // expose both for debugging
-      salesMaxDate: salesMax, productMaxDate: productMax });
+    res.json({ minDate, maxDate, defaultStart, defaultEnd: today, today });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -744,7 +722,6 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
-    console.log(`[product/asins] rows=${rows.length} | ${params[0]}→${params[1]} | store=${store||'All'} | seller=${seller||'All'}`);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
@@ -1259,6 +1236,31 @@ app.get('/api/debug/all', async (req, res) => {
   await test('stock_sample', () => q('SELECT * FROM seller_board_stock LIMIT 2'));
   await test('stock_daily_sample', () => q('SELECT * FROM seller_board_stock_daily ORDER BY date DESC LIMIT 2'));
   res.json(R);
+});
+
+/* ═══════════ DEBUG: TEST PRODUCT/ASINS QUERY DIRECTLY ═══════════ */
+app.get('/api/debug/asins', async (req, res) => {
+  try {
+    const ed = new Date().toISOString().slice(0,10);
+    const sd = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    // Test 1: raw count in date range
+    const cnt = await q(`SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD
+      FROM seller_board_product WHERE date BETWEEN ? AND ?`, [sd, ed]);
+    // Test 2: grouped by asin (mimics product/asins)
+    const sample = await q(`SELECT p.asin, SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue
+      FROM seller_board_product p
+      WHERE p.date BETWEEN ? AND ?
+      GROUP BY p.asin ORDER BY revenue DESC LIMIT 5`, [sd, ed]);
+    // Test 3: with LEFT JOIN asin (like product/asins)
+    const withJoin = await q(`SELECT p.asin, a.productType,
+      SUM(COALESCE(p.salesOrganic,0)+COALESCE(p.salesPPC,0)) as revenue
+      FROM seller_board_product p
+      LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
+      WHERE p.date BETWEEN ? AND ?
+      GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC LIMIT 5`, [sd, ed]);
+    res.json({ sd, ed, rawCount: cnt[0], sampleRows: sample, withJoinRows: withJoin,
+      msg: sample.length > 0 ? '✅ Query works' : '❌ Query returns 0 rows' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/debug/plan', async (req, res) => {
