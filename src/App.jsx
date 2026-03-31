@@ -353,13 +353,13 @@ function AsinImg({asin,img,size=32,t}){
           onError={()=>setErr(true)}/>}
     </div>
     {zoom&&ReactDOM.createPortal(
-      <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}>
-        <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:20,padding:20,boxShadow:'0 32px 80px rgba(0,0,0,.5)',maxWidth:380,width:'90vw',display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
-          <img src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL300_.jpg`} alt={asin}
-            style={{maxWidth:'100%',maxHeight:300,objectFit:'contain',borderRadius:10}}
-            onError={e=>{e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;}}/>
-          <span style={{fontSize:11,fontWeight:600,color:'#64748b',letterSpacing:.3}}>{asin}</span>
-          <button onClick={()=>setZoom(false)} style={{padding:'6px 24px',borderRadius:8,border:'1px solid #e2e8f0',background:'transparent',color:'#64748b',fontSize:12,cursor:'pointer'}}>Close</button>
+      <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:24,padding:28,boxShadow:'0 40px 100px rgba(0,0,0,.6)',maxWidth:520,width:'92vw',display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
+          <img src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`} alt={asin}
+            style={{maxWidth:'100%',maxHeight:'60vh',objectFit:'contain',borderRadius:12}}
+            onError={e=>{e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL300_.jpg`;}}/>
+          <span style={{fontSize:12,fontWeight:600,color:'#64748b',letterSpacing:.3}}>{asin}</span>
+          <button onClick={()=>setZoom(false)} style={{padding:'8px 32px',borderRadius:10,border:'1px solid #e2e8f0',background:'transparent',color:'#64748b',fontSize:13,cursor:'pointer',fontWeight:500}}>Close</button>
         </div>
       </div>,document.body
     )}
