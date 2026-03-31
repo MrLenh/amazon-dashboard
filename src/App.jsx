@@ -355,11 +355,14 @@ function AsinImg({asin,img,size=32,t}){
     {zoom&&ReactDOM.createPortal(
       <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:24}}>
         <img
-          src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
+          src={`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
           alt={asin}
           onClick={e=>e.stopPropagation()}
           style={{maxWidth:'90vw',maxHeight:'90vh',objectFit:'contain',borderRadius:12,boxShadow:'0 40px 100px rgba(0,0,0,.7)',cursor:'default'}}
-          onError={e=>{e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;}}/>
+          onError={e=>{
+            if(e.target.src.includes('SL1500'))e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;
+            else if(e.target.src.includes('SL500'))e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;
+          }}/>
       </div>,document.body
     )}
   </>;
