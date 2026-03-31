@@ -353,14 +353,13 @@ function AsinImg({asin,img,size=32,t}){
           onError={()=>setErr(true)}/>}
     </div>
     {zoom&&ReactDOM.createPortal(
-      <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}>
-        <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:24,padding:28,boxShadow:'0 40px 100px rgba(0,0,0,.6)',maxWidth:520,width:'92vw',display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
-          <img src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`} alt={asin}
-            style={{maxWidth:'100%',maxHeight:'60vh',objectFit:'contain',borderRadius:12}}
-            onError={e=>{e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL300_.jpg`;}}/>
-          <span style={{fontSize:12,fontWeight:600,color:'#64748b',letterSpacing:.3}}>{asin}</span>
-          <button onClick={()=>setZoom(false)} style={{padding:'8px 32px',borderRadius:10,border:'1px solid #e2e8f0',background:'transparent',color:'#64748b',fontSize:13,cursor:'pointer',fontWeight:500}}>Close</button>
-        </div>
+      <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:24}}>
+        <img
+          src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
+          alt={asin}
+          onClick={e=>e.stopPropagation()}
+          style={{maxWidth:'90vw',maxHeight:'90vh',objectFit:'contain',borderRadius:12,boxShadow:'0 40px 100px rgba(0,0,0,.7)',cursor:'default'}}
+          onError={e=>{e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;}}/>
       </div>,document.body
     )}
   </>;
