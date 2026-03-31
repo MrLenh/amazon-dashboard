@@ -331,8 +331,8 @@ function KpiCard({title,value,change,icon,t,tip}){return<div style={{background:
 
 function PlanKpi({title,actual,plan,t,highlight,tip,fmt}){const isN=typeof actual==="number"&&typeof plan==="number";const gap=isN?actual-plan:null;const gc=gap!=null?(gap>=0?t.green:t.red):t.textMuted;const F=fmt||$;const fmtActual=typeof actual==="number"?F(actual):actual;const fmtPlan=typeof plan==="number"?F(plan):plan;const fmtGap=gap!=null?F(gap):"—";return<div style={{background:highlight?t.primaryLight:t.card,borderRadius:14,padding:"20px 22px",border:highlight?"2px solid "+t.primary:"1px solid "+t.cardBorder,overflow:"visible",transition:"all .2s ease"}} onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 8px 28px "+t.shadow;}} onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}><div style={{fontSize:11.5,color:highlight?t.primary:t.textSec,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:14}}>{highlight?"⭐ ":""}{title}{tip&&<Tip text={tip} t={t}/>}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Actual</span><span style={{fontSize:highlight?28:24,fontWeight:800,color:highlight?t.primary:t.text,letterSpacing:-.3}}>{fmtActual}</span></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Plan</span><span style={{fontSize:15,fontWeight:600,color:t.textSec}}>{fmtPlan}</span></div><div style={{marginTop:14,padding:"10px 14px",borderRadius:10,background:t.primaryGhost,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:t.textSec,fontWeight:600}}>Gap</span><span style={{fontSize:15,fontWeight:700,color:gc}}>{fmtGap}</span></div></div>}
 
-const Sec=({title,icon,t,action,children})=><div style={{marginTop:28}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:8}}>{icon&&<span style={{fontSize:17}}>{icon}</span>}<span style={{fontSize:16,fontWeight:700,color:t.text,letterSpacing:-.2}}>{title}</span></div>{action}</div>{children}</div>;
-const Cd=({children,t,style:s})=><div style={{background:t.card,borderRadius:14,padding:20,border:"1px solid "+t.cardBorder,...s}}>{children}</div>;
+const Sec=({title,icon,t,action,children})=><div style={{marginTop:24,background:t.card,borderRadius:16,border:'1px solid '+t.cardBorder,padding:'20px 20px 16px',boxShadow:'0 1px 6px '+t.shadow}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:8}}>{icon&&<span style={{fontSize:17}}>{icon}</span>}<span style={{fontSize:15,fontWeight:700,color:t.text,letterSpacing:-.2}}>{title}</span></div>{action}</div>{children}</div>;
+const Cd=({children,t,style:s})=><div style={{background:'transparent',borderRadius:10,padding:0,...s}}>{children}</div>;
 const CT=({active,payload,label,t:th})=>{if(!active||!payload?.length)return null;const t=th||TH.light;return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow}}><div style={{fontSize:11,color:t.textSec,marginBottom:5,fontWeight:700}}>{label}</div>{payload.filter(p=>p.value!=null&&!isNaN(p.value)).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,marginTop:3}}><div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/><span style={{color:t.textSec}}>{p.name}:</span><span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?(Math.abs(p.value)>=1?p.value.toLocaleString("en-US",{maximumFractionDigits:2}):p.value.toFixed(4)):p.value}</span></div>)}</div>};
 
 function APG({actual,plan,t,isMoney=true,suffix="",reverse=false}){if(actual==null)return<div><div style={{fontSize:14,fontWeight:700,color:t.textMuted}}>—</div><div style={{fontSize:11,color:t.textMuted}}>Plan: {isMoney?$(plan):N(plan)+suffix}</div></div>;const gap=typeof actual==="number"?actual-plan:null;const gc=gap!=null?(reverse?(gap<=0?t.green:t.red):(gap>=0?t.green:t.red)):t.textMuted;const fA=isMoney?$(actual):(typeof actual==="number"?actual.toLocaleString():actual)+suffix;const fP=isMoney?$(plan):(typeof plan==="number"?plan.toLocaleString():plan)+suffix;const fG=gap!=null?(isMoney?$(gap):(gap>=0?"+":"")+gap.toLocaleString()+suffix):"—";return<div style={{lineHeight:1.6}}><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fA}</div><div style={{fontSize:11.5,color:t.textSec}}>Plan: {fP}</div><div style={{fontSize:11.5,fontWeight:700,color:gc}}>{fG}</div></div>}
@@ -2058,6 +2058,7 @@ function PlanAlertsTab({alerts,t,onAsinClick,asinImgMap={}}){
         <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12}}>
           <thead><tr>
             <STh label="Sev"       col="pctGp"   minW={44}/>
+            <th style={{width:40,padding:"9px 6px",borderBottom:"2px solid "+t.divider,background:t.tableBg}}/>
             <STh label="ASIN"      col="a"        minW={120}/>
             <STh label="Brand"     col="br"       minW={100}/>
             <STh label="Seller"    col="sl"       minW={80}/>
@@ -2370,6 +2371,7 @@ function PlanPage({t,planKpi,monthPlanData,asinPlanBkData,seller,store,asinF,onA
         <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
+              <th style={{width:40,padding:"9px 6px",borderBottom:"2px solid "+t.divider,background:t.tableBg}}/>
               <PlanSortTh label="ASIN"     col="a"       sortCol={bkSortCol} sortDir={bkSortDir} onSort={handleBkSort} align="left" minW={130} t={t}/>
               <PlanSortTh label="Brand"    col="br"      sortCol={bkSortCol} sortDir={bkSortDir} onSort={handleBkSort} align="left" minW={110} t={t}/>
               <PlanSortTh label="Seller"   col="sl"      sortCol={bkSortCol} sortDir={bkSortDir} onSort={handleBkSort} align="left" minW={100} t={t}/>
@@ -2872,7 +2874,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
       .then(results=>{
         const rows=periods.map((p,i)=>({label:p.label,shops:{}}));
         results.forEach((shopArr,pi)=>{
-          (shopArr||[]).forEach(s=>{rows[pi].shops[s.shop]={rev:s.revenue||0,gp:s.grossProfit||s.netProfit||0,units:s.units||0};});
+          (shopArr||[]).forEach(s=>{rows[pi].shops[s.shop]={revenue:s.revenue||0,gp:s.grossProfit||s.netProfit||0,units:s.units||0};});
         });
         setCmpData(rows);setCmpLoading(false);
       }).catch(()=>setCmpLoading(false));
