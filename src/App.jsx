@@ -436,9 +436,27 @@ function StockModal({asin,t,onClose}){
 /* ═══════════ GRADIENT CHART HELPER ═══════════ */
 const ChartGrads=({t})=><defs><linearGradient id="gRv" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.primary} stopOpacity={0.15}/><stop offset="100%" stopColor={t.primary} stopOpacity={0}/></linearGradient><linearGradient id="gNp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.green} stopOpacity={0.15}/><stop offset="100%" stopColor={t.green} stopOpacity={0}/></linearGradient></defs>;
 
+/* ── smartDomain: fix Y-axis not zooming way out for small negatives ── */
+function smartDomain(data, keys) {
+  if (!data || data.length === 0) return ['auto', 'auto'];
+  let min = Infinity, max = -Infinity;
+  data.forEach(d => {
+    (keys || Object.keys(d)).forEach(k => {
+      const v = typeof d[k] === 'number' ? d[k] : parseFloat(d[k]);
+      if (!isNaN(v)) { if (v < min) min = v; if (v > max) max = v; }
+    });
+  });
+  if (min === Infinity) return ['auto', 'auto'];
+  const range = max - min || Math.abs(max) || 1;
+  const lo = min < 0 ? min - range * 0.1 : min >= 0 ? 0 : min;
+  const hi = max + range * 0.05;
+  return [Math.round(lo), Math.round(hi)];
+}
+
 function TrendChart({data,t,h=240,keys}){
   const k=keys||[{dk:"revenue",n:"Revenue",c:t.primary,g:"url(#gRv)"},{dk:"netProfit",n:"Net Profit",c:t.green,g:"url(#gNp)"}];
-  return<Cd t={t}><ResponsiveContainer width="100%" height={h}><ComposedChart data={data}><ChartGrads t={t}/><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="label" tick={{fill:t.textSec,fontSize:11}} interval={Math.max(0,Math.floor(data.length/8))}/><YAxis tick={{fill:t.textSec,fontSize:11}} tickFormatter={v=>$s(v)}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/>{k.map(ki=><Area key={ki.dk} type="monotone" dataKey={ki.dk} name={ki.n} fill={ki.g||"none"} stroke={ki.c} strokeWidth={2}/>)}</ComposedChart></ResponsiveContainer></Cd>;
+  const domain=smartDomain(data, k.map(ki=>ki.dk));
+  return<Cd t={t}><ResponsiveContainer width="100%" height={h}><ComposedChart data={data}><ChartGrads t={t}/><CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/><XAxis dataKey="label" tick={{fill:t.textSec,fontSize:11}} interval={Math.max(0,Math.floor(data.length/8))}/><YAxis tick={{fill:t.textSec,fontSize:11}} tickFormatter={v=>$s(v)} domain={domain}/><Tooltip content={<CT t={t}/>}/><Legend wrapperStyle={{fontSize:10}}/>{k.map(ki=><Area key={ki.dk} type="monotone" dataKey={ki.dk} name={ki.n} fill={ki.g||"none"} stroke={ki.c} strokeWidth={2}/>)}</ComposedChart></ResponsiveContainer></Cd>;
 }
 
 /* ═══════════ ALERTS ═══════════ */
@@ -1391,7 +1409,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           <ComposedChart data={dailyChartData} margin={{bottom:8}}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={xInterval}/>
-            <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+            <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
             {(trendLines.crPct||trendLines.tacos||trendLines.margin||trendLines.roas)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+(trendLines.roas&&!trendLines.crPct&&!trendLines.tacos&&!trendLines.margin?'x':'%')} domain={[0,'auto']}/>}
             <Tooltip content={<CT t={t}/>}/>
             <Legend wrapperStyle={{fontSize:10}}/>
@@ -1461,7 +1479,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <ComposedChart data={sortedShop} margin={{top:36,right:40,bottom:8,left:10}} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid} vertical={false}/>
               <XAxis dataKey="s" tick={{fill:t.textSec,fontSize:10}} interval={0} angle={-15} textAnchor="end" height={44}/>
-              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} width={58}/>
+              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} width={58} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
               <YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'} domain={[0,'auto']} width={38}/>
               <Tooltip content={<CT t={t}/>}/>
               <Legend wrapperStyle={{fontSize:10,paddingTop:8}}/>
@@ -2650,7 +2668,7 @@ function ProdPage({t,isDark,fAsin,fDaily,onAsinClick,sd,ed,store}){
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
                 <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor(chartData.length/8))}/>
-                <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+                <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
                 {hasPct&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>v.toFixed(1)+'%'}/>}
                 <Tooltip content={<CT t={t}/>}/>
                 <Legend wrapperStyle={{fontSize:10}}/>
@@ -3020,7 +3038,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
             <ComposedChart data={teamChartData} margin={{bottom:8}}>
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
               <XAxis dataKey="label" tick={{fill:t.textSec,fontSize:10}} interval={Math.max(0,Math.floor(teamChartData.length/8))}/>
-              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+              <YAxis yAxisId="l" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
               {(hasPct||hasRoas)&&<YAxis yAxisId="r" orientation="right" tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>hasPct?v.toFixed(1)+'%':v.toFixed(1)+'x'}/>}
               <Tooltip content={<CT t={t}/>}/>
               <Legend wrapperStyle={{fontSize:10}}/>
@@ -3476,7 +3494,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
             <BarChart data={waterfall} margin={{top:20,right:20,bottom:5}}>
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
               <XAxis dataKey="name" tick={{fill:t.textSec,fontSize:10}}/>
-              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
               <Tooltip content={({active,payload})=>active&&payload?.[0]?<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:8,padding:"10px 14px"}}>
                 <div style={{fontWeight:700,fontSize:12,color:t.text}}>{payload[0].payload.name}</div>
                 <div style={{fontSize:12,color:payload[0].payload.value>=0?t.green:t.red,fontWeight:700}}>{$(payload[0].payload.value)}</div>
@@ -3515,7 +3533,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
             <ComposedChart data={anomalyData}>
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
               <XAxis dataKey="d" tick={{fill:t.textSec,fontSize:9}} interval={Math.max(0,Math.floor(anomalyData.length/12))}/>
-              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
               <Tooltip content={<CT t={t}/>}/>
               <Legend wrapperStyle={{fontSize:10}}/>
               <Area type="monotone" dataKey="rv" name="Revenue" stroke={t.primary} fill={t.primary} fillOpacity={0.08} strokeWidth={2}/>
@@ -3551,7 +3569,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
             <BarChart data={shopGP} margin={{top:10,right:20,bottom:5}}>
               <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
               <XAxis dataKey="shop" tick={{fill:t.textSec,fontSize:10}}/>
-              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)}/>
+              <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
               <Tooltip content={<CT t={t}/>}/>
               <Legend wrapperStyle={{fontSize:10}}/>
               <Bar dataKey="gp" name="Gross Profit" fill={t.green} radius={[4,4,0,0]}>{shopGP.map((e,i)=><Cell key={i} fill={(e.gp||0)>=0?t.green:t.red}/>)}</Bar>
@@ -3604,7 +3622,7 @@ function AnalyticsPage({t,fDaily,fShopData,fSeller,fAsin,em,monthPlanData,monthl
           <ComposedChart data={forecast}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.chartGrid}/>
             <XAxis dataKey="m" tick={{fill:t.textSec,fontSize:11}}/>
-            <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>pMetric==="units"||pMetric==="sessions"?N(v):$s(v)}/>
+            <YAxis tick={{fill:t.textSec,fontSize:10}} tickFormatter={v=>pMetric==="units"||pMetric==="sessions"?N(v):$s(v)} domain={[dataMin=>dataMin<0?Math.floor(dataMin*1.1):0, dataMax=>Math.ceil(dataMax*1.05)]}/>
             <Tooltip content={({active,payload,label})=>{
               if(!active||!payload?.length)return null;
               const d=payload[0]?.payload||{};
@@ -4757,3 +4775,4 @@ function Dashboard({authUser,onLogout}){
     {showAdmin&&<AdminUsersPanel t={t} onClose={()=>setShowAdmin(false)}/>}
   </div>;
 }
+                                
