@@ -355,11 +355,14 @@ function AsinImg({asin,img,size=32,t}){
     {zoom&&ReactDOM.createPortal(
       <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:24}}>
         <img
-          src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
+          src={`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
           alt={asin}
           onClick={e=>e.stopPropagation()}
           style={{maxWidth:'90vw',maxHeight:'90vh',objectFit:'contain',borderRadius:12,boxShadow:'0 40px 100px rgba(0,0,0,.7)',cursor:'default'}}
-          onError={e=>{e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;}}/>
+          onError={e=>{
+            if(e.target.src.includes('SL1500'))e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;
+            else if(e.target.src.includes('SL500'))e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;
+          }}/>
       </div>,document.body
     )}
   </>;
@@ -754,12 +757,20 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     const map={};
     base.forEach(a=>{
       const key=groupBy==='Shop'?a.b:groupBy==='Seller'?a.sl:a.a;
-      if(!map[key])map[key]={a:key,b:key,sl:a.sl,r:0,n:0,u:0,cr:0,ac:0,ro:0,m:0,_cnt:0,_cr_sum:0};
-      const g=map[key];g.r+=a.r;g.n+=a.n;g.u+=a.u;g._cr_sum+=a.cr;g._cnt++;
+      if(!map[key])map[key]={a:key,b:key,sl:a.sl,r:0,n:0,u:0,cr:0,ac:0,ro:0,m:0,adv:0,tacos:0,ap:0,ppu:0,ctr:null,cpc:null,imp:0,clk:0,_cnt:0,_cr_sum:0,_ctr_cnt:0,_cpc_cnt:0,_ctr_sum:0,_cpc_sum:0};
+      const g=map[key];g.r+=a.r;g.n+=a.n;g.u+=a.u;g.adv+=a.adv||0;g.imp+=a.imp||0;g.clk+=a.clk||0;
+      g._cr_sum+=a.cr;g._cnt++;
+      if(a.ctr!=null){g._ctr_sum+=a.ctr;g._ctr_cnt++;}
+      if(a.cpc!=null){g._cpc_sum+=a.cpc;g._cpc_cnt++;}
       g.m=g.r>0?(g.n/g.r*100):0;
+      g.tacos=g.r>0?(g.adv/g.r*100):0;
+      g.ap=g.u>0?(g.r/g.u):0;
+      g.ppu=g.u>0?(g.n/g.u):0;
       g.ac=g.r>0?(Math.abs(a.ac)*a.r+g.ac*g.r)/(g.r+a.r):0;
       g.ro=g.ac>0?100/g.ac:0;
       g.cr=g._cr_sum/g._cnt;
+      g.ctr=g._ctr_cnt>0?Math.round(g._ctr_sum/g._ctr_cnt*100)/100:null;
+      g.cpc=g._cpc_cnt>0?Math.round(g._cpc_sum/g._cpc_cnt*100)/100:null;
     });
     return Object.values(map).sort(sortFn);
   },[fAsin,groupBy,asinShopF,asinSellerF,asinPtF,asinNiF,asinBSortKey,asinBSortDir]);
@@ -1535,8 +1546,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend'].map((h,i)=>{
-              const keyMap={Revenue:'r','Net Profit':'n','Margin%':'m',Units:'u','CR%':'cr','ACoS':'ac','TACoS':'tacos','Profit/Unit':'ppu','Avg Price':'ap','Ads Spend':'adv',Shop:'b',[groupBy]:'a'};
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend','CTR%','CPC'].map((h,i)=>{
+              const keyMap={Revenue:'r','Net Profit':'n','Margin%':'m',Units:'u','CR%':'cr','ACoS':'ac','TACoS':'tacos','Profit/Unit':'ppu','Avg Price':'ap','Ads Spend':'adv','CTR%':'ctr','CPC':'cpc',Shop:'b',[groupBy]:'a'};
               const k=keyMap[h];
               const active=k&&asinBSortKey===k;
               return<th key={i} onClick={k?()=>sortAsinB(k):undefined} style={{padding:'9px 12px',textAlign:i<=2?'left':'right',fontSize:10,fontWeight:700,color:active?t.primary:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',cursor:k?'pointer':'default',userSelect:'none'}}>
@@ -1566,6 +1577,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',color:r.u>0&&r.n/r.u>=0?t.green:t.red,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.u>0?$(r.n/r.u):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.ap>0?$(r.ap):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.adv>0?$(r.adv):'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.ctr!=null?(r.ctr>=0.5?t.green:r.ctr>=0.25?t.orange:t.red):t.textMuted,fontWeight:r.ctr!=null?600:400}}>{r.ctr!=null?r.ctr.toFixed(2)+'%':'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.cpc!=null?t.text:t.textMuted}}>{r.cpc!=null?$(r.cpc):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
           </tr>;
           })}</tbody>
@@ -4497,7 +4510,7 @@ function Dashboard({authUser,onLogout}){
       api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d)setExecDetail(d)}).catch(()=>{});
       api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d))setShopExt(d)}).catch(()=>{});
       api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d))setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}))}).catch(()=>{});
-      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null})));
+      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
       setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
       setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
     }catch(e){console.error("Fetch error:",e)}
