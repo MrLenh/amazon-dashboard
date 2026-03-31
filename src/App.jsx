@@ -2857,11 +2857,23 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
     const endD=new Date(ed+'T00:00:00');
     const periods=[];
     if(gran==='day'){
-      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s});}
+      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s,tooltip:s});}
     } else if(gran==='week'){
-      for(let i=3;i>=0;i--){const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);const s2=new Date(e2);s2.setDate(s2.getDate()-6);periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:s2.toISOString().slice(0,10),e:e2.toISOString().slice(0,10)});}
+      for(let i=3;i>=0;i--){
+        const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);
+        const s2=new Date(e2);s2.setDate(s2.getDate()-6);
+        const sStr=s2.toISOString().slice(0,10);const eStr=e2.toISOString().slice(0,10);
+        const tooltip=MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+' – '+MS[e2.getMonth()].slice(0,3)+' '+e2.getDate()+', '+e2.getFullYear();
+        periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:sStr,e:eStr,tooltip});
+      }
     } else {
-      for(let i=2;i>=0;i--){const d=new Date(endD);d.setMonth(d.getMonth()-i);const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10);const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2});}
+      // Fix: use day=1 before setMonth to avoid month overflow (e.g. Mar 29 → Feb 29 doesn't exist)
+      for(let i=2;i>=0;i--){
+        const d=new Date(endD.getFullYear(),endD.getMonth()-i,1);
+        const s=d.toISOString().slice(0,10);
+        const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);
+        periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2,tooltip:s.slice(0,7)});
+      }
     }
     return periods;
   },[ed]);
@@ -2901,7 +2913,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead><tr>
             <th style={{padding:'9px 12px',textAlign:'left',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Shop</th>
-            {cmpData.map((p,i)=><th key={i} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>{p.label}</th>)}
+            {cmpData.map((p,i)=><th key={i} title={p.tooltip} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap',cursor:p.tooltip?'help':'default'}}>{p.label}</th>)}
             <th style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Δ vs Prev</th>
           </tr></thead>
           <tbody>{shopNames.map(shop=>{
@@ -2945,11 +2957,22 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
     const endD=new Date((ed||new Date().toISOString().slice(0,10))+'T00:00:00');
     const periods=[];
     if(gran==='day'){
-      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s});}
+      for(let i=6;i>=0;i--){const d=new Date(endD);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);periods.push({label:MS[d.getMonth()].slice(0,3)+' '+d.getDate(),s,e:s,tooltip:s});}
     } else if(gran==='week'){
-      for(let i=3;i>=0;i--){const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);const s2=new Date(e2);s2.setDate(s2.getDate()-6);periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:s2.toISOString().slice(0,10),e:e2.toISOString().slice(0,10)});}
+      for(let i=3;i>=0;i--){
+        const e2=new Date(endD);e2.setDate(e2.getDate()-i*7);
+        const s2=new Date(e2);s2.setDate(s2.getDate()-6);
+        const sStr=s2.toISOString().slice(0,10);const eStr=e2.toISOString().slice(0,10);
+        const tooltip=MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+' – '+MS[e2.getMonth()].slice(0,3)+' '+e2.getDate()+', '+e2.getFullYear();
+        periods.push({label:'W-'+i+' ('+MS[s2.getMonth()].slice(0,3)+' '+s2.getDate()+')',s:sStr,e:eStr,tooltip});
+      }
     } else {
-      for(let i=2;i>=0;i--){const d=new Date(endD);d.setMonth(d.getMonth()-i);const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10);const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2});}
+      for(let i=2;i>=0;i--){
+        const d=new Date(endD.getFullYear(),endD.getMonth()-i,1);
+        const s=d.toISOString().slice(0,10);
+        const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);
+        periods.push({label:MS[d.getMonth()]+' '+d.getFullYear(),s,e:e2,tooltip:s.slice(0,7)});
+      }
     }
     return periods;
   },[ed]);
@@ -3070,7 +3093,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead><tr>
             <th style={{padding:'9px 12px',textAlign:'left',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Seller</th>
-            {cmpData.map((p,i)=><th key={i} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>{p.label}</th>)}
+            {cmpData.map((p,i)=><th key={i} title={p.tooltip} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap',cursor:p.tooltip?'help':'default'}}>{p.label}</th>)}
             <th style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Δ vs Prev</th>
           </tr></thead>
           <tbody>{sellerNames.map(sl=>{
