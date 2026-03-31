@@ -106,6 +106,41 @@ async function getImageMap(asinList) {
   }
 }
 
+// Get avg CTR% and CPC per ASIN from report_sp_advertised_product in DB2
+async function getAdsMetrics(asinList, startDate, endDate) {
+  if (!pool2 || !asinList || asinList.length === 0) return {};
+  try {
+    const ph = asinList.map(() => '?').join(',');
+    const conn = await pool2.getConnection();
+    try {
+      const [rows] = await conn.execute(
+        `SELECT asin,
+          ROUND(AVG(NULLIF(clickThroughRate,0)) * 100, 2)   AS ctr,
+          ROUND(AVG(NULLIF(costPerClick,0)), 2)              AS cpc,
+          SUM(impressions)                                   AS impressions,
+          SUM(clicks)                                        AS clicks
+         FROM report_sp_advertised_product
+         WHERE asin IN (${ph}) AND date BETWEEN ? AND ?
+         GROUP BY asin`,
+        [...asinList, startDate, endDate]
+      );
+      const map = {};
+      rows.forEach(r => {
+        map[r.asin] = {
+          ctr: parseFloat(r.ctr) || null,
+          cpc: parseFloat(r.cpc) || null,
+          impressions: parseInt(r.impressions) || 0,
+          clicks: parseInt(r.clicks) || 0,
+        };
+      });
+      return map;
+    } finally { conn.release(); }
+  } catch (e) {
+    console.warn('[getAdsMetrics] failed (non-fatal):', e.message);
+    return {};
+  }
+}
+
 /* ═══════════ QUERY CACHE (TTL 2 min) ═══════════ */
 const _qcache = new Map();
 const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
@@ -761,14 +796,19 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
-    // Fetch images from DB2 (non-blocking, fails gracefully)
-    const imgMap = await getImageMap(rows.map(r => r.asin));
+    // Fetch images + ads metrics from DB2 in parallel (non-blocking, fail gracefully)
+    const asinList = rows.map(r => r.asin);
+    const [imgMap, adsMap] = await Promise.all([
+      getImageMap(asinList),
+      getAdsMetrics(asinList, s, e),
+    ]);
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
       const cr = Math.round((parseFloat(r.cr)||0)*100)/100;
       const advCost = parseFloat(r.advCost)||0;
       const units = parseInt(r.units)||0;
+      const ads = adsMap[r.asin] || {};
       return { asin: r.asin, shop: shopMap[r.accountId]||'', seller: r.seller||'',
         productType: r.productType||'', niche: r.seasonAndNiche||'',
         revenue: rev, netProfit: np, units,
@@ -777,7 +817,12 @@ app.get('/api/product/asins', async (req, res) => {
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
         avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
-        imageUrl: imgMap[r.asin] || null };
+        imageUrl: imgMap[r.asin] || null,
+        ctr: ads.ctr ?? null,
+        cpc: ads.cpc ?? null,
+        impressions: ads.impressions || 0,
+        clicks: ads.clicks || 0,
+      };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
