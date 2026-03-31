@@ -66,6 +66,46 @@ try {
   console.log('✅ MySQL pool created');
 } catch (e) { console.warn('⚠️ MySQL pool failed:', e.message); }
 
+/* ═══════════ IMAGE DB — same host, different credentials ═══════════ */
+// Railway env vars needed: DB2_NAME, DB2_USER, DB2_PASSWORD
+// DB2_HOST and DB2_PORT are optional — defaults to same as main DB
+let pool2 = null;
+if (process.env.DB2_NAME && process.env.DB2_USER) {
+  try {
+    pool2 = mysql.createPool({
+      host:     process.env.DB2_HOST     || process.env.DB_HOST || 'localhost',
+      port:     process.env.DB2_PORT     || process.env.DB_PORT || 3306,
+      user:     process.env.DB2_USER,
+      password: process.env.DB2_PASSWORD || '',
+      database: process.env.DB2_NAME,
+      waitForConnections: true, connectionLimit: 5, queueLimit: 20,
+      connectTimeout: 10000,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    });
+    console.log('✅ MySQL pool2 (image DB) created');
+  } catch (e) { console.warn('⚠️ MySQL pool2 failed:', e.message); }
+}
+
+async function getImageMap(asinList) {
+  if (!pool2 || !asinList || asinList.length === 0) return {};
+  try {
+    const ph = asinList.map(() => '?').join(',');
+    const conn = await pool2.getConnection();
+    try {
+      const [rows] = await conn.execute(
+        `SELECT asin, imageUrl FROM product_metadata WHERE asin IN (${ph}) AND imageUrl IS NOT NULL`,
+        asinList
+      );
+      const map = {};
+      rows.forEach(r => { if (r.imageUrl) map[r.asin] = r.imageUrl; });
+      return map;
+    } finally { conn.release(); }
+  } catch (e) {
+    console.warn('[getImageMap] failed (non-fatal):', e.message);
+    return {};
+  }
+}
+
 /* ═══════════ QUERY CACHE (TTL 2 min) ═══════════ */
 const _qcache = new Map();
 const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
@@ -721,6 +761,8 @@ app.get('/api/product/asins', async (req, res) => {
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
       ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
+    // Fetch images from DB2 (non-blocking, fails gracefully)
+    const imgMap = await getImageMap(rows.map(r => r.asin));
     res.json(rows.map(r => {
       const rev = parseFloat(r.revenue)||0, np = parseFloat(r.netProfit)||0;
       const acos = Math.round((parseFloat(r.acos)||0)*100)/100;
@@ -734,7 +776,8 @@ app.get('/api/product/asins', async (req, res) => {
         acos, roas: acos>0?Math.round(100/acos*100)/100:0,
         cr, sessions: parseInt(r.sessions)||0,
         advCost, tacos: rev>0?Math.round(advCost/rev*10000)/100:0,
-        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100 };
+        avgPrice: Math.round((parseFloat(r.avgPrice)||0)*100)/100,
+        imageUrl: imgMap[r.asin] || null };
     }));
   } catch (e) { console.error('product/asins:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -1187,6 +1230,9 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     const sellerMap = {};
     sellerRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
 
+    // Fetch images from DB2 (non-blocking, fails gracefully)
+    const imgMap = await getImageMap(stockRows.map(r => r.asin));
+
     const result = stockRows.map(r => {
       const plan = planMap[r.asin+'_'+r.accountId] || {};
       const fba = parseInt(r.fba)||0;
@@ -1200,6 +1246,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
         asin: r.asin, name: (r.name||'').substring(0,60), sku: r.sku||'',
         shop: shopMap[r.accountId]||`Account ${r.accountId}`,
         seller: sellerMap[r.asin]||'', accountId: r.accountId,
+        imageUrl: imgMap[r.asin] || null,
         fba, available, reserved, inbound,
         stockValue: parseFloat(r.stockValue)||0,
         velocity: Math.round((parseFloat(r.velocity)||0)*100)/100,
