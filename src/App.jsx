@@ -343,6 +343,7 @@ function AsinLink({asin,onClick,t}){return<span style={{cursor:"pointer",color:t
 function AsinImg({asin,img,size=32,t}){
   const[zoom,setZoom]=useState(false);
   const[err,setErr]=useState(false);
+  // Thumbnail: DB2 url first, then Amazon CDN SL75
   const src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;
   return<>
     <div style={{width:size,height:size,flexShrink:0,cursor:err?'default':'zoom-in',borderRadius:6,overflow:'hidden',background:t.tableBg,display:'flex',alignItems:'center',justifyContent:'center'}}
@@ -354,15 +355,22 @@ function AsinImg({asin,img,size=32,t}){
     </div>
     {zoom&&ReactDOM.createPortal(
       <div onClick={()=>setZoom(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:24}}>
-        <img
-          src={`https://m.media-amazon.com/images/P/${asin}.01._SL1500_.jpg`}
-          alt={asin}
-          onClick={e=>e.stopPropagation()}
-          style={{maxWidth:'90vw',maxHeight:'90vh',objectFit:'contain',borderRadius:12,boxShadow:'0 40px 100px rgba(0,0,0,.7)',cursor:'default'}}
-          onError={e=>{
-            if(e.target.src.includes('SL1500'))e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;
-            else if(e.target.src.includes('SL500'))e.target.src=img||`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;
-          }}/>
+        <div onClick={e=>e.stopPropagation()} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12,maxWidth:'90vw'}}>
+          <img
+            src={img||`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`}
+            alt={asin}
+            style={{maxWidth:'80vw',maxHeight:'80vh',objectFit:'contain',borderRadius:12,
+              boxShadow:'0 40px 100px rgba(0,0,0,.7)',background:'#fff',cursor:'default',
+              minWidth:200,minHeight:200}}
+            onError={e=>{
+              // Cascade: if DB2 img failed → try SL500, then SL300, then SL75
+              if(img&&e.target.src===img)e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL500_.jpg`;
+              else if(e.target.src.includes('SL500'))e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL300_.jpg`;
+              else if(e.target.src.includes('SL300'))e.target.src=`https://m.media-amazon.com/images/P/${asin}.01._SL75_.jpg`;
+            }}/>
+          <span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,.7)',letterSpacing:.3}}>{asin}</span>
+          <button onClick={()=>setZoom(false)} style={{padding:'6px 24px',borderRadius:8,border:'1px solid rgba(255,255,255,.3)',background:'rgba(255,255,255,.1)',color:'#fff',fontSize:12,cursor:'pointer'}}>Close</button>
+        </div>
       </div>,document.body
     )}
   </>;
