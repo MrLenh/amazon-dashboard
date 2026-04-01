@@ -305,9 +305,9 @@ function useProduct(seller, af) {
 /* ═══════════ HEALTH ═══════════ */
 app.get('/api/health', async (req, res) => {
   try {
-    if (pool) { await q('SELECT 1'); res.json({ status: 'ok', database: 'connected', version: VER }); }
-    else res.json({ status: 'ok', database: 'not configured', version: VER });
-  } catch (e) { res.json({ status: 'ok', database: 'error: ' + e.message, version: VER }); }
+    if (pool) { await q('SELECT 1'); res.json({ status: 'ok', database: 'connected', version: VER, db2: pool2 ? 'connected' : 'not configured' }); }
+    else res.json({ status: 'ok', database: 'not configured', version: VER, db2: pool2 ? 'connected' : 'not configured' });
+  } catch (e) { res.json({ status: 'ok', database: 'error: ' + e.message, version: VER, db2: pool2 ? 'connected' : 'not configured' }); }
 });
 
 /* ═══════════ AUTH: USERS TABLE + SEED ═══════════ */
