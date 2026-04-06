@@ -1607,7 +1607,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.ap>0?$(r.ap):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.adv>0?$(r.adv):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.ctr!=null?(r.ctr>=0.5?t.green:r.ctr>=0.25?t.orange:t.red):t.textMuted,fontWeight:r.ctr!=null?600:400}}>{r.ctr!=null?r.ctr.toFixed(2)+'%':'—'}</td>
-            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.cpc!=null?t.text:t.textMuted}}>{r.cpc!=null?$(r.cpc):'—'}</td>
+            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.cpc!=null?t.text:t.textMuted}}>{r.cpc!=null?'$'+r.cpc.toFixed(2):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
           </tr>;
           })}</tbody>
