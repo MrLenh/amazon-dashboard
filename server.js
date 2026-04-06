@@ -133,38 +133,54 @@ const ADS_DB = process.env.ADS_DB || process.env.DB2_NAME || null;
 async function getAdsMetrics(asinList, startDate, endDate) {
   if (!asinList || asinList.length === 0) return {};
   const ph = asinList.map(() => '?').join(',');
-  const sql = (tbl) => `SELECT asin,
-    ROUND(AVG(NULLIF(clickThroughRate,0)) * 100, 2) AS ctr,
-    ROUND(AVG(NULLIF(costPerClick,0)), 2)            AS cpc,
-    SUM(impressions)                                 AS impressions,
-    SUM(clicks)                                      AS clicks
-   FROM ${tbl}
-   WHERE asin IN (${ph}) AND date BETWEEN ? AND ?
-   GROUP BY asin`;
+
+  // Join product_ads (has asin+campaignId+adGroupId) → report_sp_advertised_product (has CTR/CPC by campaign+adGroup)
+  const sql = (prefix) => `
+    SELECT pa.asin,
+      ROUND(AVG(NULLIF(r.clickThroughRate, 0)) * 100, 4) AS ctr,
+      ROUND(AVG(NULLIF(r.costPerClick, 0)), 2)            AS cpc,
+      SUM(r.impressions)                                  AS impressions,
+      SUM(r.clicks)                                       AS clicks
+    FROM ${prefix}product_ads pa
+    JOIN ${prefix}report_sp_advertised_product r
+      ON r.campaignId = pa.campaignId AND r.adGroupId = pa.adGroupId
+    WHERE pa.asin IN (${ph})
+      AND r.date BETWEEN ? AND ?
+    GROUP BY pa.asin`;
   const params = [...asinList, startDate, endDate];
 
-  // Try 1: cross-DB query on main pool (works if DB_USER has access to ADS_DB)
+  const toMap = (rows) => {
+    const map = {};
+    rows.forEach(r => {
+      map[r.asin] = {
+        ctr: r.ctr != null ? Math.round(parseFloat(r.ctr) * 100) / 100 : null,
+        cpc: r.cpc != null ? parseFloat(r.cpc) : null,
+        impressions: parseInt(r.impressions)||0,
+        clicks: parseInt(r.clicks)||0,
+      };
+    });
+    return map;
+  };
+
+  // Try 1: cross-DB query on main pool
   if (pool && ADS_DB) {
     try {
-      const rows = await q(sql(`\`${ADS_DB}\`.report_sp_advertised_product`), params, 15000);
-      const map = {};
-      rows.forEach(r => { map[r.asin] = { ctr: r.ctr != null ? parseFloat(r.ctr) : null, cpc: r.cpc != null ? parseFloat(r.cpc) : null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
+      const rows = await q(sql(`\`${ADS_DB}\`.`), params, 20000);
+      const map = toMap(rows);
       if (Object.keys(map).length > 0) return map;
-    } catch (e) { console.warn('[getAdsMetrics] cross-DB failed, trying pool2:', e.message); }
+    } catch (e) { console.warn('[getAdsMetrics] cross-DB failed:', e.message); }
   }
 
-  // Try 2: pool2 (separate credentials)
+  // Try 2: pool2
   if (!pool2) return {};
   try {
     const conn = await pool2.getConnection();
     try {
-      const [rows] = await conn.execute(sql('report_sp_advertised_product'), params);
-      const map = {};
-      rows.forEach(r => { map[r.asin] = { ctr: r.ctr != null ? parseFloat(r.ctr) : null, cpc: r.cpc != null ? parseFloat(r.cpc) : null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
-      return map;
+      const [rows] = await conn.execute(sql(''), params);
+      return toMap(rows);
     } finally { conn.release(); }
   } catch (e) {
-    console.warn('[getAdsMetrics] pool2 also failed:', e.message);
+    console.warn('[getAdsMetrics] pool2 failed:', e.message);
     return {};
   }
 }
@@ -1360,23 +1376,26 @@ app.get('/api/debug/all', async (req, res) => {
 
 app.get('/api/debug/db2', async (req, res) => {
   const R = { pool2: !!pool2, ADS_DB, IMG_DB, tests: {} };
-  const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
-  // Test cross-DB via main pool
-  if (ADS_DB) {
-    await test('cross_db_ads_count', () => q(`SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM \`${ADS_DB}\`.report_sp_advertised_product`));
-    await test('cross_db_ads_sample', () => q(`SELECT asin, date, clickThroughRate, costPerClick, impressions, clicks FROM \`${ADS_DB}\`.report_sp_advertised_product ORDER BY date DESC LIMIT 3`));
-  }
-  // Test via pool2
   if (pool2) {
     try {
       const conn = await pool2.getConnection();
       try {
-        const [cnt] = await conn.execute('SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM report_sp_advertised_product');
-        R.tests.pool2_ads_count = cnt;
-        const [sample] = await conn.execute('SELECT asin, date, clickThroughRate, costPerClick FROM report_sp_advertised_product ORDER BY date DESC LIMIT 3');
-        R.tests.pool2_ads_sample = sample;
+        const [cnt] = await conn.execute('SELECT COUNT(*) as cnt FROM product_ads WHERE asin IS NOT NULL');
+        R.tests.product_ads_count = cnt[0];
+        const [sample] = await conn.execute(`
+          SELECT pa.asin, r.date,
+            ROUND(AVG(NULLIF(r.clickThroughRate,0))*100,4) AS ctr,
+            ROUND(AVG(NULLIF(r.costPerClick,0)),2) AS cpc,
+            SUM(r.impressions) AS impressions, SUM(r.clicks) AS clicks
+          FROM product_ads pa
+          JOIN report_sp_advertised_product r ON r.campaignId=pa.campaignId AND r.adGroupId=pa.adGroupId
+          WHERE pa.asin IS NOT NULL AND r.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+          GROUP BY pa.asin, r.date
+          ORDER BY r.date DESC LIMIT 3`);
+        R.tests.join_sample = sample;
+        R.tests.join_note = sample.length > 0 ? '✅ JOIN works! CTR/CPC data available' : '❌ JOIN returned 0 rows';
       } finally { conn.release(); }
-    } catch(e) { R.tests.pool2_ads = { error: e.message }; }
+    } catch(e) { R.tests.error = e.message; }
   }
   res.json(R);
 });
