@@ -594,6 +594,7 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login' || req.path === '/health') return next();
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+$/)) return next(); // GET verify invite
   if (req.path.match(/^\/auth\/invite\/[a-f0-9]+\/accept$/)) return next(); // POST accept invite
+  if (req.path.startsWith('/debug/')) return next(); // debug endpoints — no auth needed
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Authentication required' });
