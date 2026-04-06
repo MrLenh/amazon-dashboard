@@ -1030,13 +1030,14 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
           const expRows=tileExpandedRows[tile.id]||new Set();
           const loadingDetail=isOpen&&tile.detail===null&&!tileErr;
           // % change vs previous tile
-          const prevTile=ti>0?zoneATileData[ti-1]:null;
-          const prevSales=prevTile?.em?.sales||0;
-          const prevNP=prevTile?.em?.netProfit||0;
+          // So sanh voi cung ky truoc do (prevEm duoc fetch kem trong tile)
+          const prevEm=tile.prevEm||null;
+          const prevSales=prevEm?.sales||0;
+          const prevNP=prevEm?.netProfit||0;
           const salesChg=prevSales>0?((tileSales-prevSales)/prevSales*100):null;
           const npChg=prevNP!==0?((tileNP-prevNP)/Math.abs(prevNP)*100):null;
           // compare period label for tooltip
-          const compareLabel=prevTile?`vs ${prevTile.dateLabel}`:'';
+          const compareLabel=tile.prevDateLabel?`vs ${tile.prevDateLabel}`:'';
           const TL=({children,tip})=><span title={tip} style={{borderBottom:'1px dashed '+t.textMuted+'88',cursor:'help'}}>{children}</span>;
           const Chg=({v,cmp})=>v!=null?<span title={cmp} style={{fontSize:11,fontWeight:700,color:v>=0?t.green:t.red,cursor:cmp?'help':'default',textDecoration:cmp?'underline dotted':'none',textDecorationColor:t.textMuted}}>{v>=0?'+':''}{v.toFixed(1)}%</span>:null;
           return<div key={tile.id} style={{flex:1,minWidth:220,maxWidth:320,borderRight:ti<zoneATileData.length-1?'1px solid '+DIV:'none',display:'flex',flexDirection:'column'}}>
@@ -1163,7 +1164,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
               <td style={{padding:'9px 16px',fontWeight:600,borderBottom:'1px solid '+DIV,background:t.tableBg,position:'sticky',left:0,zIndex:2,color:t.textSec,fontSize:11,textTransform:'uppercase',letterSpacing:.3}}>{row.l}</td>
               {zoneATileData.map((tile,ti)=>{
                 const val=tile.em?.[row.k]??0;
-                const prev=ti>0?(zoneATileData[ti-1].em?.[row.k]??0):null;
+                const prev=tile.prevEm?(tile.prevEm[row.k]??0):null;
                 const chg=prev!=null&&prev!==0?((val-prev)/Math.abs(prev)*100):null;
                 return<td key={ti} style={{padding:'9px 16px',textAlign:'right',borderBottom:'1px solid '+DIV,borderLeft:'1px solid '+DIV}}>
                   <div style={{fontWeight:700,color:row.color(val)}}>{row.fmt(val)}</div>
@@ -4593,13 +4594,32 @@ function Dashboard({authUser,onLogout}){
     setZoneALoading(true);
     setZoneATileData([]);
     const storeParam=_store==='All'?undefined:_store;
-    Promise.allSettled(periods.map(p=>
-      api('exec/summary',{start:p.start,end:p.end,store:storeParam,productType:_pt!=='All'?_pt:undefined,niche:_ni!=='All'?_ni:undefined})
-        .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
-        .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
-    )).then(results=>{
+    // Moi tile tu fetch them prevEm = cung ky truoc do co cung so ngay
+    const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const fmtLbl=d=>MS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+    Promise.allSettled(periods.map(p=>{
+      const startMs=new Date(p.start+'T12:00:00').getTime();
+      const endMs=new Date(p.end+'T12:00:00').getTime();
+      const days=Math.round((endMs-startMs)/86400000)+1;
+      const prevEndDt=new Date(startMs-86400000);
+      const prevStartDt=new Date(startMs-days*86400000);
+      const prevStartStr=fmtD(prevStartDt);
+      const prevEndStr=fmtD(prevEndDt);
+      const prevDateLabel=days===1?fmtLbl(prevStartDt):(fmtLbl(prevStartDt)+' – '+fmtLbl(prevEndDt));
+      const params={start:p.start,end:p.end,store:storeParam,productType:_pt!=='All'?_pt:undefined,niche:_ni!=='All'?_ni:undefined};
+      const prevParams={start:prevStartStr,end:prevEndStr,store:storeParam,productType:_pt!=='All'?_pt:undefined,niche:_ni!=='All'?_ni:undefined};
+      return Promise.all([
+        api('exec/summary',params),
+        api('exec/summary',prevParams).catch(()=>null),
+      ]).then(([emRaw,prevRaw])=>({
+        id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,
+        em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,
+        prevEm:prevRaw&&prevRaw.sales!=null?prevRaw:null,
+        prevDateLabel,detail:null
+      })).catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,prevEm:null,prevDateLabel:'',detail:null}));
+    })).then(results=>{
       if(cancelled)return;
-      setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:periods[0]));
+      setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:{...periods[0],em:EMPTY_EM,prevEm:null,prevDateLabel:''}));
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
