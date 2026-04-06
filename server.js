@@ -1891,6 +1891,321 @@ app.get('/api/exec/monthly-ly', async (req, res) => {
   } catch (e) { console.error('exec/monthly-ly:', e.message); res.status(500).json({ error: e.message }); }
 });
 
+/* ═══════════════════════════════════════════════════════════════
+   REALTIME ENDPOINTS (Giai đoạn 1)
+   Source: orders_by_date_general + analytics_sale_traffiec_by_asin_date
+   Không đụng vào các endpoint cũ bên trên.
+   Frontend dùng suffix "-rt" để phân biệt với endpoint Sellerboard.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Helper: lấy revenue từ orders_by_date_general ──
+   orderedProductSales trong analytics là JSON {amount, currencyCode}
+   item_price trong orders_by_date_general là decimal thông thường       */
+function rtOrdersWhere(sd, ed, accIds) {
+  // Chỉ lấy đơn đã ship hoặc hoàn thành, bỏ Cancelled / Pending
+  let w = `WHERE DATE(o.purchase_date) BETWEEN ? AND ?
+    AND o.order_status NOT IN ('Cancelled','Pending','PendingAvailability')`;
+  const p = [sd, ed];
+  const ac = accIdClause('o', accIds);
+  w += ac.w;
+  p.push(...ac.p);
+  return { w, p };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   GET /api/exec/summary-rt
+   Tương đương /api/exec/summary nhưng dùng data SP-API realtime
+   Trả về: sales, units, orders, sessions, CVR, buyBox, advCost
+───────────────────────────────────────────────────────────── */
+app.get('/api/exec/summary-rt', async (req, res) => {
+  try {
+    const { start, end, store } = req.query;
+    const { s, e } = defDates(start, end);
+    const accIds = await storeToAccIds(store);
+    const { w, p } = rtOrdersWhere(s, e, accIds);
+
+    // Q1: Revenue + Units + Orders từ orders_by_date_general
+    const ordersQ = qc(`
+      SELECT
+        SUM(COALESCE(o.item_price, 0))          AS sales,
+        SUM(CAST(COALESCE(o.quantity,'0') AS SIGNED)) AS units,
+        COUNT(DISTINCT o.amazon_order_id)        AS orders,
+        SUM(COALESCE(o.item_promotion_discount, 0)) AS promoDiscount
+      FROM orders_by_date_general o ${w}`, p, 45000);
+
+    // Q2: Sessions + CVR + BuyBox từ analytics (typeDate='DAY')
+    let tw = `WHERE t.date BETWEEN ? AND ? AND t.typeDate = 'DAY'`;
+    const tp = [s, e];
+    const tac = accIdClause('t', accIds); tw += tac.w; tp.push(...tac.p);
+    const trafficQ = qc(`
+      SELECT
+        SUM(COALESCE(t.sessions, 0))                            AS sessions,
+        SUM(COALESCE(t.pageViews, 0))                           AS pageViews,
+        AVG(CASE WHEN t.unitSessionPercentage > 0
+              THEN t.unitSessionPercentage END)                  AS cvr,
+        AVG(CASE WHEN t.buyBoxPercentage > 0
+              THEN t.buyBoxPercentage END)                       AS buyBox
+      FROM analytics_sale_traffiec_by_asin_date t ${tw}`, tp, 30000);
+
+    // Q3: Ad Spend từ ads DB (pool2) — dùng lại logic getAdsMetrics
+    // Lấy tổng spend toàn bộ, không filter ASIN
+    let adSpend = 0;
+    if (pool2) {
+      try {
+        const conn = await pool2.getConnection();
+        try {
+          const [adRows] = await conn.execute(
+            `SELECT SUM(cost) AS spend
+             FROM report_sp_advertised_product
+             WHERE date BETWEEN ? AND ?`, [s, e]);
+          adSpend = parseFloat(adRows[0]?.spend) || 0;
+        } finally { conn.release(); }
+      } catch (e) { console.warn('[summary-rt] adSpend failed:', e.message); }
+    }
+
+    // Fallback: netProfit + advCost từ Sellerboard cũ (delay nhưng vẫn hiện để dễ so sánh)
+    const scF = scWhere(s, e, accIds);
+    const sbQ = qc(`
+      SELECT
+        SUM(COALESCE(sc.netProfit, 0))   AS netProfit,
+        SUM(COALESCE(sc.grossProfit, 0)) AS grossProfit,
+        SUM(${SC_ADS})                   AS advCost
+      FROM ${salesFrom()} ${scF.w}`, scF.p, 30000).catch(() => [{}]);
+
+    const [ordersRes, trafficRes, sbRes] = await Promise.all([ordersQ, trafficQ, sbQ]);
+    const o  = ordersRes[0] || {};
+    const t  = trafficRes[0] || {};
+    const sb = sbRes[0] || {};
+
+    const sales       = parseFloat(o.sales)        || 0;
+    const units       = parseInt(o.units)           || 0;
+    const orders      = parseInt(o.orders)          || 0;
+    const sessions    = parseInt(t.sessions)        || 0;
+    const cvr         = Math.round((parseFloat(t.cvr)    || 0) * 100) / 100;
+    const buyBox      = Math.round((parseFloat(t.buyBox) || 0) * 100) / 100;
+    const netProfit   = parseFloat(sb.netProfit)    || 0;
+    const grossProfit = parseFloat(sb.grossProfit)  || 0;
+    // advCost: ưu tiên ads DB nếu có, fallback về Sellerboard
+    const advCostFinal = adSpend > 0 ? adSpend : (parseFloat(sb.advCost) || 0);
+
+    res.json({
+      dataSource:   'realtime',      // frontend hiển thị badge "RT"
+      profitSource: 'sellerboard',   // tooltip giải thích profit vẫn từ SB
+      sales, units, orders,
+      sessions, cvr, buyBox,
+      adSpend:      advCostFinal,
+      advCost:      advCostFinal,
+      realAcos:     sales > 0 ? (advCostFinal / sales * 100) : 0,
+      netProfit,
+      grossProfit,
+      margin:       sales > 0 ? (netProfit / sales * 100) : 0,
+    });
+  } catch (e) {
+    console.error('exec/summary-rt:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   GET /api/exec/daily-rt
+   Tương đương /api/exec/daily nhưng dùng SP-API realtime
+   Trả về mảng: [{ date, revenue, units, orders, sessions, cvr, buyBox }]
+───────────────────────────────────────────────────────────── */
+app.get('/api/exec/daily-rt', async (req, res) => {
+  try {
+    const { start, end, store } = req.query;
+    const { s, e } = defDates(start, end);
+    const accIds = await storeToAccIds(store);
+    const { w, p } = rtOrdersWhere(s, e, accIds);
+
+    // Q1: Daily revenue + units + orders
+    const ordersQ = qc(`
+      SELECT
+        DATE(o.purchase_date)                              AS date,
+        SUM(COALESCE(o.item_price, 0))                    AS revenue,
+        SUM(CAST(COALESCE(o.quantity, '0') AS SIGNED))    AS units,
+        COUNT(DISTINCT o.amazon_order_id)                 AS orders
+      FROM orders_by_date_general o ${w}
+      GROUP BY DATE(o.purchase_date)
+      ORDER BY date`, p, 45000);
+
+    // Q2: Daily sessions + CVR + BuyBox
+    let tw = `WHERE t.date BETWEEN ? AND ? AND t.typeDate = 'DAY'`;
+    const tp = [s, e];
+    const tac = accIdClause('t', accIds); tw += tac.w; tp.push(...tac.p);
+    const trafficQ = qc(`
+      SELECT
+        t.date,
+        SUM(COALESCE(t.sessions, 0))                      AS sessions,
+        AVG(CASE WHEN t.unitSessionPercentage > 0
+              THEN t.unitSessionPercentage END)             AS cvr,
+        AVG(CASE WHEN t.buyBoxPercentage > 0
+              THEN t.buyBoxPercentage END)                  AS buyBox
+      FROM analytics_sale_traffiec_by_asin_date t ${tw}
+      GROUP BY t.date
+      ORDER BY t.date`, tp, 30000);
+
+    // Q3 fallback: netProfit + advCost theo ngay tu Sellerboard cu
+    const scFd = scWhere(s, e, accIds);
+    const sbDailyQ = qc(`
+      SELECT sc.date,
+        SUM(COALESCE(sc.netProfit, 0)) AS netProfit,
+        SUM(${SC_ADS})                 AS advCost
+      FROM ${salesFrom()} ${scFd.w}
+      GROUP BY sc.date ORDER BY sc.date`, scFd.p, 30000).catch(() => []);
+
+    const [ordersRows, trafficRows, sbDailyRows] = await Promise.all([ordersQ, trafficQ, sbDailyQ]);
+
+    // Merge ca 3 nguon theo date
+    const trafficMap = {};
+    trafficRows.forEach(r => { trafficMap[String(r.date).slice(0, 10)] = r; });
+
+    const sbDailyMap = {};
+    sbDailyRows.forEach(r => { sbDailyMap[String(r.date).slice(0, 10)] = r; });
+
+    const MS2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    res.json(ordersRows.map(r => {
+      const ds  = String(r.date).slice(0, 10);
+      const dt  = new Date(ds + 'T12:00:00');
+      const trk = trafficMap[ds]  || {};
+      const sb  = sbDailyMap[ds]  || {};
+      return {
+        date:         ds,
+        label:        isNaN(dt) ? ds : MS2[dt.getMonth()] + ' ' + dt.getDate(),
+        revenue:      parseFloat(r.revenue)  || 0,
+        units:        parseInt(r.units)      || 0,
+        orders:       parseInt(r.orders)     || 0,
+        sessions:     parseInt(trk.sessions) || 0,
+        cvr:          Math.round((parseFloat(trk.cvr)    || 0) * 100) / 100,
+        buyBox:       Math.round((parseFloat(trk.buyBox) || 0) * 100) / 100,
+        netProfit:    parseFloat(sb.netProfit) || 0,
+        advCost:      parseFloat(sb.advCost)   || 0,
+        dataSource:   'realtime',
+        profitSource: 'sellerboard',
+      };
+    }));
+  } catch (e) {
+    console.error('exec/daily-rt:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   GET /api/product/asins-rt
+   Tương đương /api/product/asins nhưng dùng SP-API realtime
+   Trả về per-ASIN: sessions, pageViews, CVR, buyBox, units, revenue
+───────────────────────────────────────────────────────────── */
+app.get('/api/product/asins-rt', async (req, res) => {
+  try {
+    const { start, end, store, seller, asin: af } = req.query;
+    const { s, e } = defDates(start, end);
+    const accIds = await storeToAccIds(store);
+    const shopMap = await getShopMap();
+
+    // Q1: Traffic per ASIN từ analytics
+    let tw = `WHERE t.date BETWEEN ? AND ? AND t.typeDate = 'DAY'`;
+    const tp = [s, e];
+    const tac = accIdClause('t', accIds); tw += tac.w; tp.push(...tac.p);
+    if (af && af !== 'All') { tw += ' AND t.asin = ?'; tp.push(af); }
+
+    const trafficQ = qc(`
+      SELECT
+        t.asin,
+        t.accountId,
+        SUM(COALESCE(t.sessions, 0))                       AS sessions,
+        SUM(COALESCE(t.pageViews, 0))                      AS pageViews,
+        SUM(COALESCE(t.unitsOrdered, 0))                   AS unitsOrdered,
+        AVG(CASE WHEN t.unitSessionPercentage > 0
+              THEN t.unitSessionPercentage END)              AS cvr,
+        AVG(CASE WHEN t.buyBoxPercentage > 0
+              THEN t.buyBoxPercentage END)                   AS buyBox,
+        -- orderedProductSales là JSON {amount, currencyCode}
+        SUM(COALESCE(
+          JSON_UNQUOTE(JSON_EXTRACT(t.orderedProductSales, '$.amount')),
+          0
+        ))                                                  AS revenue
+      FROM analytics_sale_traffiec_by_asin_date t ${tw}
+      GROUP BY t.asin, t.accountId
+      ORDER BY revenue DESC`, tp, 60000);
+
+    // Q2: Seller per ASIN từ seller_board_product (bảng nhỏ, query nhanh)
+    let sw = 'WHERE p.date BETWEEN ? AND ?'; const sp = [s, e];
+    const sac = accIdClause('p', accIds); sw += sac.w; sp.push(...sac.p);
+    if (seller && seller !== 'All') { sw += ' AND p.seller = ?'; sp.push(seller); }
+    const sellerQ = qc(`
+      SELECT p.asin, MAX(p.seller) AS seller
+      FROM seller_board_product p ${sw}
+      GROUP BY p.asin`, sp, 20000).catch(() => []);
+
+    // Q3: netProfit + margin per ASIN tu Sellerboard cu (fallback)
+    let sbaw = 'WHERE p.date BETWEEN ? AND ?'; const sbap = [s, e];
+    const sbac = accIdClause('p', accIds); sbaw += sbac.w; sbap.push(...sbac.p);
+    const sbAsinQ = qc(`
+      SELECT p.asin,
+        SUM(COALESCE(p.netProfit, 0))   AS netProfit,
+        SUM(COALESCE(p.grossProfit, 0)) AS grossProfit
+      FROM seller_board_product p ${sbaw}
+      GROUP BY p.asin`, sbap, 30000).catch(() => []);
+
+    const [trafficRows, sellerRows, sbAsinRows] = await Promise.all([trafficQ, sellerQ, sbAsinQ]);
+
+    // Build maps
+    const sellerMap = {};
+    sellerRows.forEach(r => { sellerMap[r.asin] = r.seller || ''; });
+
+    const sbAsinMap = {};
+    sbAsinRows.forEach(r => { sbAsinMap[r.asin] = r; });
+
+    let rows = trafficRows;
+    if (seller && seller !== 'All') {
+      rows = rows.filter(r => sellerMap[r.asin] === seller);
+    }
+
+    // Ads metrics (CTR, CPC, impressions) tu pool2
+    const asinList = rows.map(r => r.asin);
+    const [imgMap, adsMap] = await Promise.all([
+      getImageMap(asinList),
+      getAdsMetrics(asinList, s, e),
+    ]);
+
+    res.json(rows.map(r => {
+      const rev      = parseFloat(r.revenue)       || 0;
+      const units    = parseInt(r.unitsOrdered)     || 0;
+      const sess     = parseInt(r.sessions)         || 0;
+      const cvr      = Math.round((parseFloat(r.cvr)    || 0) * 100) / 100;
+      const buyBox   = Math.round((parseFloat(r.buyBox) || 0) * 100) / 100;
+      const ads      = adsMap[r.asin] || {};
+      const sbA      = sbAsinMap[r.asin] || {};
+      const np       = parseFloat(sbA.netProfit) || 0;
+      return {
+        asin:         r.asin,
+        shop:         shopMap[r.accountId] || '',
+        seller:       sellerMap[r.asin]    || '',
+        revenue:      rev,
+        units,
+        sessions:     sess,
+        pageViews:    parseInt(r.pageViews) || 0,
+        cvr,
+        buyBox,
+        // Profit tu Sellerboard cu (hien tam de so sanh)
+        netProfit:    np,
+        margin:       rev > 0 ? Math.round(np / rev * 1000) / 10 : 0,
+        profitSource: 'sellerboard',
+        // Ads tu Advertising API
+        ctr:          ads.ctr        ?? null,
+        cpc:          ads.cpc        ?? null,
+        impressions:  ads.impressions || 0,
+        clicks:       ads.clicks     || 0,
+        imageUrl:     imgMap[r.asin] || null,
+        dataSource:   'realtime',
+      };
+    }));
+  } catch (e) {
+    console.error('product/asins-rt:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ═══════════ SERVE FRONTEND ═══════════ */
 const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
