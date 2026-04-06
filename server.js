@@ -2079,7 +2079,7 @@ app.get('/api/exec/daily-rt', async (req, res) => {
         cvr:          Math.round((parseFloat(trk.cvr)    || 0) * 100) / 100,
         buyBox:       Math.round((parseFloat(trk.buyBox) || 0) * 100) / 100,
         netProfit:    parseFloat(sb.netProfit) || 0,
-        advCost:      parseFloat(sb.advCost)   || 0,
+        advCost:      Math.abs(parseFloat(sb.advCost) || 0),
         dataSource:   'realtime',
         profitSource: 'sellerboard',
       };
