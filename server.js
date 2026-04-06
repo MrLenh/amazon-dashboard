@@ -86,10 +86,30 @@ if (process.env.DB2_NAME && process.env.DB2_USER) {
   } catch (e) { console.warn('⚠️ MySQL pool2 failed:', e.message); }
 }
 
+// IMG_DB = database containing product_metadata with imageUrl
+// Set IMG_DB env var, or falls back to DB2_NAME
+const IMG_DB = process.env.IMG_DB || process.env.DB2_NAME || null;
+
 async function getImageMap(asinList) {
-  if (!pool2 || !asinList || asinList.length === 0) return {};
+  if (!asinList || asinList.length === 0) return {};
+  const ph = asinList.map(() => '?').join(',');
+
+  // Try 1: cross-DB query on main pool
+  if (pool && IMG_DB) {
+    try {
+      const rows = await q(
+        `SELECT asin, imageUrl FROM \`${IMG_DB}\`.product_metadata WHERE asin IN (${ph}) AND imageUrl IS NOT NULL`,
+        asinList, 10000
+      );
+      const map = {};
+      rows.forEach(r => { if (r.imageUrl) map[r.asin] = r.imageUrl; });
+      if (Object.keys(map).length > 0) return map;
+    } catch (e) { console.warn('[getImageMap] cross-DB failed, trying pool2:', e.message); }
+  }
+
+  // Try 2: pool2
+  if (!pool2) return {};
   try {
-    const ph = asinList.map(() => '?').join(',');
     const conn = await pool2.getConnection();
     try {
       const [rows] = await conn.execute(
@@ -101,42 +121,50 @@ async function getImageMap(asinList) {
       return map;
     } finally { conn.release(); }
   } catch (e) {
-    console.warn('[getImageMap] failed (non-fatal):', e.message);
+    console.warn('[getImageMap] pool2 also failed:', e.message);
     return {};
   }
 }
 
-// Get avg CTR% and CPC per ASIN from report_sp_advertised_product in DB2
+// ADS_DB = name of amazon_ads_manager database
+// Can be set via ADS_DB env var OR falls back to DB2_NAME
+const ADS_DB = process.env.ADS_DB || process.env.DB2_NAME || null;
+
 async function getAdsMetrics(asinList, startDate, endDate) {
-  if (!pool2 || !asinList || asinList.length === 0) return {};
+  if (!asinList || asinList.length === 0) return {};
+  const ph = asinList.map(() => '?').join(',');
+  const sql = (tbl) => `SELECT asin,
+    ROUND(AVG(NULLIF(clickThroughRate,0)) * 100, 2) AS ctr,
+    ROUND(AVG(NULLIF(costPerClick,0)), 2)            AS cpc,
+    SUM(impressions)                                 AS impressions,
+    SUM(clicks)                                      AS clicks
+   FROM ${tbl}
+   WHERE asin IN (${ph}) AND date BETWEEN ? AND ?
+   GROUP BY asin`;
+  const params = [...asinList, startDate, endDate];
+
+  // Try 1: cross-DB query on main pool (works if DB_USER has access to ADS_DB)
+  if (pool && ADS_DB) {
+    try {
+      const rows = await q(sql(`\`${ADS_DB}\`.report_sp_advertised_product`), params, 15000);
+      const map = {};
+      rows.forEach(r => { map[r.asin] = { ctr: parseFloat(r.ctr)||null, cpc: parseFloat(r.cpc)||null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
+      if (Object.keys(map).length > 0) return map;
+    } catch (e) { console.warn('[getAdsMetrics] cross-DB failed, trying pool2:', e.message); }
+  }
+
+  // Try 2: pool2 (separate credentials)
+  if (!pool2) return {};
   try {
-    const ph = asinList.map(() => '?').join(',');
     const conn = await pool2.getConnection();
     try {
-      const [rows] = await conn.execute(
-        `SELECT asin,
-          ROUND(AVG(NULLIF(clickThroughRate,0)) * 100, 2)   AS ctr,
-          ROUND(AVG(NULLIF(costPerClick,0)), 2)              AS cpc,
-          SUM(impressions)                                   AS impressions,
-          SUM(clicks)                                        AS clicks
-         FROM report_sp_advertised_product
-         WHERE asin IN (${ph}) AND date BETWEEN ? AND ?
-         GROUP BY asin`,
-        [...asinList, startDate, endDate]
-      );
+      const [rows] = await conn.execute(sql('report_sp_advertised_product'), params);
       const map = {};
-      rows.forEach(r => {
-        map[r.asin] = {
-          ctr: parseFloat(r.ctr) || null,
-          cpc: parseFloat(r.cpc) || null,
-          impressions: parseInt(r.impressions) || 0,
-          clicks: parseInt(r.clicks) || 0,
-        };
-      });
+      rows.forEach(r => { map[r.asin] = { ctr: parseFloat(r.ctr)||null, cpc: parseFloat(r.cpc)||null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
       return map;
     } finally { conn.release(); }
   } catch (e) {
-    console.warn('[getAdsMetrics] failed (non-fatal):', e.message);
+    console.warn('[getAdsMetrics] pool2 also failed:', e.message);
     return {};
   }
 }
@@ -305,9 +333,9 @@ function useProduct(seller, af) {
 /* ═══════════ HEALTH ═══════════ */
 app.get('/api/health', async (req, res) => {
   try {
-    if (pool) { await q('SELECT 1'); res.json({ status: 'ok', database: 'connected', version: VER, db2: pool2 ? 'connected' : 'not configured' }); }
-    else res.json({ status: 'ok', database: 'not configured', version: VER, db2: pool2 ? 'connected' : 'not configured' });
-  } catch (e) { res.json({ status: 'ok', database: 'error: ' + e.message, version: VER, db2: pool2 ? 'connected' : 'not configured' }); }
+    if (pool) { await q('SELECT 1'); res.json({ status: 'ok', database: 'connected', version: VER, db2: pool2 ? 'connected' : 'not configured', ads_db: ADS_DB||null, img_db: IMG_DB||null }); }
+    else res.json({ status: 'ok', database: 'not configured', version: VER, db2: pool2 ? 'connected' : 'not configured', ads_db: ADS_DB||null, img_db: IMG_DB||null });
+  } catch (e) { res.json({ status: 'ok', database: 'error: ' + e.message, version: VER, db2: pool2 ? 'connected' : 'not configured', ads_db: ADS_DB||null, img_db: IMG_DB||null }); }
 });
 
 /* ═══════════ AUTH: USERS TABLE + SEED ═══════════ */
