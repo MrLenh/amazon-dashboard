@@ -148,7 +148,7 @@ async function getAdsMetrics(asinList, startDate, endDate) {
     try {
       const rows = await q(sql(`\`${ADS_DB}\`.report_sp_advertised_product`), params, 15000);
       const map = {};
-      rows.forEach(r => { map[r.asin] = { ctr: parseFloat(r.ctr)||null, cpc: parseFloat(r.cpc)||null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
+      rows.forEach(r => { map[r.asin] = { ctr: r.ctr != null ? parseFloat(r.ctr) : null, cpc: r.cpc != null ? parseFloat(r.cpc) : null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
       if (Object.keys(map).length > 0) return map;
     } catch (e) { console.warn('[getAdsMetrics] cross-DB failed, trying pool2:', e.message); }
   }
@@ -160,7 +160,7 @@ async function getAdsMetrics(asinList, startDate, endDate) {
     try {
       const [rows] = await conn.execute(sql('report_sp_advertised_product'), params);
       const map = {};
-      rows.forEach(r => { map[r.asin] = { ctr: parseFloat(r.ctr)||null, cpc: parseFloat(r.cpc)||null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
+      rows.forEach(r => { map[r.asin] = { ctr: r.ctr != null ? parseFloat(r.ctr) : null, cpc: r.cpc != null ? parseFloat(r.cpc) : null, impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0 }; });
       return map;
     } finally { conn.release(); }
   } catch (e) {
@@ -1354,6 +1354,29 @@ app.get('/api/debug/all', async (req, res) => {
   await test('stock_daily_columns', () => q('SHOW COLUMNS FROM seller_board_stock_daily').then(r=>r.map(c=>c.Field)));
   await test('stock_sample', () => q('SELECT * FROM seller_board_stock LIMIT 2'));
   await test('stock_daily_sample', () => q('SELECT * FROM seller_board_stock_daily ORDER BY date DESC LIMIT 2'));
+  res.json(R);
+});
+
+app.get('/api/debug/db2', async (req, res) => {
+  const R = { pool2: !!pool2, ADS_DB, IMG_DB, tests: {} };
+  const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
+  // Test cross-DB via main pool
+  if (ADS_DB) {
+    await test('cross_db_ads_count', () => q(`SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM \`${ADS_DB}\`.report_sp_advertised_product`));
+    await test('cross_db_ads_sample', () => q(`SELECT asin, date, clickThroughRate, costPerClick, impressions, clicks FROM \`${ADS_DB}\`.report_sp_advertised_product ORDER BY date DESC LIMIT 3`));
+  }
+  // Test via pool2
+  if (pool2) {
+    try {
+      const conn = await pool2.getConnection();
+      try {
+        const [cnt] = await conn.execute('SELECT COUNT(*) as cnt, MIN(date) as minD, MAX(date) as maxD FROM report_sp_advertised_product');
+        R.tests.pool2_ads_count = cnt;
+        const [sample] = await conn.execute('SELECT asin, date, clickThroughRate, costPerClick FROM report_sp_advertised_product ORDER BY date DESC LIMIT 3');
+        R.tests.pool2_ads_sample = sample;
+      } finally { conn.release(); }
+    } catch(e) { R.tests.pool2_ads = { error: e.message }; }
+  }
   res.json(R);
 });
 
