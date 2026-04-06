@@ -4634,33 +4634,38 @@ function Dashboard({authUser,onLogout}){
     const ptParam=productType!=='All'?productType:undefined;
     const niParam=niche!=='All'?niche:undefined;
     const fmt=d=>{const dt=new Date(d+'T12:00:00');return MS[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();};
+    const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setZoneALoading(true);
     setZoneATileData([]);
-    // Build periods: main + optional compare
-    const periods=[{id:'custom',label:'Custom range',start:customStart,end:customEnd,dateLabel:fmt(customStart)+' – '+fmt(customEnd)}];
-    if(customCompare==='prev'){
-      const days=Math.round((new Date(customEnd)-new Date(customStart))/86400000)+1;
-      const ps=new Date(customStart);ps.setDate(ps.getDate()-days);
-      const pe=new Date(customEnd);pe.setDate(pe.getDate()-days);
-      const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      periods.push({id:'custom_prev',label:'Previous period',start:fmtD(ps),end:fmtD(pe),dateLabel:fmt(fmtD(ps))+' – '+fmt(fmtD(pe))});
-    } else if(customCompare==='lm'){
-      const ps=new Date(customStart);ps.setFullYear(ps.getFullYear()-1);
-      const pe=new Date(customEnd);pe.setFullYear(pe.getFullYear()-1);
-      const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      periods.push({id:'custom_ly',label:'Same period last year',start:fmtD(ps),end:fmtD(pe),dateLabel:fmt(fmtD(ps))+' – '+fmt(fmtD(pe))});
-    }
-    Promise.allSettled(periods.map(p=>
-      api('exec/summary',{start:p.start,end:p.end,store:storeParam,productType:ptParam,niche:niParam})
-        .then(emRaw=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,detail:null}))
-        .catch(()=>({id:p.id,label:p.label,dateLabel:p.dateLabel,start:p.start,end:p.end,em:EMPTY_EM,detail:null}))
-    )).then(results=>{
+    // Tinh cung ky nam ngoai lam prevEm (luon fetch, hien % gap trong tile)
+    const lyStart=new Date(customStart+'T12:00:00');lyStart.setFullYear(lyStart.getFullYear()-1);
+    const lyEnd=new Date(customEnd+'T12:00:00');lyEnd.setFullYear(lyEnd.getFullYear()-1);
+    const lyStartStr=fmtD(lyStart);
+    const lyEndStr=fmtD(lyEnd);
+    const prevDateLabel=fmt(lyStartStr)+' – '+fmt(lyEndStr);
+    const mainDateLabel=fmt(customStart)+' – '+fmt(customEnd);
+    Promise.all([
+      api('exec/summary',{start:customStart,end:customEnd,store:storeParam,productType:ptParam,niche:niParam}),
+      api('exec/summary',{start:lyStartStr,end:lyEndStr,store:storeParam,productType:ptParam,niche:niParam}).catch(()=>null),
+    ]).then(([emRaw,prevRaw])=>{
       if(cancelled)return;
-      setZoneATileData(results.map(r=>r.status==='fulfilled'?r.value:periods[0]));
+      setZoneATileData([{
+        id:'custom',label:'Custom range',dateLabel:mainDateLabel,
+        start:customStart,end:customEnd,
+        em:emRaw&&emRaw.sales!=null?emRaw:EMPTY_EM,
+        prevEm:prevRaw&&prevRaw.sales!=null?prevRaw:null,
+        prevDateLabel,
+        detail:null,
+      }]);
+      setZoneALoading(false);
+    }).catch(()=>{
+      if(cancelled)return;
+      setZoneATileData([{id:'custom',label:'Custom range',dateLabel:mainDateLabel,start:customStart,end:customEnd,em:EMPTY_EM,prevEm:null,prevDateLabel:'',detail:null}]);
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,customStart,customEnd,customCompare,storeStr,productType,niche,live,dbConnecting]);
+  },[zoneAPreset,customStart,customEnd,storeStr,productType,niche,live,dbConnecting]);
+
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
   const [planTrigger,setPlanTrigger]=useState(0);
