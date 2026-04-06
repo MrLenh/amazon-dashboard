@@ -132,55 +132,55 @@ const ADS_DB = process.env.ADS_DB || process.env.DB2_NAME || null;
 
 async function getAdsMetrics(asinList, startDate, endDate) {
   if (!asinList || asinList.length === 0) return {};
-  const ph = asinList.map(() => '?').join(',');
+  if (!pool2) return {};
 
-  // Join product_ads (has asin+campaignId+adGroupId) → report_sp_advertised_product (has CTR/CPC by campaign+adGroup)
-  const sql = (prefix) => `
-    SELECT pa.asin,
-      ROUND(AVG(NULLIF(r.clickThroughRate, 0)) * 100, 4) AS ctr,
-      ROUND(AVG(NULLIF(r.costPerClick, 0)), 2)            AS cpc,
-      SUM(r.impressions)                                  AS impressions,
-      SUM(r.clicks)                                       AS clicks
-    FROM ${prefix}product_ads pa
-    JOIN ${prefix}report_sp_advertised_product r
-      ON r.campaignId = pa.campaignId AND r.adGroupId = pa.adGroupId
-    WHERE pa.asin IN (${ph})
-      AND r.date BETWEEN ? AND ?
-    GROUP BY pa.asin`;
-  const params = [...asinList, startDate, endDate];
+  // Batch ASINs to avoid huge IN() clauses (max 200 per batch)
+  const BATCH = 200;
+  const chunks = [];
+  for (let i = 0; i < asinList.length; i += BATCH) chunks.push(asinList.slice(i, i + BATCH));
 
-  const toMap = (rows) => {
-    const map = {};
-    rows.forEach(r => {
-      map[r.asin] = {
-        ctr: r.ctr != null ? Math.round(parseFloat(r.ctr) * 100) / 100 : null,
-        cpc: r.cpc != null ? parseFloat(r.cpc) : null,
-        impressions: parseInt(r.impressions)||0,
-        clicks: parseInt(r.clicks)||0,
-      };
-    });
-    return map;
+  const queryChunk = async (conn, chunk) => {
+    const ph = chunk.map(() => '?').join(',');
+    const sql = `
+      SELECT pa.asin,
+        ROUND(AVG(NULLIF(r.clickThroughRate, 0)) * 100, 4) AS ctr,
+        ROUND(AVG(NULLIF(r.costPerClick, 0)), 2)            AS cpc,
+        SUM(r.impressions)                                  AS impressions,
+        SUM(r.clicks)                                       AS clicks
+      FROM product_ads pa
+      JOIN report_sp_advertised_product r
+        ON r.campaignId = pa.campaignId AND r.adGroupId = pa.adGroupId
+      WHERE pa.asin IN (${ph})
+        AND r.date BETWEEN ? AND ?
+      GROUP BY pa.asin`;
+    const [rows] = await conn.execute(sql, [...chunk, startDate, endDate]);
+    return rows;
   };
 
-  // Try 1: cross-DB query on main pool
-  if (pool && ADS_DB) {
-    try {
-      const rows = await q(sql(`\`${ADS_DB}\`.`), params, 20000);
-      const map = toMap(rows);
-      if (Object.keys(map).length > 0) return map;
-    } catch (e) { console.warn('[getAdsMetrics] cross-DB failed:', e.message); }
-  }
-
-  // Try 2: pool2
-  if (!pool2) return {};
   try {
     const conn = await pool2.getConnection();
     try {
-      const [rows] = await conn.execute(sql(''), params);
-      return toMap(rows);
+      await conn.query('SET SESSION max_execution_time=15000').catch(()=>{});
+      // Run chunks sequentially to avoid overloading pool2
+      const allRows = [];
+      for (const chunk of chunks) {
+        const rows = await queryChunk(conn, chunk);
+        allRows.push(...rows);
+      }
+      const map = {};
+      allRows.forEach(r => {
+        map[r.asin] = {
+          ctr: r.ctr != null ? Math.round(parseFloat(r.ctr) * 100) / 100 : null,
+          cpc: r.cpc != null ? parseFloat(r.cpc) : null,
+          impressions: parseInt(r.impressions)||0,
+          clicks: parseInt(r.clicks)||0,
+        };
+      });
+      console.log(`[getAdsMetrics] ${Object.keys(map).length} ASINs with CTR/CPC data`);
+      return map;
     } finally { conn.release(); }
   } catch (e) {
-    console.warn('[getAdsMetrics] pool2 failed:', e.message);
+    console.warn('[getAdsMetrics] failed:', e.message);
     return {};
   }
 }
