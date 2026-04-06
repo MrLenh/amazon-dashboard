@@ -801,6 +801,9 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
     return Object.values(map).sort(sortFn);
   },[fAsin,groupBy,asinShopF,asinSellerF,asinPtF,asinNiF,asinBSortKey,asinBSortDir]);
 
+  // Show CTR%/CPC columns only when DB2 has data for at least some ASINs
+  const hasCtrData=useMemo(()=>fAsin.some(a=>a.ctr!=null),[fAsin]);
+
 
 
 
@@ -1572,7 +1575,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{overflowX:'auto',maxHeight:500,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead style={{position:'sticky',top:0,zIndex:2}}><tr>
-            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend','CTR%','CPC'].map((h,i)=>{
+            {[groupBy,'','Shop','Revenue','Net Profit','Margin%','Units','CR%','ACoS','TACoS','Profit/Unit','Avg Price','Ads Spend',...(hasCtrData?['CTR%','CPC']:[])].map((h,i)=>{
               const keyMap={Revenue:'r','Net Profit':'n','Margin%':'m',Units:'u','CR%':'cr','ACoS':'ac','TACoS':'tacos','Profit/Unit':'ppu','Avg Price':'ap','Ads Spend':'adv','CTR%':'ctr','CPC':'cpc',Shop:'b',[groupBy]:'a'};
               const k=keyMap[h];
               const active=k&&asinBSortKey===k;
@@ -1603,8 +1606,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
             <td style={{padding:'7px 12px',textAlign:'right',color:r.u>0&&r.n/r.u>=0?t.green:t.red,fontWeight:600,borderBottom:'1px solid '+t.divider}}>{r.u>0?$(r.n/r.u):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.textMuted,borderBottom:'1px solid '+t.divider}}>{r.ap>0?$(r.ap):'—'}</td>
             <td style={{padding:'7px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.adv>0?$(r.adv):'—'}</td>
-            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.ctr!=null?(r.ctr>=0.5?t.green:r.ctr>=0.25?t.orange:t.red):t.textMuted,fontWeight:r.ctr!=null?600:400}}>{r.ctr!=null?r.ctr.toFixed(2)+'%':'—'}</td>
-            <td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.cpc!=null?t.text:t.textMuted}}>{r.cpc!=null?$(r.cpc):'—'}</td>
+            {hasCtrData&&<td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.ctr!=null?(r.ctr>=0.5?t.green:r.ctr>=0.25?t.orange:t.red):t.textMuted,fontWeight:r.ctr!=null?600:400}}>{r.ctr!=null?r.ctr.toFixed(2)+'%':'—'}</td>}
+            {hasCtrData&&<td style={{padding:'7px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.cpc!=null?t.text:t.textMuted}}>{r.cpc!=null?$(r.cpc):'—'}</td>}
             <td style={{padding:'7px 12px',textAlign:'right',color:r.ro>3?t.green:r.ro>2?t.orange:t.red,borderBottom:'1px solid '+t.divider}}>{r.ro.toFixed(2)}</td>
           </tr>;
           })}</tbody>
