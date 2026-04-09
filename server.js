@@ -1902,9 +1902,8 @@ app.get('/api/exec/monthly-ly', async (req, res) => {
    orderedProductSales trong analytics là JSON {amount, currencyCode}
    item_price trong orders_by_date_general là decimal thông thường       */
 function rtOrdersWhere(sd, ed, accIds) {
-  // CONVERT_TZ: purchase_date luu UTC, Sellerboard dung PST (UTC-8)
-  // Dung PST de date boundary khop voi Sellerboard
-  let w = `WHERE DATE(CONVERT_TZ(o.purchase_date, '+00:00', '-08:00')) BETWEEN ? AND ?
+  // purchase_date da duoc luu theo PST roi (khop voi Sellerboard)
+  let w = `WHERE DATE(o.purchase_date) BETWEEN ? AND ?
     AND o.order_status NOT IN ('Cancelled','Pending','PendingAvailability')`;
   const p = [sd, ed];
   const ac = accIdClause('o', accIds);
@@ -2022,12 +2021,12 @@ app.get('/api/exec/daily-rt', async (req, res) => {
     // Q1: Daily revenue + units + orders
     const ordersQ = qc(`
       SELECT
-        DATE(CONVERT_TZ(o.purchase_date, '+00:00', '-08:00')) AS date,
+        DATE(o.purchase_date)                              AS date,
         SUM(COALESCE(o.item_price, 0))                    AS revenue,
         SUM(CAST(COALESCE(o.quantity, '0') AS SIGNED))    AS units,
         COUNT(DISTINCT o.amazon_order_id)                 AS orders
       FROM orders_by_date_general o ${w}
-      GROUP BY DATE(CONVERT_TZ(o.purchase_date, '+00:00', '-08:00'))
+      GROUP BY DATE(o.purchase_date)
       ORDER BY date`, p, 45000);
 
     // Q2: Daily sessions + CVR + BuyBox
