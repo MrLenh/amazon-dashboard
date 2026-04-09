@@ -1477,6 +1477,70 @@ app.get('/api/debug/formula-check', async (req, res) => {
   }
 });
 
+/* ═══════════ DEBUG: FORMULA CHECK DETAIL ═══════════ */
+app.get('/api/debug/formula-check-detail', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const { s, e } = defDates(start, end);
+    const R = { period: { s, e } };
+
+    // 1. Breakdown theo accountId -- xem store nao bi thieu
+    R.by_account = await q(`
+      SELECT
+        sc.accountId,
+        a.shop,
+        COUNT(DISTINCT sc.date) AS days_in_sbs,
+        SUM(COALESCE(sc.salesOrganic,0) + COALESCE(sc.salesPPC,0)) AS sbs_sales,
+        SUM(COALESCE(sc.orders,0)) AS sbs_orders,
+        SUM(COALESCE(sc.unitsOrganic,0) + COALESCE(sc.unitsPPC,0)) AS sbs_units
+      FROM seller_board_sales sc
+      LEFT JOIN accounts a ON a.id = sc.accountId
+      WHERE sc.date BETWEEN ? AND ?
+      GROUP BY sc.accountId, a.shop
+      ORDER BY sbs_sales DESC`, [s, e], 20000);
+
+    // 2. Kiem tra ngay nao bi missing trong thang
+    R.missing_dates = await q(`
+      SELECT sc.accountId, a.shop, COUNT(DISTINCT sc.date) AS days_present,
+        MIN(sc.date) AS min_date, MAX(sc.date) AS max_date,
+        DATEDIFF(MAX(sc.date), MIN(sc.date)) + 1 AS expected_days,
+        DATEDIFF(MAX(sc.date), MIN(sc.date)) + 1 - COUNT(DISTINCT sc.date) AS missing_days
+      FROM seller_board_sales sc
+      LEFT JOIN accounts a ON a.id = sc.accountId
+      WHERE sc.date BETWEEN ? AND ?
+      GROUP BY sc.accountId, a.shop
+      HAVING missing_days > 0`, [s, e], 20000);
+
+    // 3. So sanh tong seller_board_sales vs seller_board_day (neu co)
+    try {
+      R.seller_board_day_total = await q(`
+        SELECT
+          SUM(COALESCE(salesOrganic,0) + COALESCE(salesPPC,0)) AS total_sales,
+          SUM(COALESCE(orders,0)) AS total_orders,
+          SUM(COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0)) AS total_units,
+          COUNT(*) AS row_count
+        FROM seller_board_day
+        WHERE date BETWEEN ? AND ?`, [s, e], 20000);
+    } catch(e) { R.seller_board_day_total = 'table not found or error: ' + e.message; }
+
+    // 4. Kiem tra co don nao trong orders_by_date_general ma khong co trong SBS khong
+    try {
+      R.orders_rt_total = await q(`
+        SELECT
+          SUM(COALESCE(item_price,0)) AS total_sales,
+          COUNT(DISTINCT amazon_order_id) AS total_orders,
+          SUM(CAST(COALESCE(quantity,'0') AS SIGNED)) AS total_units
+        FROM orders_by_date_general
+        WHERE DATE(purchase_date) BETWEEN ? AND ?
+        AND order_status NOT IN ('Cancelled','Pending','PendingAvailability')`, [s, e], 30000);
+    } catch(e) { R.orders_rt_total = 'error: ' + e.message; }
+
+    res.json(R);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ═══════════ ASIN PLAN ═══════════ */
 const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const METRICS_MAP={'Rev':'rv','Unit':'un','Ads':'ad','GP':'gp','NP':'np','Session':'se','Impression':'im','CR':'cr','CTR':'ct','Price':'pr','CPM':'cpm','CPC':'cpc','Cogs':'cg','AMZ fee':'af','Gross Profit':'gp','Net Profit':'np','rev':'rv','unit':'un','ads':'ad','gp':'gp','np':'np','session':'se','impression':'im','cr':'cr','ctr':'ct','price':'pr','cpm':'cpm','cpc':'cpc','cogs':'cg','amz fee':'af','gross profit':'gp','net profit':'np','revenue':'rv','Revenue':'rv','units':'un','Units':'un','grossProfit':'gp','netProfit':'np','adSpend':'ad','Ad Spend':'ad','sessions':'se','Sessions':'se','impressions':'im','Impressions':'im'};
