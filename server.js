@@ -1410,6 +1410,73 @@ app.get('/api/debug/plan', async (req, res) => {
   res.json(R);
 });
 
+/* ═══════════ DEBUG: FORMULA CHECK ═══════════ */
+// Dùng để tìm nguyên nhân chênh lệch với Sellerboard
+// Gọi: /api/debug/formula-check?start=2026-03-01&end=2026-03-31
+app.get('/api/debug/formula-check', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const { s, e } = defDates(start, end);
+    const R = { period: { s, e }, sbs: {}, sbp: {} };
+
+    // seller_board_sales: so sanh cac cong thuc
+    const sbsRows = await q(`
+      SELECT
+        SUM(COALESCE(salesOrganic,0) + COALESCE(salesPPC,0)) AS formula_current,
+        SUM(COALESCE(salesOrganic,0) + COALESCE(salesPPC,0) + COALESCE(salesSP,0) + COALESCE(salesSD,0)) AS formula_plus_sp_sd,
+        SUM(COALESCE(salesOrganic,0)) AS col_organic,
+        SUM(COALESCE(salesPPC,0))     AS col_ppc,
+        SUM(COALESCE(salesSP,0))      AS col_sp,
+        SUM(COALESCE(salesSD,0))      AS col_sd,
+        SUM(COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0)) AS units_current,
+        SUM(COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0) + COALESCE(unitsSP,0) + COALESCE(unitsSD,0)) AS units_plus_sp_sd,
+        SUM(COALESCE(unitsSP,0))      AS col_units_sp,
+        SUM(COALESCE(unitsSD,0))      AS col_units_sd,
+        COUNT(*) AS row_count
+      FROM seller_board_sales WHERE date BETWEEN ? AND ?`, [s, e], 30000);
+    R.sbs = sbsRows[0] || {};
+    R.sbs._ppc_vs_sp_plus_sd = (parseFloat(R.sbs.col_ppc)||0) - ((parseFloat(R.sbs.col_sp)||0) + (parseFloat(R.sbs.col_sd)||0));
+    R.sbs._note = "Neu _ppc_vs_sp_plus_sd gan = 0 -> salesPPC da bao gom SP+SD, cong thuc hien tai dung";
+    R.sbs._extra_if_add_sp_sd = (parseFloat(R.sbs.formula_plus_sp_sd)||0) - (parseFloat(R.sbs.formula_current)||0);
+
+    // seller_board_product: tuong tu
+    const sbpRows = await q(`
+      SELECT
+        SUM(COALESCE(salesOrganic,0) + COALESCE(salesPPC,0)) AS formula_current,
+        SUM(COALESCE(salesOrganic,0) + COALESCE(salesPPC,0) + COALESCE(salesSponsoredProducts,0) + COALESCE(salesSponsoredDisplay,0)) AS formula_plus_sp_sd,
+        SUM(COALESCE(salesOrganic,0))              AS col_organic,
+        SUM(COALESCE(salesPPC,0))                  AS col_ppc,
+        SUM(COALESCE(salesSponsoredProducts,0))    AS col_sp,
+        SUM(COALESCE(salesSponsoredDisplay,0))     AS col_sd,
+        SUM(COALESCE(unitsOrganic,0) + COALESCE(unitsPPC,0)) AS units_current,
+        SUM(COALESCE(unitsSponsoredProducts,0))    AS col_units_sp,
+        SUM(COALESCE(unitsSponsoredDisplay,0))     AS col_units_sd,
+        COUNT(DISTINCT asin) AS asin_count,
+        COUNT(*) AS row_count
+      FROM seller_board_product WHERE date BETWEEN ? AND ?`, [s, e], 30000);
+    R.sbp = sbpRows[0] || {};
+    R.sbp._extra_if_add_sp_sd = (parseFloat(R.sbp.formula_plus_sp_sd)||0) - (parseFloat(R.sbp.formula_current)||0);
+
+    R._comparison = {
+      sbs_current:      parseFloat(R.sbs.formula_current)      || 0,
+      sbs_plus_sp_sd:   parseFloat(R.sbs.formula_plus_sp_sd)   || 0,
+      sbp_current:      parseFloat(R.sbp.formula_current)      || 0,
+      sbp_plus_sp_sd:   parseFloat(R.sbp.formula_plus_sp_sd)   || 0,
+      diff_sbs_vs_sbp:  (parseFloat(R.sbs.formula_current)||0) - (parseFloat(R.sbp.formula_current)||0),
+    };
+    R._howToRead = [
+      "So sanh sbs_current voi so Sellerboard hien thi",
+      "Neu sbs_plus_sp_sd gan hon -> can fix cong thuc",
+      "Neu ca 2 van thap hon SB -> data trong DB bi thieu (loi import)",
+      "diff_sbs_vs_sbp # 0 -> 2 bang khong khop nhau",
+    ];
+    res.json(R);
+  } catch (e) {
+    console.error('debug/formula-check:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ═══════════ ASIN PLAN ═══════════ */
 const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const METRICS_MAP={'Rev':'rv','Unit':'un','Ads':'ad','GP':'gp','NP':'np','Session':'se','Impression':'im','CR':'cr','CTR':'ct','Price':'pr','CPM':'cpm','CPC':'cpc','Cogs':'cg','AMZ fee':'af','Gross Profit':'gp','Net Profit':'np','rev':'rv','unit':'un','ads':'ad','gp':'gp','np':'np','session':'se','impression':'im','cr':'cr','ctr':'ct','price':'pr','cpm':'cpm','cpc':'cpc','cogs':'cg','amz fee':'af','gross profit':'gp','net profit':'np','revenue':'rv','Revenue':'rv','units':'un','Units':'un','grossProfit':'gp','netProfit':'np','adSpend':'ad','Ad Spend':'ad','sessions':'se','Sessions':'se','impressions':'im','Impressions':'im'};
