@@ -3203,27 +3203,33 @@ function ProductCRPage({t,sd,ed,store}){
   const crClr=v=>!v?t.textMuted:v>=15?t.green:v>=8?t.text:t.orange;
   const ctrClr=v=>!v?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
 
+  // SVG icons — no emoji
+  const IcoContent=()=><svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>;
+  const IcoImage=()=><svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
+
   return<div>
     {/* filters */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:16}}>
       {['daily','weekly','monthly'].map(p=><button key={p} onClick={()=>setPeriod(p)} style={{padding:'5px 14px',borderRadius:8,fontSize:12,fontWeight:period===p?700:400,cursor:'pointer',border:'1px solid '+(period===p?t.primary:t.cardBorder),background:period===p?t.primaryLight:'transparent',color:period===p?t.primary:t.textSec}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}
       {period!=='daily'&&<div style={{display:'flex',gap:4}}>{[2025,2026].map(y=><button key={y} onClick={()=>setYear(y)} style={{padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:year===y?700:400,cursor:'pointer',border:'1px solid '+(year===y?t.primary:t.cardBorder),background:year===y?t.primaryLight:'transparent',color:year===y?t.primary:t.textSec}}>{y}</button>)}</div>}
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm member / ASIN / store..." style={{marginLeft:'auto',padding:'6px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:220}}/>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search member / ASIN / store..." style={{marginLeft:'auto',padding:'6px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:220}}/>
     </div>
     {/* member tabs */}
     <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid '+t.divider}}>
-      {[{key:'content',label:'📝 Content Member'},{key:'image',label:'🎨 Image Member'}].map(tab=>(
-        <button key={tab.key} onClick={()=>setMemberTab(tab.key)} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:memberTab===tab.key?700:400,color:memberTab===tab.key?t.primary:t.textSec,borderBottom:'3px solid '+(memberTab===tab.key?t.primary:'transparent'),marginBottom:-2}}>{tab.label}</button>
+      {[{key:'content',label:'Content Member',Ico:IcoContent},{key:'image',label:'Image Member',Ico:IcoImage}].map(tab=>(
+        <button key={tab.key} onClick={()=>setMemberTab(tab.key)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:memberTab===tab.key?700:400,color:memberTab===tab.key?t.primary:t.textSec,borderBottom:'3px solid '+(memberTab===tab.key?t.primary:'transparent'),marginBottom:-2}}>
+          <tab.Ico/>{tab.label}
+        </button>
       ))}
     </div>
-    {loading&&<div style={{textAlign:'center',padding:40,color:t.textMuted,fontSize:13}}>Đang tải dữ liệu...</div>}
-    {error&&<div style={{padding:'10px 14px',borderRadius:8,background:t.red+'18',border:'1px solid '+t.red+'44',fontSize:12,color:t.red,marginBottom:12}}>Lỗi: {error}</div>}
+    {loading&&<div style={{textAlign:'center',padding:40,color:t.textMuted,fontSize:13}}>Loading...</div>}
+    {error&&<div style={{padding:'10px 14px',borderRadius:8,background:t.red+'18',border:'1px solid '+t.red+'44',fontSize:12,color:t.red,marginBottom:12}}>Error: {error}</div>}
     {/* summary */}
-    {!loading&&memberSummary.length>0&&<Sec title={`Tổng hợp theo ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
+    {!loading&&memberSummary.length>0&&<Sec title={`Summary by ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
       <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
-            <thead><tr>{['Member','Store','Avg CR (%)','Avg CTR (%)','Số ASIN'].map((h,i)=><th key={i} style={{position:'sticky',top:0,zIndex:2,padding:'11px 14px',textAlign:i===0?'left':'right',color:i===2?t.primary:i===3?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Member','Store','Avg CR (%)','Avg CTR (%)','ASINs'].map((h,i)=><th key={i} style={{position:'sticky',top:0,zIndex:2,padding:'11px 14px',textAlign:i===0?'left':'right',color:i===2?t.primary:i===3?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
             <tbody>{memberSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{transition:'background .1s'}}>
               <td style={{padding:'10px 14px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.member}</td>
               <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textSec,fontSize:11}}>{r.store}</td>
@@ -3236,7 +3242,7 @@ function ProductCRPage({t,sd,ed,store}){
       </div>
     </Sec>}
     {/* detail pivot table */}
-    {!loading&&filtered.length>0&&headers.length>0&&<Sec title={`Chi tiết ASIN — ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
+    {!loading&&filtered.length>0&&headers.length>0&&<Sec title={`ASIN Detail — ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
       <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
         <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:11.5}}>
@@ -3270,11 +3276,11 @@ function ProductCRPage({t,sd,ed,store}){
           </table>
         </div>
         <div style={{padding:'8px 14px',fontSize:10.5,color:t.textMuted,borderTop:'1px solid '+t.divider}}>
-          {filtered.length} ASINs · CR = unitSessionPercentage · CTR = clickRate · <span style={{color:t.green}}>Xanh CR≥15% / CTR≥0.5%</span> · <span style={{color:t.orange}}>Cam CR&lt;8% / CTR&lt;0.2%</span>
+          {filtered.length} ASINs · CR = unitSessionPercentage · CTR = clickRate · <span style={{color:t.green}}>Green CR≥15% / CTR≥0.5%</span> · <span style={{color:t.orange}}>Amber CR&lt;8% / CTR&lt;0.2%</span>
         </div>
       </div>
     </Sec>}
-    {!loading&&!error&&filtered.length===0&&<div style={{textAlign:'center',padding:60,color:t.textMuted,fontSize:13}}>{data===null?'Đang tải...':`Không có dữ liệu cho ${memberTab==='content'?'content member':'image member'}. Hãy kiểm tra cột contenters / imagers trong bảng asin.`}</div>}
+    {!loading&&!error&&filtered.length===0&&<div style={{textAlign:'center',padding:60,color:t.textMuted,fontSize:13}}>{data===null?'Loading...':`No data for ${memberTab==='content'?'content member':'image member'}. Check that the contenters / imagers columns in the asin table have been populated.`}</div>}
   </div>;
 }
 
