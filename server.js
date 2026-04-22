@@ -1399,26 +1399,6 @@ app.get('/api/debug/cr-sources', async (req, res) => {
     FROM analytics_search_catalog_performance
     GROUP BY DATE_FORMAT(startDate,'%Y-%m') ORDER BY m DESC LIMIT 6
   `));
-
-  // Week boundary check — compare different YEARWEEK modes for W1
-  await test('week_boundary_check', () => q(`
-    SELECT
-      YEARWEEK(date, 0) AS yw_mode0_sun,
-      YEARWEEK(date, 1) AS yw_mode1_iso,
-      YEARWEEK(date, 3) AS yw_mode3,
-      WEEK(date, 0)     AS w_mode0,
-      WEEK(date, 1)     AS w_mode1,
-      MIN(date)         AS minDate,
-      MAX(date)         AS maxDate,
-      COUNT(*)          AS rows,
-      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2) AS cr
-    FROM analytics_sale_traffiec_by_asin_date
-    WHERE typeDate = 'DAY'
-      AND date BETWEEN '2026-01-01' AND '2026-01-31'
-    GROUP BY YEARWEEK(date,1)
-    ORDER BY minDate
-    LIMIT 6
-  `));
   if (pool2) {
     try {
       const conn = await pool2.getConnection();
@@ -2626,19 +2606,19 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 (amazon_ads_manager DB)
-    // report_sp_advertised_product has: advertisedAsin, clickThroughRate (pre-calculated), clicks, impressions, date
+    // Q6: Ads CTR from pool2 — only query ASINs already in analytics result (not full 5.5M rows)
     const adsCtrMap = {};
-    if (pool2) {
+    if (pool2 && asinSet.length > 0) {
       try {
         const conn = await pool2.getConnection();
         try {
+          await conn.execute(`SET SESSION MAX_EXECUTION_TIME=15000`); // 15s timeout
           let adsGrp;
           if (period === 'daily')       adsGrp = `DATE(r.date)`;
           else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 1)`;
           else                          adsGrp = `MONTH(r.date)`;
-          // advertisedAsin is the ASIN column in report_sp_advertised_product
-          // clickThroughRate is pre-calculated; use AVG across the period
+          // Filter by asinSet — turns 5.5M row scan into targeted lookup
+          const asinPh = asinSet.map(() => '?').join(',');
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
               ${adsGrp}                                                AS periodGroup,
@@ -2647,9 +2627,9 @@ app.get('/api/product/cr-performance', async (req, res) => {
               )                                                        AS adsCtr
             FROM report_sp_advertised_product r
             WHERE r.date BETWEEN ? AND ?
-              AND r.advertisedAsin IS NOT NULL AND r.advertisedAsin != ''
+              AND r.advertisedAsin IN (${asinPh})
             GROUP BY r.advertisedAsin, ${adsGrp}
-          `, [sd, ed]);
+          `, [sd, ed, ...asinSet]);
           adsRows.forEach(r => {
             if (!adsCtrMap[r.asin]) adsCtrMap[r.asin] = {};
             adsCtrMap[r.asin][String(r.periodGroup)] = parseFloat(r.adsCtr) || null;
