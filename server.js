@@ -1354,65 +1354,53 @@ app.get('/api/debug/cr-for-asin', async (req, res) => {
   const R = { asin, year: yr, tests: {} };
   const test = async (n, fn) => { try { R.tests[n] = await fn(); } catch(e) { R.tests[n] = { error: e.message }; } };
 
-  // Check what type values exist for this ASIN
-  await test('type_distribution', () => q(`
-    SELECT type, typeDate, COUNT(*) AS cnt,
-      MIN(date) AS minD, MAX(date) AS maxD,
-      SUM(sessions) AS totalSessions, SUM(unitsOrdered) AS totalUnits
+  // MONTHLY — from analytics_sale_traffic_by_asin, grouped by type
+  await test('monthly_by_type', () => q(`
+    SELECT
+      MONTH(dateStartTime)  AS month,
+      type,
+      COUNT(*)              AS rows,
+      SUM(sessions)         AS totalSessions,
+      SUM(unitsOrdered)     AS totalUnits,
+      AVG(unitSessionPercentage)                              AS cr_avg,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2)  AS cr_sum
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'MONTH' AND YEAR(dateStartTime) = ?
+    GROUP BY MONTH(dateStartTime), type
+    ORDER BY month, type
+  `, [asin, yr]));
+
+  // WEEKLY — from analytics_sale_traffic_by_asin
+  await test('weekly_by_type', () => q(`
+    SELECT
+      WEEK(dateStartTime, 6) AS week,
+      MIN(dateStartTime)     AS weekStart,
+      MAX(dateEndTime)       AS weekEnd,
+      type,
+      COUNT(*)               AS rows,
+      SUM(sessions)          AS totalSessions,
+      SUM(unitsOrdered)      AS totalUnits,
+      AVG(unitSessionPercentage)                              AS cr_avg,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2)  AS cr_sum
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'WEEK' AND YEAR(dateStartTime) = ?
+    GROUP BY WEEK(dateStartTime, 6), type
+    ORDER BY week, type
+  `, [asin, yr]));
+
+  // Daily from analytics_sale_traffiec_by_asin_date — grouped by type
+  await test('daily_by_type_recent', () => q(`
+    SELECT date, type, COUNT(*) AS rows,
+      SUM(sessions) AS totalSessions, SUM(unitsOrdered) AS totalUnits,
+      unitSessionPercentage
     FROM analytics_sale_traffiec_by_asin_date
-    WHERE asin = ?
-    GROUP BY type, typeDate
-    ORDER BY type, typeDate
+    WHERE asin = ? AND typeDate = 'DAY'
+      AND date BETWEEN DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND CURDATE()
+    GROUP BY date, type, unitSessionPercentage
+    ORDER BY date DESC, type
   `, [asin]));
 
-  // Monthly CR — same formula as dashboard
-  await test('monthly_cr_dashboard_formula', () => q(`
-    SELECT
-      MONTH(date)                 AS monthNum,
-      MIN(date)                   AS monthStart,
-      MAX(date)                   AS monthEnd,
-      COUNT(*)                    AS dayRows,
-      SUM(sessions)               AS totalSessions,
-      SUM(unitsOrdered)           AS totalUnits,
-      SUM(sessionsB2B)            AS totalSessionsB2B,
-      SUM(unitsOrderedB2B)        AS totalUnitsB2B,
-      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100, 2)                                                AS cr_b2c_only,
-      ROUND((SUM(unitsOrdered)+SUM(unitsOrderedB2B))/NULLIF(SUM(sessions)+SUM(sessionsB2B),0)*100, 2)        AS cr_b2c_plus_b2b
-    FROM analytics_sale_traffiec_by_asin_date
-    WHERE asin = ? AND typeDate = 'DAY'
-      AND date BETWEEN ? AND ?
-    GROUP BY MONTH(date)
-    ORDER BY monthNum
-  `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
-
-  // Weekly CR
-  await test('weekly_cr_iso_mon', () => q(`
-    SELECT
-      YEARWEEK(date, 1) AS yw,
-      MIN(date)         AS weekStart,
-      MAX(date)         AS weekEnd,
-      COUNT(*)          AS days,
-      SUM(sessions)     AS totalSessions,
-      SUM(unitsOrdered) AS totalUnits,
-      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100, 2) AS cr_sum_formula
-    FROM analytics_sale_traffiec_by_asin_date
-    WHERE asin = ? AND typeDate = 'DAY'
-      AND date BETWEEN ? AND ?
-    GROUP BY YEARWEEK(date, 1)
-    ORDER BY yw
-  `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
-
-  // Daily detail for all days in T3 (March)
-  await test('daily_detail_T3_march', () => q(`
-    SELECT date, type, typeDate, sessions, unitsOrdered, unitSessionPercentage,
-      sessionsB2B, unitsOrderedB2B, accountId
-    FROM analytics_sale_traffiec_by_asin_date
-    WHERE asin = ? AND typeDate = 'DAY'
-      AND date BETWEEN ? AND ?
-    ORDER BY date, accountId
-  `, [asin, `${yr}-03-01`, `${yr}-03-31`]));
-
-  // CTR weekly from search_catalog
+  // CTR weekly
   await test('ctr_weekly', () => q(`
     SELECT startDate, endDate, clickCount, impressionCount, clickRate
     FROM analytics_search_catalog_performance
@@ -1422,6 +1410,7 @@ app.get('/api/debug/cr-for-asin', async (req, res) => {
 
   res.json(R);
 });
+
 
 app.get('/api/debug/cr-sources', async (req, res) => {
   const R = { ts: new Date().toISOString(), tests: {} };
@@ -2537,8 +2526,11 @@ app.get('/api/product/cr-performance', async (req, res) => {
       accParams.push(...accIds);
     }
 
-    // Q1: CR — for weekly/monthly read unitSessionPercentage directly from pre-aggregated table.
-    // For daily: compute SUM(units)/SUM(sessions) from DAY rows.
+    // Q1: CR — dev spec:
+    //   Daily   → read unitSessionPercentage from analytics_sale_traffiec_by_asin_date (by date)
+    //   Weekly  → read unitSessionPercentage from analytics_sale_traffic_by_asin (by dateStartTime/dateEndTime)
+    //   Monthly → same as weekly but month-level row
+    // Filter type='CHILD' to avoid double-counting with PARENT/SKU rows of the same ASIN.
     let analyticsRows;
     if (period === 'daily') {
       analyticsRows = await q(`
@@ -2546,35 +2538,78 @@ app.get('/api/product/cr-performance', async (req, res) => {
           t.asin,
           MIN(${labelExpr})                                              AS periodLabel,
           ${groupExpr}                                                   AS periodGroup,
-          ROUND(
-            SUM(t.unitsOrdered) / NULLIF(SUM(t.sessions), 0) * 100, 2
-          )                                                              AS cr,
+          ROUND(AVG(t.unitSessionPercentage), 2)                         AS cr,
           SUM(t.sessions)                                                AS sessions,
           SUM(t.unitsOrdered)                                            AS units
         FROM ${tableName} t
         WHERE t.typeDate = '${typeDate}'
+          AND t.type = 'CHILD'
           AND t.${dateCol} BETWEEN ? AND ?
           ${accFilter}
         GROUP BY t.asin, ${groupExpr}
         ORDER BY t.asin, ${orderExpr}
       `, [sd, ed, ...accParams], 90000);
+      // Fallback to SKU / PARENT if no CHILD rows
+      if (analyticsRows.length === 0) {
+        analyticsRows = await q(`
+          SELECT
+            t.asin,
+            MIN(${labelExpr})                                            AS periodLabel,
+            ${groupExpr}                                                 AS periodGroup,
+            ROUND(AVG(t.unitSessionPercentage), 2)                       AS cr,
+            SUM(t.sessions)                                              AS sessions,
+            SUM(t.unitsOrdered)                                          AS units
+          FROM ${tableName} t
+          WHERE t.typeDate = '${typeDate}'
+            AND t.type IN ('SKU','PARENT')
+            AND t.${dateCol} BETWEEN ? AND ?
+            ${accFilter}
+          GROUP BY t.asin, ${groupExpr}
+          ORDER BY t.asin, ${orderExpr}
+        `, [sd, ed, ...accParams], 90000);
+      }
     } else {
-      // Weekly/Monthly: read unitSessionPercentage directly (already computed by Amazon)
+      // Weekly/Monthly — dev spec: read unitSessionPercentage column DIRECTLY from
+      // analytics_sale_traffic_by_asin, filtered by dateStartTime/dateEndTime of the period.
+      // Filter type='CHILD' to ensure 1 row per (asin, accountId, period) — avoids mixing with
+      // PARENT/SKU rows that would skew AVG. If ASIN exists in multiple stores (different
+      // accountIds) without store filter, AVG across those rows matches Lark's simple aggregation.
       analyticsRows = await q(`
         SELECT
           t.asin,
           ${labelExpr}                                                   AS periodLabel,
           ${groupExpr}                                                   AS periodGroup,
-          AVG(t.unitSessionPercentage)                                   AS cr,
+          ROUND(AVG(t.unitSessionPercentage), 2)                         AS cr,
           SUM(t.sessions)                                                AS sessions,
           SUM(t.unitsOrdered)                                            AS units
         FROM ${tableName} t
         WHERE t.typeDate = '${typeDate}'
+          AND t.type = 'CHILD'
           AND t.${dateCol} BETWEEN ? AND ?
           ${accFilter}
         GROUP BY t.asin, ${groupExpr}, ${labelExpr}
         ORDER BY t.asin, ${orderExpr}
       `, [sd, ed, ...accParams], 90000);
+
+      // Fallback: if no CHILD rows for any ASIN in range, try PARENT (for ASINs without variations)
+      if (analyticsRows.length === 0) {
+        analyticsRows = await q(`
+          SELECT
+            t.asin,
+            ${labelExpr}                                                 AS periodLabel,
+            ${groupExpr}                                                 AS periodGroup,
+            ROUND(AVG(t.unitSessionPercentage), 2)                       AS cr,
+            SUM(t.sessions)                                              AS sessions,
+            SUM(t.unitsOrdered)                                          AS units
+          FROM ${tableName} t
+          WHERE t.typeDate = '${typeDate}'
+            AND t.type = 'PARENT'
+            AND t.${dateCol} BETWEEN ? AND ?
+            ${accFilter}
+          GROUP BY t.asin, ${groupExpr}, ${labelExpr}
+          ORDER BY t.asin, ${orderExpr}
+        `, [sd, ed, ...accParams], 90000);
+      }
     }
 
     if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
