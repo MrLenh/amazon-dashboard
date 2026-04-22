@@ -3163,124 +3163,281 @@ const AI_HINTS={
 function ProductCRPage({t,sd,ed,store}){
   const[period,setPeriod]=useState('monthly');
   const[year,setYear]=useState(new Date().getFullYear());
-  const[memberTab,setMemberTab]=useState('content');
+  const[dateFrom,setDateFrom]=useState(()=>{ const d=new Date(sd||Date.now()-14*86400000); return d.toISOString().slice(0,10); });
+  const[dateTo,setDateTo]=useState(()=>{ const d=new Date(ed||Date.now()); return d.toISOString().slice(0,10); });
   const[data,setData]=useState(null);
-  const[headers,setHeaders]=useState([]);
+  const[periodLabels,setPeriodLabels]=useState([]);
   const[loading,setLoading]=useState(false);
   const[error,setError]=useState(null);
   const[search,setSearch]=useState('');
 
+  // Sync dateTo/dateFrom with global date picker for daily
+  useEffect(()=>{ if(sd)setDateFrom(sd); },[sd]);
+  useEffect(()=>{ if(ed)setDateTo(ed); },[ed]);
+
   useEffect(()=>{
     setLoading(true);setError(null);
     const params={period,year,store};
-    if(period==='daily'){params.start=sd;params.end=ed;}
+    if(period==='daily'){params.start=dateFrom;params.end=dateTo;}
     api('product/cr-performance',params)
-      .then(res=>{setHeaders(res.periodHeaders||[]);setData(res.data||[]);setLoading(false);})
+      .then(res=>{
+        setPeriodLabels(res.periodLabels||[]);
+        setData(res.rows||[]);
+        setLoading(false);
+      })
       .catch(e=>{setError(e.message);setLoading(false);});
-  },[period,year,store,sd,ed]);
+  },[period,year,store,dateFrom,dateTo]);
 
+  // Filter by search
   const filtered=useMemo(()=>{
     if(!data)return[];
-    return data.filter(r=>{
-      if(r.memberType!==memberTab)return false;
-      if(search){const q=search.toLowerCase();return r.member?.toLowerCase().includes(q)||r.asin?.toLowerCase().includes(q)||r.store?.toLowerCase().includes(q);}
-      return true;
-    });
-  },[data,memberTab,search]);
+    if(!search)return data;
+    const q=search.toLowerCase();
+    return data.filter(r=>
+      r.asin?.toLowerCase().includes(q)||r.sku?.toLowerCase().includes(q)||
+      r.store?.toLowerCase().includes(q)||r.sellers?.toLowerCase().includes(q)||
+      r.content1?.toLowerCase().includes(q)||r.content2?.toLowerCase().includes(q)||
+      r.content3?.toLowerCase().includes(q)||r.image?.toLowerCase().includes(q)||
+      r.productType?.toLowerCase().includes(q)||r.niche?.toLowerCase().includes(q)
+    );
+  },[data,search]);
 
-  const memberSummary=useMemo(()=>{
-    const map={};
+  // For Daily: flatten rows × periods into flat list sorted by date desc
+  const flatDaily=useMemo(()=>{
+    if(period!=='daily'||!filtered.length)return[];
+    const flat=[];
     filtered.forEach(r=>{
-      const k=`${r.member}||${r.store}`;
-      if(!map[k])map[k]={member:r.member,store:r.store,crSum:0,ctrSum:0,cnt:0,asinCount:0};
-      const m=map[k];
-      r.periods.forEach(p=>{if(p.cr>0){m.crSum+=p.cr;m.cnt++;}if(p.ctr>0)m.ctrSum+=p.ctr;});
-      m.asinCount++;
+      Object.entries(r.periods).forEach(([lbl,p])=>{
+        flat.push({...r,_date:lbl,_cr:p.cr,_adsCtr:p.adsCtr});
+      });
     });
-    return Object.values(map).map(m=>({...m,avgCR:m.cnt>0?Math.round(m.crSum/m.cnt*100)/100:0,avgCTR:m.cnt>0?Math.round(m.ctrSum/m.cnt*100)/100:0})).sort((a,b)=>b.avgCR-a.avgCR);
-  },[filtered]);
+    return flat.sort((a,b)=>b._date.localeCompare(a._date)||a.asin.localeCompare(b.asin));
+  },[period,filtered]);
 
-  const crClr=v=>!v?t.textMuted:v>=15?t.green:v>=8?t.text:t.orange;
-  const ctrClr=v=>!v?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
+  // Color helpers
+  const crClr  =v=>v==null?t.textMuted:v>=15?t.green:v>=8?t.text:t.orange;
+  const ctrClr =v=>v==null?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
+  const crBg   =v=>v!=null&&v>=15?t.green+'14':v!=null&&v<8?t.orange+'14':'transparent';
 
-  // SVG icons — no emoji
-  const IcoContent=()=><svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>;
-  const IcoImage=()=><svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
+  // Shared: badge list for content members
+  const ContentBadges=({c1,c2,c3})=><>{
+    [c1,c2,c3].filter(Boolean).map((c,i)=>(
+      <span key={i} style={{display:'inline-block',marginRight:3,marginBottom:2,padding:'1px 7px',
+        borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+        {c}
+      </span>
+    ))
+  }</>;
+  const ImageBadge=({v})=>v?<span style={{padding:'1px 7px',borderRadius:10,
+    background:t.purple+'18'||'#EDE9FE',color:t.purple||'#7C3AED',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{v}</span>:null;
+
+  // Shared th style
+  const TH=(extra={})=>({padding:'7px 9px',fontSize:10,fontWeight:700,color:t.textMuted,
+    textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,
+    whiteSpace:'nowrap',letterSpacing:.4,...extra});
+  const TD=(extra={})=>({padding:'8px 9px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
+
+  // Shared info columns (same in all 3 views)
+  const InfoTH=({hasSku,hasDate,hasContent23})=><>
+    {hasDate&&<th style={TH({textAlign:'left',minWidth:100,position:'sticky',top:0,left:0,zIndex:4,background:t.tableBg})}>Date</th>}
+    <th style={TH({textAlign:'left',minWidth:120,position:'sticky',top:0,left:hasDate?100:0,zIndex:4,background:t.tableBg})}>ASIN</th>
+    {hasSku&&<th style={TH({textAlign:'left',minWidth:160,position:'sticky',top:0,zIndex:3})}>SKU</th>}
+    <th style={TH({textAlign:'left',minWidth:75, position:'sticky',top:0,zIndex:3})}>Stores</th>
+    <th style={TH({textAlign:'center',minWidth:50,position:'sticky',top:0,zIndex:3})}>Design</th>
+    <th style={TH({textAlign:'left',minWidth:100,position:'sticky',top:0,zIndex:3})}>Product Type</th>
+    <th style={TH({textAlign:'left',minWidth:110,position:'sticky',top:0,zIndex:3})}>Niche/Theme</th>
+    {hasSku&&<th style={TH({textAlign:'left',minWidth:130,position:'sticky',top:0,zIndex:3})}>Tier</th>}
+    <th style={TH({textAlign:'left',minWidth:50, position:'sticky',top:0,zIndex:3})}>Sellers</th>
+    <th style={TH({textAlign:'left',minWidth:130,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content</th>
+    <th style={TH({textAlign:'left',minWidth:110,position:'sticky',top:0,zIndex:3,color:t.purple||'#7C3AED'})}>Image</th>
+    {hasContent23&&<>
+      <th style={TH({textAlign:'left',minWidth:110,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content 2</th>
+      <th style={TH({textAlign:'left',minWidth:110,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content 3</th>
+    </>}
+  </>;
+
+  const InfoTD=({r,hasSku,hasDate,dateVal,isNew,hasContent23})=>{
+    const bTop=isNew?'2px solid '+t.primary+'55':'none';
+    return<>
+      {hasDate&&<td style={TD({fontWeight:isNew?700:400,color:isNew?t.text:t.textMuted,borderTop:bTop,whiteSpace:'nowrap',fontSize:isNew?12:11,position:'sticky',left:0,background:t.card,zIndex:1})}>{isNew?dateVal:''}</td>}
+      <td style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,position:'sticky',left:hasDate?100:0,background:t.card,zIndex:1,whiteSpace:'nowrap'})}>{r.asin}</td>
+      {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku}</td>}
+      <td style={TD({borderTop:bTop})}><span style={{padding:'1px 7px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600}}>{r.store}</span></td>
+      <td style={TD({textAlign:'center',borderTop:bTop})}>
+        <div style={{width:28,height:28,borderRadius:5,background:t.tableBg,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto',border:'1px solid '+t.divider}}>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth={1.5} strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+      </td>
+      <td style={TD({borderTop:bTop})}>{r.productType&&<span style={{padding:'1px 7px',borderRadius:10,background:'#FEF3CD',color:'#856404',fontSize:10,fontWeight:600}}>{r.productType}</span>}</td>
+      <td style={TD({borderTop:bTop})}>{r.niche&&<span style={{padding:'1px 7px',borderRadius:10,background:'#E0F2FE',color:'#0369A1',fontSize:10,fontWeight:600}}>{r.niche}</span>}</td>
+      {hasSku&&<td style={TD({fontSize:11,color:t.textSec,borderTop:bTop})}>{r.tier||'—'}</td>}
+      <td style={TD({fontWeight:600,borderTop:bTop})}>{r.sellers}</td>
+      <td style={TD({borderTop:bTop})}><ContentBadges c1={r.content1} c2={null} c3={null}/></td>
+      <td style={TD({borderTop:bTop})}><ImageBadge v={r.image}/></td>
+      {hasContent23&&<>
+        <td style={TD({borderTop:bTop})}>{r.content2?<ContentBadges c1={r.content2}/>:<span style={{color:t.textMuted}}>—</span>}</td>
+        <td style={TD({borderTop:bTop})}>{r.content3?<ContentBadges c1={r.content3}/>:<span style={{color:t.textMuted}}>—</span>}</td>
+      </>}
+    </>;
+  };
+
+  const PctCell=({v,cf,bg,extraStyle={}})=>(
+    <td style={{...TD(),textAlign:'center',background:bg?bg(v):'transparent',...extraStyle}}>
+      <span style={{fontSize:11,fontWeight:v!=null?700:400,color:v!=null?cf(v):t.textMuted}}>
+        {v!=null?v.toFixed(2)+'%':'—'}
+      </span>
+    </td>
+  );
+
+  const btn=active=>({padding:'5px 14px',borderRadius:8,fontSize:12,fontWeight:active?700:400,cursor:'pointer',
+    border:'1px solid '+(active?t.primary:t.cardBorder),background:active?t.primaryLight:'transparent',color:active?t.primary:t.textSec});
 
   return<div>
-    {/* filters */}
+    {/* Filters */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:16}}>
-      {['daily','weekly','monthly'].map(p=><button key={p} onClick={()=>setPeriod(p)} style={{padding:'5px 14px',borderRadius:8,fontSize:12,fontWeight:period===p?700:400,cursor:'pointer',border:'1px solid '+(period===p?t.primary:t.cardBorder),background:period===p?t.primaryLight:'transparent',color:period===p?t.primary:t.textSec}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}
-      {period!=='daily'&&<div style={{display:'flex',gap:4}}>{[2025,2026].map(y=><button key={y} onClick={()=>setYear(y)} style={{padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:year===y?700:400,cursor:'pointer',border:'1px solid '+(year===y?t.primary:t.cardBorder),background:year===y?t.primaryLight:'transparent',color:year===y?t.primary:t.textSec}}>{y}</button>)}</div>}
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search member / ASIN / store..." style={{marginLeft:'auto',padding:'6px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:220}}/>
+      <div style={{display:'flex',gap:4}}>
+        {['daily','weekly','monthly'].map(p=><button key={p} style={btn(period===p)} onClick={()=>setPeriod(p)}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}
+      </div>
+      {period!=='daily'&&<div style={{display:'flex',gap:4}}>
+        {[2025,2026].map(y=><button key={y} style={btn(year===y)} onClick={()=>setYear(y)}>{y}</button>)}
+      </div>}
+      {period==='daily'&&<>
+        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+          style={{padding:'5px 8px',borderRadius:7,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none'}}/>
+        <span style={{fontSize:11,color:t.textMuted}}>→</span>
+        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+          style={{padding:'5px 8px',borderRadius:7,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none'}}/>
+      </>}
+      <input value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="Search ASIN / SKU / member / product type..."
+        style={{marginLeft:'auto',padding:'6px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,
+          background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:260}}/>
     </div>
-    {/* member tabs */}
-    <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid '+t.divider}}>
-      {[{key:'content',label:'Content Member',Ico:IcoContent},{key:'image',label:'Image Member',Ico:IcoImage}].map(tab=>(
-        <button key={tab.key} onClick={()=>setMemberTab(tab.key)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:memberTab===tab.key?700:400,color:memberTab===tab.key?t.primary:t.textSec,borderBottom:'3px solid '+(memberTab===tab.key?t.primary:'transparent'),marginBottom:-2}}>
-          <tab.Ico/>{tab.label}
-        </button>
-      ))}
-    </div>
+
     {loading&&<div style={{textAlign:'center',padding:40,color:t.textMuted,fontSize:13}}>Loading...</div>}
     {error&&<div style={{padding:'10px 14px',borderRadius:8,background:t.red+'18',border:'1px solid '+t.red+'44',fontSize:12,color:t.red,marginBottom:12}}>Error: {error}</div>}
-    {/* summary */}
-    {!loading&&memberSummary.length>0&&<Sec title={`Summary by ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
-      <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
-            <thead><tr>{['Member','Store','Avg CR (%)','Avg CTR (%)','ASINs'].map((h,i)=><th key={i} style={{position:'sticky',top:0,zIndex:2,padding:'11px 14px',textAlign:i===0?'left':'right',color:i===2?t.primary:i===3?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
-            <tbody>{memberSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{transition:'background .1s'}}>
-              <td style={{padding:'10px 14px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.member}</td>
-              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textSec,fontSize:11}}>{r.store}</td>
-              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:700,color:crClr(r.avgCR)}}>{r.avgCR>0?r.avgCR.toFixed(2)+'%':'—'}</td>
-              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:600,color:ctrClr(r.avgCTR)}}>{r.avgCTR>0?r.avgCTR.toFixed(2)+'%':'—'}</td>
-              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textSec}}>{r.asinCount}</td>
-            </tr>)}</tbody>
-          </table>
-        </div>
+
+    {/* ── DAILY VIEW: dates as rows ── */}
+    {!loading&&period==='daily'&&flatDaily.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
+        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <thead><tr>
+            <InfoTH hasDate hasSku={false} hasContent23/>
+            <th style={TH({textAlign:'center',minWidth:85,borderLeft:'2px solid '+t.primary+'44',background:t.primaryLight,color:t.primary,position:'sticky',top:0,zIndex:3})}>CR%</th>
+            <th style={TH({textAlign:'center',minWidth:90,background:t.orange+'18',color:t.orange,position:'sticky',top:0,zIndex:3})}>CTR Ads</th>
+            <th style={TH({textAlign:'right',minWidth:65,position:'sticky',top:0,zIndex:3})}>Stock</th>
+            <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:3})}>Avail</th>
+          </tr></thead>
+          <tbody>{flatDaily.map((r,i)=>{
+            const isNew=i===0||r._date!==flatDaily[i-1]._date;
+            return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <InfoTD r={r} hasDate hasSku={false} hasContent23 dateVal={r._date} isNew={isNew}/>
+              <PctCell v={r._cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'2px solid '+t.primary+'44'}}/>
+              <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'0E'}}/>
+              <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
+              <td style={TD({textAlign:'right',color:r.avail===0?t.textMuted:t.textSec})}>{r.avail}</td>
+            </tr>;
+          })}</tbody>
+        </table>
       </div>
-    </Sec>}
-    {/* detail pivot table */}
-    {!loading&&filtered.length>0&&headers.length>0&&<Sec title={`ASIN Detail — ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
-      <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
-        <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:11.5}}>
-            <thead>
-              <tr>
-                {['Member','Store','ASIN'].map((h,i)=><th key={h} style={{position:'sticky',top:0,left:i===0?0:'auto',zIndex:i===0?4:3,padding:'10px 12px',textAlign:'left',color:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,borderRight:i<2?'1px solid '+t.divider:undefined,background:t.tableBg,whiteSpace:'nowrap',minWidth:i===0?100:i===1?90:110}}>{h}</th>)}
-                {headers.map(h=><th key={h} colSpan={2} style={{position:'sticky',top:0,zIndex:2,padding:'10px 8px',textAlign:'center',color:t.primary,fontWeight:700,fontSize:10.5,letterSpacing:.3,borderBottom:'2px solid '+t.divider,borderLeft:'1px solid '+t.divider,background:t.primaryLight,whiteSpace:'nowrap'}}>{h}</th>)}
-              </tr>
-              <tr>
-                <th colSpan={3} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider}}/>
-                {headers.map(h=>[
-                  <th key={h+'-cr'} style={{position:'sticky',top:37,zIndex:2,padding:'5px 8px',textAlign:'center',color:t.primary,fontWeight:600,fontSize:10,borderBottom:'1px solid '+t.divider,borderLeft:'1px solid '+t.divider,background:t.primaryLight,whiteSpace:'nowrap'}}>CR%</th>,
-                  <th key={h+'-ctr'} style={{position:'sticky',top:37,zIndex:2,padding:'5px 8px',textAlign:'center',color:t.textMuted,fontWeight:600,fontSize:10,borderBottom:'1px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>CTR%</th>,
-                ])}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r,i)=>{
-                const pMap={};r.periods.forEach(p=>{pMap[p.label]=p;});
-                return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{transition:'background .1s'}}>
-                  <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider,borderRight:'1px solid '+t.divider,position:'sticky',left:0,background:t.card,whiteSpace:'nowrap',zIndex:1}}>{r.member}</td>
-                  <td style={{padding:'9px 12px',borderBottom:'1px solid '+t.divider,borderRight:'1px solid '+t.divider,color:t.textSec,fontSize:11,whiteSpace:'nowrap'}}>{r.store}</td>
-                  <td style={{padding:'9px 12px',borderBottom:'1px solid '+t.divider,fontFamily:'monospace',fontSize:11,color:t.textSec,letterSpacing:.5}}>{r.asin}</td>
-                  {headers.map(h=>{const p=pMap[h];return[
-                    <td key={h+'-cr'} style={{padding:'9px 8px',textAlign:'center',borderBottom:'1px solid '+t.divider,borderLeft:'1px solid '+t.divider,fontWeight:600,color:p?crClr(p.cr):t.textMuted,background:p&&p.cr>=15?t.green+'12':undefined}}>{p&&p.cr>0?p.cr.toFixed(2)+'%':<span style={{color:t.textMuted}}>—</span>}</td>,
-                    <td key={h+'-ctr'} style={{padding:'9px 8px',textAlign:'center',borderBottom:'1px solid '+t.divider,color:p?ctrClr(p.ctr):t.textMuted}}>{p&&p.ctr>0?p.ctr.toFixed(2)+'%':<span style={{color:t.textMuted}}>—</span>}</td>,
-                  ];})}
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div style={{padding:'8px 14px',fontSize:10.5,color:t.textMuted,borderTop:'1px solid '+t.divider}}>
-          {filtered.length} ASINs · CR = unitSessionPercentage · CTR = clickRate · <span style={{color:t.green}}>Green CR≥15% / CTR≥0.5%</span> · <span style={{color:t.orange}}>Amber CR&lt;8% / CTR&lt;0.2%</span>
-        </div>
+      <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,display:'flex',gap:14,flexWrap:'wrap'}}>
+        <span>{flatDaily.length} rows · Date sorted newest → oldest</span>
+        <span><span style={{color:t.green,fontWeight:700}}>■</span> CR≥15%</span>
+        <span><span style={{color:t.orange,fontWeight:700}}>■</span> CR&lt;8%</span>
+        <span>CR = unitSessionPercentage · CTR Ads = advertising CTR · date from analytics report date</span>
       </div>
-    </Sec>}
-    {!loading&&!error&&filtered.length===0&&<div style={{textAlign:'center',padding:60,color:t.textMuted,fontSize:13}}>{data===null?'Loading...':`No data for ${memberTab==='content'?'content member':'image member'}. Check that the contenters / imagers columns in the asin table have been populated.`}</div>}
+    </div>}
+
+    {/* ── WEEKLY VIEW: W01..W16 as columns × 3 metrics ── */}
+    {!loading&&period==='weekly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
+        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <thead>
+            <tr>
+              <InfoTH hasDate={false} hasSku hasContent23={false}/>
+              {periodLabels.map(w=>(
+                <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:175,position:'sticky',top:0,zIndex:3})}>
+                  Report {w} {year}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th colSpan={10} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
+              {periodLabels.map(w=>[
+                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR</th>,
+                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR</th>,
+                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',minWidth:65,background:t.orange+'18',color:t.orange,position:'sticky',top:0,zIndex:2})}>Ads CTR</th>,
+              ])}
+            </tr>
+          </thead>
+          <tbody>{filtered.map((r,i)=>(
+            <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <InfoTD r={r} hasDate={false} hasSku hasContent23={false} isNew={false}/>
+              {periodLabels.map(w=>{const p=r.periods[w]||{};return[
+                <PctCell key={w+'-cr'}  v={p.cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
+                <PctCell key={w+'-ctr'} v={p.ctr}    cf={ctrClr}/>,
+                <PctCell key={w+'-ads'} v={p.adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'0E'}}/>,
+              ];})}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,display:'flex',gap:14,flexWrap:'wrap'}}>
+        <span>{filtered.length} ASINs · 3 metrics/week: CR · CTR (search) · Ads CTR (sponsored)</span>
+        <span><span style={{color:t.green,fontWeight:700}}>■</span> CR≥15% · CTR≥0.5%</span>
+        <span><span style={{color:t.orange,fontWeight:700}}>■</span> CR&lt;8% · CTR&lt;0.2%</span>
+      </div>
+    </div>}
+
+    {/* ── MONTHLY VIEW: T1..T12 as columns × 2 metrics ── */}
+    {!loading&&period==='monthly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
+        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <thead>
+            <tr>
+              <InfoTH hasDate={false} hasSku hasContent23={false}/>
+              <th style={TH({textAlign:'right',minWidth:65,position:'sticky',top:0,zIndex:3})}>Stock</th>
+              {periodLabels.map(m=>(
+                <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:110,position:'sticky',top:0,zIndex:3})}>
+                  {m}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th colSpan={11} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
+              {periodLabels.map(m=>[
+                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR%</th>,
+                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR%</th>,
+              ])}
+            </tr>
+          </thead>
+          <tbody>{filtered.map((r,i)=>(
+            <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <InfoTD r={r} hasDate={false} hasSku hasContent23={false} isNew={false}/>
+              <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
+              {periodLabels.map(m=>{const p=r.periods[m]||{};return[
+                <PctCell key={m+'-cr'}  v={p.cr}  cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
+                <PctCell key={m+'-ctr'} v={p.ctr} cf={ctrClr}/>,
+              ];})}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,display:'flex',gap:14,flexWrap:'wrap'}}>
+        <span>{filtered.length} ASINs · CR T1..T12 + CTR T1..T12</span>
+        <span><span style={{color:t.green,fontWeight:700}}>■</span> CR≥15% · CTR≥0.5%</span>
+        <span><span style={{color:t.orange,fontWeight:700}}>■</span> CR&lt;8% · CTR&lt;0.2%</span>
+        <span>CR = unitSessionPercentage · CTR = clickRate (search catalog)</span>
+      </div>
+    </div>}
+
+    {/* Empty states */}
+    {!loading&&!error&&(period==='daily'?flatDaily.length===0:filtered.length===0)&&<div style={{textAlign:'center',padding:60,color:t.textMuted,fontSize:13}}>
+      {data===null?'Loading...':`No data for selected period. Check that analytics data exists and contenters/imagers columns in the asin table are populated.`}
+    </div>}
   </div>;
 }
 
