@@ -1395,12 +1395,30 @@ app.get('/api/debug/cr-sources', async (req, res) => {
   `));
   await test('search_catalog_months', () => q(`
     SELECT DATE_FORMAT(startDate,'%Y-%m') AS m,
-      COUNT(DISTINCT asin) AS asins, COUNT(*) AS rows
+      COUNT(DISTINCT asin) AS asins, COUNT(*) AS total_rows
     FROM analytics_search_catalog_performance
     GROUP BY DATE_FORMAT(startDate,'%Y-%m') ORDER BY m DESC LIMIT 6
   `));
 
-  // pool2 ads check
+  // Week boundary check — compare different YEARWEEK modes for W1
+  await test('week_boundary_check', () => q(`
+    SELECT
+      YEARWEEK(date, 0) AS yw_mode0_sun,
+      YEARWEEK(date, 1) AS yw_mode1_iso,
+      YEARWEEK(date, 3) AS yw_mode3,
+      WEEK(date, 0)     AS w_mode0,
+      WEEK(date, 1)     AS w_mode1,
+      MIN(date)         AS minDate,
+      MAX(date)         AS maxDate,
+      COUNT(*)          AS rows,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2) AS cr
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE typeDate = 'DAY'
+      AND date BETWEEN '2026-01-01' AND '2026-01-31'
+    GROUP BY YEARWEEK(date,1)
+    ORDER BY minDate
+    LIMIT 6
+  `));
   if (pool2) {
     try {
       const conn = await pool2.getConnection();
