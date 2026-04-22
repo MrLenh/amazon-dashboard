@@ -3171,8 +3171,8 @@ function ProductCRPage({t,sd,ed,store}){
   const[error,setError]=useState(null);
   const[search,setSearch]=useState('');
 
-  useEffect(()=>{ if(sd)setDateFrom(sd); },[sd]);
-  useEffect(()=>{ if(ed)setDateTo(ed); },[ed]);
+  // Note: we deliberately DO NOT sync local dateFrom/dateTo with global sd/ed.
+  // Once user picks their own range, it stays independent until they change period or navigate away.
 
   useEffect(()=>{
     setLoading(true);setError(null);
@@ -3218,18 +3218,38 @@ function ProductCRPage({t,sd,ed,store}){
   const ctrClr =v=>v==null?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
   const crBg   =v=>v!=null&&v>=15?t.green+'14':v!=null&&v<8?t.orange+'14':'transparent';
 
+  // Auto-detect if any row actually has content2 or content3 — skip those columns if all empty
+  const hasAnyContent23=useMemo(()=>
+    filtered.some(r=>(r.content2&&r.content2.trim())||(r.content3&&r.content3.trim())),
+  [filtered]);
+
   /* ─── Reusable UI fragments ─── */
-  const ContentBadges=({vals})=><>{
-    vals.filter(Boolean).map((c,i)=>(
-      <span key={i} style={{display:'inline-block',marginRight:3,marginBottom:2,padding:'1px 7px',
+  // Splits a comma/slash/semicolon separated string into trimmed names.
+  // "Minh Hieu, Han, P." -> ["Minh Hieu","Han","P."]
+  const splitNames=s=>{
+    if(!s)return[];
+    return String(s).split(/[,;\/]+/).map(x=>x.trim()).filter(Boolean);
+  };
+
+  const ContentBadges=({vals})=>{
+    const all=[]; vals.forEach(v=>splitNames(v).forEach(n=>all.push(n)));
+    if(!all.length)return<span style={{color:t.textMuted}}>—</span>;
+    return<div style={{display:'flex',flexWrap:'wrap',gap:3}}>{all.map((c,i)=>(
+      <span key={i} style={{display:'inline-block',padding:'1px 7px',
         borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
         {c}
       </span>
-    ))
-  }</>;
+    ))}</div>;
+  };
 
-  const ImageBadge=({v})=>v?<span style={{padding:'1px 7px',borderRadius:10,
-    background:(t.purple||'#7C3AED')+'22',color:t.purple||'#7C3AED',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{v}</span>:null;
+  const ImageBadge=({v})=>{
+    const all=splitNames(v);
+    if(!all.length)return<span style={{color:t.textMuted}}>—</span>;
+    return<div style={{display:'flex',flexWrap:'wrap',gap:3}}>{all.map((c,i)=>(
+      <span key={i} style={{padding:'1px 7px',borderRadius:10,
+        background:(t.purple||'#7C3AED')+'22',color:t.purple||'#7C3AED',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{c}</span>
+    ))}</div>;
+  };
 
   const DesignImg=({r})=>(
     <div style={{width:32,height:32,borderRadius:6,overflow:'hidden',background:t.tableBg,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto',border:'1px solid '+t.divider,flexShrink:0}}>
@@ -3278,8 +3298,8 @@ function ProductCRPage({t,sd,ed,store}){
       <td style={TD({borderTop:bTop})}><ContentBadges vals={[r.content1]}/></td>
       <td style={TD({borderTop:bTop})}><ImageBadge v={r.image}/></td>
       {hasContent23&&<>
-        <td style={TD({borderTop:bTop})}>{r.content2?<ContentBadges vals={[r.content2]}/>:<span style={{color:t.textMuted}}>—</span>}</td>
-        <td style={TD({borderTop:bTop})}>{r.content3?<ContentBadges vals={[r.content3]}/>:<span style={{color:t.textMuted}}>—</span>}</td>
+        <td style={TD({borderTop:bTop})}><ContentBadges vals={[r.content2]}/></td>
+        <td style={TD({borderTop:bTop})}><ContentBadges vals={[r.content3]}/></td>
       </>}
     </>;
   };
@@ -3359,9 +3379,9 @@ function ProductCRPage({t,sd,ed,store}){
       <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
           <thead><tr>
-            <InfoTH hasDate hasSku={false} hasContent23/>
-            <th style={TH({textAlign:'center',minWidth:80,borderLeft:'2px solid '+t.primary+'44',background:t.primaryLight,color:t.primary,position:'sticky',top:0,zIndex:3})}>CR%</th>
-            <th style={TH({textAlign:'center',minWidth:85,background:t.orange+'18',color:t.orange,position:'sticky',top:0,zIndex:3})}>CTR Ads</th>
+            <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
+            <th style={TH({textAlign:'center',minWidth:80,borderLeft:'2px solid '+t.primary+'44',background:t.primaryLight,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:3})}>CR%</th>
+            <th style={TH({textAlign:'center',minWidth:85,background:t.orange+'33',color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:3})}>CTR Ads</th>
             <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:3})}>Stock</th>
             <th style={TH({textAlign:'right',minWidth:55,position:'sticky',top:0,zIndex:3})}>Avail</th>
           </tr></thead>
@@ -3369,9 +3389,9 @@ function ProductCRPage({t,sd,ed,store}){
             const isNew=i===0||r._date!==flatDaily[i-1]._date;
             return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <InfoTD r={r} hasDate hasSku={false} hasContent23 dateVal={r._date} isNew={isNew}/>
+              <InfoTD r={r} hasDate hasSku={false} hasContent23={hasAnyContent23} dateVal={r._date} isNew={isNew}/>
               <PctCell v={r._cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'2px solid '+t.primary+'44'}}/>
-              <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'0E'}}/>
+              <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>
               <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
               <td style={TD({textAlign:'right',color:r.avail===0?t.textMuted:t.textSec})}>{r.avail}</td>
             </tr>;
@@ -3390,7 +3410,7 @@ function ProductCRPage({t,sd,ed,store}){
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
-              <InfoTH hasDate={false} hasSku hasContent23={false}/>
+              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23}/>
               {periodLabels.map(w=>(
                 <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:175,position:'sticky',top:0,zIndex:3})}>
                   Report {w} {year}
@@ -3398,22 +3418,22 @@ function ProductCRPage({t,sd,ed,store}){
               ))}
             </tr>
             <tr>
-              <th colSpan={11} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
+              <th colSpan={hasAnyContent23?12:10} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
               {periodLabels.map(w=>[
-                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR</th>,
+                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR</th>,
                 <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR</th>,
-                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',minWidth:65,background:t.orange+'18',color:t.orange,position:'sticky',top:0,zIndex:2})}>Ads CTR</th>,
+                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',minWidth:65,background:t.orange+'33',color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:2})}>Ads CTR</th>,
               ])}
             </tr>
           </thead>
           <tbody>{filtered.map((r,i)=>(
             <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
                 onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <InfoTD r={r} hasDate={false} hasSku hasContent23={false} isNew={false}/>
+              <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
               {periodLabels.map(w=>{const p=r.periods[w]||{};return[
                 <PctCell key={w+'-cr'}  v={p.cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
                 <PctCell key={w+'-ctr'} v={p.ctr}    cf={ctrClr}/>,
-                <PctCell key={w+'-ads'} v={p.adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'0E'}}/>,
+                <PctCell key={w+'-ads'} v={p.adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>,
               ];})}
             </tr>
           ))}</tbody>
@@ -3431,7 +3451,7 @@ function ProductCRPage({t,sd,ed,store}){
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
-              <InfoTH hasDate={false} hasSku hasContent23={false}/>
+              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23}/>
               <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:3})}>Stock</th>
               {periodLabels.map(m=>(
                 <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:105,position:'sticky',top:0,zIndex:3})}>
@@ -3440,9 +3460,9 @@ function ProductCRPage({t,sd,ed,store}){
               ))}
             </tr>
             <tr>
-              <th colSpan={12} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
+              <th colSpan={hasAnyContent23?13:11} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
               {periodLabels.map(m=>[
-                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR%</th>,
+                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR%</th>,
                 <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR%</th>,
               ])}
             </tr>
@@ -3450,7 +3470,7 @@ function ProductCRPage({t,sd,ed,store}){
           <tbody>{filtered.map((r,i)=>(
             <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
                 onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <InfoTD r={r} hasDate={false} hasSku hasContent23={false} isNew={false}/>
+              <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
               <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
               {periodLabels.map(m=>{const p=r.periods[m]||{};return[
                 <PctCell key={m+'-cr'}  v={p.cr}  cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
