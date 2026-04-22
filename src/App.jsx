@@ -3159,7 +3159,126 @@ const AI_HINTS={
   team:["Seller nào cần coaching?","So sánh hiệu suất top vs bottom","Nên phân lại ASIN thế nào?"],
   daily:["Có anomaly gì hôm nay không?","Pattern ngày trong tuần","Trend 7 ngày gần nhất"],
 };
-const PG_LABEL={exec:"Executive Overview",inv:"Inventory",plan:"ASIN Plan",prod:"ASIN Performance",shops:"Shop Performance",team:"Team Performance",daily:"Daily Ops"};
+/* ═══════════ PRODUCT CR PAGE ═══════════ */
+function ProductCRPage({t,sd,ed,store}){
+  const[period,setPeriod]=useState('monthly');
+  const[year,setYear]=useState(new Date().getFullYear());
+  const[memberTab,setMemberTab]=useState('content');
+  const[data,setData]=useState(null);
+  const[headers,setHeaders]=useState([]);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState(null);
+  const[search,setSearch]=useState('');
+
+  useEffect(()=>{
+    setLoading(true);setError(null);
+    const params={period,year,store};
+    if(period==='daily'){params.start=sd;params.end=ed;}
+    api('product/cr-performance',params)
+      .then(res=>{setHeaders(res.periodHeaders||[]);setData(res.data||[]);setLoading(false);})
+      .catch(e=>{setError(e.message);setLoading(false);});
+  },[period,year,store,sd,ed]);
+
+  const filtered=useMemo(()=>{
+    if(!data)return[];
+    return data.filter(r=>{
+      if(r.memberType!==memberTab)return false;
+      if(search){const q=search.toLowerCase();return r.member?.toLowerCase().includes(q)||r.asin?.toLowerCase().includes(q)||r.store?.toLowerCase().includes(q);}
+      return true;
+    });
+  },[data,memberTab,search]);
+
+  const memberSummary=useMemo(()=>{
+    const map={};
+    filtered.forEach(r=>{
+      const k=`${r.member}||${r.store}`;
+      if(!map[k])map[k]={member:r.member,store:r.store,crSum:0,ctrSum:0,cnt:0,asinCount:0};
+      const m=map[k];
+      r.periods.forEach(p=>{if(p.cr>0){m.crSum+=p.cr;m.cnt++;}if(p.ctr>0)m.ctrSum+=p.ctr;});
+      m.asinCount++;
+    });
+    return Object.values(map).map(m=>({...m,avgCR:m.cnt>0?Math.round(m.crSum/m.cnt*100)/100:0,avgCTR:m.cnt>0?Math.round(m.ctrSum/m.cnt*100)/100:0})).sort((a,b)=>b.avgCR-a.avgCR);
+  },[filtered]);
+
+  const crClr=v=>!v?t.textMuted:v>=15?t.green:v>=8?t.text:t.orange;
+  const ctrClr=v=>!v?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
+
+  return<div>
+    {/* filters */}
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:16}}>
+      {['daily','weekly','monthly'].map(p=><button key={p} onClick={()=>setPeriod(p)} style={{padding:'5px 14px',borderRadius:8,fontSize:12,fontWeight:period===p?700:400,cursor:'pointer',border:'1px solid '+(period===p?t.primary:t.cardBorder),background:period===p?t.primaryLight:'transparent',color:period===p?t.primary:t.textSec}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}
+      {period!=='daily'&&<div style={{display:'flex',gap:4}}>{[2025,2026].map(y=><button key={y} onClick={()=>setYear(y)} style={{padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:year===y?700:400,cursor:'pointer',border:'1px solid '+(year===y?t.primary:t.cardBorder),background:year===y?t.primaryLight:'transparent',color:year===y?t.primary:t.textSec}}>{y}</button>)}</div>}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm member / ASIN / store..." style={{marginLeft:'auto',padding:'6px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:220}}/>
+    </div>
+    {/* member tabs */}
+    <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid '+t.divider}}>
+      {[{key:'content',label:'📝 Content Member'},{key:'image',label:'🎨 Image Member'}].map(tab=>(
+        <button key={tab.key} onClick={()=>setMemberTab(tab.key)} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:memberTab===tab.key?700:400,color:memberTab===tab.key?t.primary:t.textSec,borderBottom:'3px solid '+(memberTab===tab.key?t.primary:'transparent'),marginBottom:-2}}>{tab.label}</button>
+      ))}
+    </div>
+    {loading&&<div style={{textAlign:'center',padding:40,color:t.textMuted,fontSize:13}}>Đang tải dữ liệu...</div>}
+    {error&&<div style={{padding:'10px 14px',borderRadius:8,background:t.red+'18',border:'1px solid '+t.red+'44',fontSize:12,color:t.red,marginBottom:12}}>Lỗi: {error}</div>}
+    {/* summary */}
+    {!loading&&memberSummary.length>0&&<Sec title={`Tổng hợp theo ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
+      <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
+            <thead><tr>{['Member','Store','Avg CR (%)','Avg CTR (%)','Số ASIN'].map((h,i)=><th key={i} style={{position:'sticky',top:0,zIndex:2,padding:'11px 14px',textAlign:i===0?'left':'right',color:i===2?t.primary:i===3?t.primary:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+            <tbody>{memberSummary.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{transition:'background .1s'}}>
+              <td style={{padding:'10px 14px',fontWeight:700,borderBottom:'1px solid '+t.divider}}>{r.member}</td>
+              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textSec,fontSize:11}}>{r.store}</td>
+              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:700,color:crClr(r.avgCR)}}>{r.avgCR>0?r.avgCR.toFixed(2)+'%':'—'}</td>
+              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,fontWeight:600,color:ctrClr(r.avgCTR)}}>{r.avgCTR>0?r.avgCTR.toFixed(2)+'%':'—'}</td>
+              <td style={{padding:'10px 14px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.textSec}}>{r.asinCount}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+    </Sec>}
+    {/* detail pivot table */}
+    {!loading&&filtered.length>0&&headers.length>0&&<Sec title={`Chi tiết ASIN — ${memberTab==='content'?'Content':'Image'} Member`} icon="" t={t}>
+      <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+        <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:11.5}}>
+            <thead>
+              <tr>
+                {['Member','Store','ASIN'].map((h,i)=><th key={h} style={{position:'sticky',top:0,left:i===0?0:'auto',zIndex:i===0?4:3,padding:'10px 12px',textAlign:'left',color:t.textMuted,fontWeight:700,fontSize:10.5,textTransform:'uppercase',letterSpacing:.5,borderBottom:'2px solid '+t.divider,borderRight:i<2?'1px solid '+t.divider:undefined,background:t.tableBg,whiteSpace:'nowrap',minWidth:i===0?100:i===1?90:110}}>{h}</th>)}
+                {headers.map(h=><th key={h} colSpan={2} style={{position:'sticky',top:0,zIndex:2,padding:'10px 8px',textAlign:'center',color:t.primary,fontWeight:700,fontSize:10.5,letterSpacing:.3,borderBottom:'2px solid '+t.divider,borderLeft:'1px solid '+t.divider,background:t.primaryLight,whiteSpace:'nowrap'}}>{h}</th>)}
+              </tr>
+              <tr>
+                <th colSpan={3} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider}}/>
+                {headers.map(h=>[
+                  <th key={h+'-cr'} style={{position:'sticky',top:37,zIndex:2,padding:'5px 8px',textAlign:'center',color:t.primary,fontWeight:600,fontSize:10,borderBottom:'1px solid '+t.divider,borderLeft:'1px solid '+t.divider,background:t.primaryLight,whiteSpace:'nowrap'}}>CR%</th>,
+                  <th key={h+'-ctr'} style={{position:'sticky',top:37,zIndex:2,padding:'5px 8px',textAlign:'center',color:t.textMuted,fontWeight:600,fontSize:10,borderBottom:'1px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap'}}>CTR%</th>,
+                ])}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r,i)=>{
+                const pMap={};r.periods.forEach(p=>{pMap[p.label]=p;});
+                return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{transition:'background .1s'}}>
+                  <td style={{padding:'9px 12px',fontWeight:700,borderBottom:'1px solid '+t.divider,borderRight:'1px solid '+t.divider,position:'sticky',left:0,background:t.card,whiteSpace:'nowrap',zIndex:1}}>{r.member}</td>
+                  <td style={{padding:'9px 12px',borderBottom:'1px solid '+t.divider,borderRight:'1px solid '+t.divider,color:t.textSec,fontSize:11,whiteSpace:'nowrap'}}>{r.store}</td>
+                  <td style={{padding:'9px 12px',borderBottom:'1px solid '+t.divider,fontFamily:'monospace',fontSize:11,color:t.textSec,letterSpacing:.5}}>{r.asin}</td>
+                  {headers.map(h=>{const p=pMap[h];return[
+                    <td key={h+'-cr'} style={{padding:'9px 8px',textAlign:'center',borderBottom:'1px solid '+t.divider,borderLeft:'1px solid '+t.divider,fontWeight:600,color:p?crClr(p.cr):t.textMuted,background:p&&p.cr>=15?t.green+'12':undefined}}>{p&&p.cr>0?p.cr.toFixed(2)+'%':<span style={{color:t.textMuted}}>—</span>}</td>,
+                    <td key={h+'-ctr'} style={{padding:'9px 8px',textAlign:'center',borderBottom:'1px solid '+t.divider,color:p?ctrClr(p.ctr):t.textMuted}}>{p&&p.ctr>0?p.ctr.toFixed(2)+'%':<span style={{color:t.textMuted}}>—</span>}</td>,
+                  ];})}
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:'8px 14px',fontSize:10.5,color:t.textMuted,borderTop:'1px solid '+t.divider}}>
+          {filtered.length} ASINs · CR = unitSessionPercentage · CTR = clickRate · <span style={{color:t.green}}>Xanh CR≥15% / CTR≥0.5%</span> · <span style={{color:t.orange}}>Cam CR&lt;8% / CTR&lt;0.2%</span>
+        </div>
+      </div>
+    </Sec>}
+    {!loading&&!error&&filtered.length===0&&<div style={{textAlign:'center',padding:60,color:t.textMuted,fontSize:13}}>{data===null?'Đang tải...':`Không có dữ liệu cho ${memberTab==='content'?'content member':'image member'}. Hãy kiểm tra cột contenters / imagers trong bảng asin.`}</div>}
+  </div>;
+}
+
+const PG_LABEL={exec:"Executive Overview",inv:"Inventory",plan:"ASIN Plan",prod:"ASIN Performance",shops:"Shop Performance",team:"Team Performance",cr:"Product CR",daily:"Daily Ops"};
 
 function buildCtx(pg,d){
   const{em,fAsin,fShopData,fSeller,invData,invShop,fDaily,sd,ed}=d;
@@ -3991,6 +4110,7 @@ const NAV_SECTIONS=[
     {id:"prod",l:"ASIN Performance",ico:"M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"},
     {id:"shops",l:"Shop Performance",ico:"M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3c-.5.5-.1 1.4.6 1.4H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"},
     {id:"team",l:"Team Performance",ico:"M17 20h5v-2a3 3 0 00-5.4-1.7M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.9M7 20H2v-2a3 3 0 015.4-1.7M7 20v-2c0-.7.1-1.3.4-1.9m0 0a5 5 0 019.2 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"},
+    {id:"cr",l:"Product CR",ico:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"},
   ]},
   {label:"ANALYTICS",items:[
     {id:"daily",l:"Daily / Ops",ico:"M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"},
@@ -4822,6 +4942,7 @@ function Dashboard({authUser,onLogout}){
         {pg==="prod"&&<ProdPage t={t} isDark={isDark} onAsinClick={setStockAsin} fAsin={filteredFAsin} fDaily={fDaily} sd={sd} ed={ed} store={store}/>}
         {pg==="shops"&&<ShopPage t={t} fShopData={fShopData} fDaily={fDaily} sd={sd} ed={ed} store={store} seller={seller}/>}
         {pg==="team"&&<TeamPage t={t} onAsinClick={setStockAsin} fSeller={fSeller} fDaily={fDaily} asinPlanBkData={asinPlanBkState} sd={sd} ed={ed} store={store} seller={seller} asinImgMap={asinImgMap}/>}
+        {pg==="cr"&&<ProductCRPage t={t} sd={sd} ed={ed} store={store}/>}
         {pg==="daily"&&<OpsPage t={t} fDaily={fDaily} fShopData={fShopData}/>}
         {pg==="analytics"&&<AnalyticsPage t={t} fDaily={fDaily} fShopData={fShopData} fSeller={fSeller} fAsin={filteredFAsin} em={em} monthPlanData={monthPlanState} monthlyLY={monthlyLYState} sd={sd} ed={ed}/>}
         <div style={{height:30}}/>
