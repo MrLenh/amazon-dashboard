@@ -2502,14 +2502,20 @@ app.get('/api/product/cr-performance', async (req, res) => {
       labelExpr = `DATE_FORMAT(t.${dateCol}, '%Y-%m-%d')`;
       orderExpr = `DATE(t.${dateCol}) ASC`;
     } else if (period === 'weekly') {
-      sd = `${yr}-01-01`; ed = `${yr}-12-31`;
+      // Amazon weekly rows span Sun..Sat. W1 of year Y starts on the Sunday on or before Jan 1 of Y
+      // (e.g. W1 2026 = 2025-12-28 .. 2026-01-03). To include these boundary weeks, expand the
+      // filter to dateStartTime >= (Y-1)-12-25 (covers the Sunday before Jan 1).
+      sd = `${yr-1}-12-25`; ed = `${yr}-12-31`;
       tableName = 'analytics_sale_traffic_by_asin';
       dateCol   = 'dateStartTime';
       typeDate  = 'WEEK';
-      // Amazon week: Sunday-start. MySQL mode 6 = Sunday first, week 1 has 4+ days
-      groupExpr = `YEARWEEK(t.${dateCol}, 6)`;
-      labelExpr = `CONCAT('W', LPAD(WEEK(t.${dateCol}, 6), 2, '0'))`;
-      orderExpr = `YEARWEEK(t.${dateCol}, 6) ASC`;
+      // Amazon week number formula: floor((dateStartTime - amzY1Start) / 7) + 1
+      // amzY1Start = first Sunday on or before Jan 1 of target year (yr)
+      const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
+      const AMZ_WEEK     = `(FLOOR(DATEDIFF(t.${dateCol}, ${AMZ_Y1_START}) / 7) + 1)`;
+      groupExpr = AMZ_WEEK;
+      labelExpr = `CONCAT('W', LPAD(${AMZ_WEEK}, 2, '0'))`;
+      orderExpr = `${AMZ_WEEK} ASC`;
     } else {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
       tableName = 'analytics_sale_traffic_by_asin';
@@ -2584,15 +2590,14 @@ app.get('/api/product/cr-performance', async (req, res) => {
     `, [...accParams], 30000).catch(()=>[]);
 
     // Q1b: CTR from analytics_search_catalog_performance
-    // For weekly/monthly, match dateStartTime period using same expression on startDate.
+    // For weekly/monthly, match period group using same Amazon week formula on startDate.
     // Skip CTR for daily mode (source has only weekly buckets).
-    let ctrGroupExpr = null, ctrLabelExpr = null;
+    let ctrGroupExpr = null;
     if (period === 'weekly') {
-      ctrGroupExpr = `YEARWEEK(scp.startDate, 6)`;
-      ctrLabelExpr = `CONCAT('W', LPAD(WEEK(scp.startDate, 6), 2, '0'))`;
+      const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
+      ctrGroupExpr = `(FLOOR(DATEDIFF(scp.startDate, ${AMZ_Y1_START}) / 7) + 1)`;
     } else if (period === 'monthly') {
       ctrGroupExpr = `MONTH(scp.startDate)`;
-      ctrLabelExpr = `CONCAT('T', MONTH(scp.startDate))`;
     }
 
     const ctrMap = {};
@@ -2716,7 +2721,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 — match period expression to same Sunday-start week
+    // Q6: Ads CTR from pool2 — match period expression to Amazon week
     const adsCtrMap = {};
     if (pool2 && asinSet.length > 0) {
       try {
@@ -2725,7 +2730,10 @@ app.get('/api/product/cr-performance', async (req, res) => {
           await conn.execute(`SET SESSION MAX_EXECUTION_TIME=15000`);
           let adsGrp;
           if (period === 'daily')       adsGrp = `DATE(r.date)`;
-          else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 6)`;
+          else if (period === 'weekly') {
+            const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
+            adsGrp = `(FLOOR(DATEDIFF(r.date, ${AMZ_Y1_START}) / 7) + 1)`;
+          }
           else                          adsGrp = `MONTH(r.date)`;
           const asinPh = asinSet.map(() => '?').join(',');
           const [adsRows] = await conn.execute(`
