@@ -3267,7 +3267,7 @@ function ProductCRPage({t,sd,ed,store}){
     </div>
   );
 
-  const TH=(extra={})=>({padding:'9px 10px',fontSize:10,fontWeight:700,color:t.textMuted,
+  const TH=(extra={})=>({padding:'0 10px',height:36,boxSizing:'border-box',lineHeight:'18px',fontSize:10,fontWeight:700,color:t.textMuted,
     textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,
     whiteSpace:'nowrap',letterSpacing:.4,...extra});
   const TD=(extra={})=>({padding:'9px 10px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
