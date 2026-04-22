@@ -2347,20 +2347,26 @@ app.get('/api/product/cr-performance', async (req, res) => {
     const accIds  = await storeToAccIds(store);
     const shopMap = await getShopMap();
 
-    let sd, ed, groupExpr, labelExpr, orderExpr;
+    // analytics_sale_traffiec_by_asin_date has typeDate = 'DAY' | 'WEEK' | 'MONTH'
+    // Amazon pre-calculates unitSessionPercentage (CR) for each typeDate
+    // → use the matching typeDate directly instead of re-aggregating daily rows
+    let sd, ed, typeDate, groupExpr, labelExpr, orderExpr;
     if (period === 'daily') {
       const { s, e } = defDates(start, end);
       sd = s; ed = e;
+      typeDate  = `'DAY'`;
       groupExpr = `DATE(t.date)`;
       labelExpr = `DATE_FORMAT(t.date, '%Y-%m-%d')`;
       orderExpr = `DATE(t.date) ASC`;
     } else if (period === 'weekly') {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
+      typeDate  = `'WEEK'`;
       groupExpr = `YEARWEEK(t.date, 1)`;
       labelExpr = `CONCAT('W', LPAD(WEEK(t.date,1),2,'0'))`;
       orderExpr = `YEARWEEK(t.date, 1) ASC`;
     } else {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
+      typeDate  = `'MONTH'`;
       groupExpr = `MONTH(t.date)`;
       labelExpr = `CONCAT('T', MONTH(t.date))`;
       orderExpr = `MONTH(t.date) ASC`;
@@ -2372,23 +2378,23 @@ app.get('/api/product/cr-performance', async (req, res) => {
       accParams.push(...accIds);
     }
 
-    // Q1: Analytics — CR + CTR per ASIN per period
+    // Q1: CR — use unitSessionPercentage directly (Amazon pre-calculates per typeDate)
+    // Daily:   typeDate='DAY'   → daily CR per ASIN
+    // Weekly:  typeDate='WEEK'  → weekly CR per ASIN (same as Lark Base W1..W52)
+    // Monthly: typeDate='MONTH' → monthly CR per ASIN (same as Lark Base T1..T12)
     const analyticsRows = await q(`
       SELECT
         t.asin,
         t.accountId,
-        MIN(${labelExpr})                              AS periodLabel,
-        ${groupExpr}                                   AS periodGroup,
-        ROUND(AVG(t.unitSessionPercentage), 2)         AS cr,
-        ROUND(AVG(scp.clickRate) * 100, 2)             AS ctr,
-        SUM(t.sessions)                                AS sessions,
-        SUM(t.unitsOrdered)                            AS units
+        MIN(${labelExpr})                                              AS periodLabel,
+        ${groupExpr}                                                   AS periodGroup,
+        ROUND(AVG(
+          CASE WHEN t.unitSessionPercentage > 0 THEN t.unitSessionPercentage END
+        ), 2)                                                          AS cr,
+        SUM(t.sessions)                                                AS sessions,
+        SUM(t.unitsOrdered)                                            AS units
       FROM analytics_sale_traffiec_by_asin_date t
-      LEFT JOIN analytics_search_catalog_performance scp
-        ON  scp.asin      = t.asin
-        AND scp.accountId = t.accountId
-        AND scp.startDate = t.date
-      WHERE t.typeDate = 'DAY'
+      WHERE t.typeDate = ${typeDate}
         AND t.date BETWEEN ? AND ?
         ${accFilter}
       GROUP BY t.asin, t.accountId, ${groupExpr}
@@ -2396,6 +2402,38 @@ app.get('/api/product/cr-performance', async (req, res) => {
     `, [sd, ed, ...accParams], 90000);
 
     if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
+
+    // Q1b: CTR from analytics_search_catalog_performance
+    // Use SUM(clickCount)/SUM(impressionCount) — same groupExpr so periods align
+    // startDate in this table is start-of-week or start-of-month, group by same expr
+    let ctrGroupExpr;
+    if (period === 'daily')       ctrGroupExpr = `DATE(scp.startDate)`;
+    else if (period === 'weekly') ctrGroupExpr = `YEARWEEK(scp.startDate, 1)`;
+    else                          ctrGroupExpr = `MONTH(scp.startDate)`;
+
+    let accFilterScp = ''; const accParamsScp = [];
+    if (accIds && accIds.length) {
+      accFilterScp = ` AND scp.accountId IN (${accIds.map(() => '?').join(',')})`;
+      accParamsScp.push(...accIds);
+    }
+    const ctrMap = {}; // { asin: { periodGroup: ctr } }
+    try {
+      const ctrRows = await q(`
+        SELECT scp.asin,
+          ${ctrGroupExpr}                                              AS periodGroup,
+          ROUND(
+            SUM(scp.clickCount) / NULLIF(SUM(scp.impressionCount), 0) * 100, 4
+          )                                                            AS ctr
+        FROM analytics_search_catalog_performance scp
+        WHERE scp.startDate BETWEEN ? AND ?
+          ${accFilterScp}
+        GROUP BY scp.asin, ${ctrGroupExpr}
+      `, [sd, ed, ...accParamsScp], 30000);
+      ctrRows.forEach(r => {
+        if (!ctrMap[r.asin]) ctrMap[r.asin] = {};
+        ctrMap[r.asin][String(r.periodGroup)] = parseFloat(r.ctr) || null;
+      });
+    } catch(e) { console.warn('[cr-performance] ctr:', e.message); }
 
     const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
     const asinAccMap = {};
@@ -2518,14 +2556,14 @@ app.get('/api/product/cr-performance', async (req, res) => {
       .sort(([a], [b]) => String(a).localeCompare(String(b)))
       .map(([, label]) => label);
 
-    // Pivot analytics per ASIN
+    // Pivot analytics per ASIN — merge CR + CTR + Ads CTR
     const asinPeriods = {};
     analyticsRows.forEach(r => {
       if (!asinPeriods[r.asin]) asinPeriods[r.asin] = {};
       const lbl = periodMap[String(r.periodGroup)];
       asinPeriods[r.asin][lbl] = {
         cr:     r.cr  != null ? parseFloat(r.cr)  : null,
-        ctr:    r.ctr != null ? parseFloat(r.ctr) : null,
+        ctr:    ctrMap[r.asin]?.[String(r.periodGroup)] ?? null,
         adsCtr: adsCtrMap[r.asin]?.[String(r.periodGroup)] ?? null,
       };
     });
