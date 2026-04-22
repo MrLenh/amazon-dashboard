@@ -3177,6 +3177,8 @@ function ProductCRPage({t,sd,ed,store}){
 
   useEffect(()=>{
     setLoading(true);setError(null);
+    // Clear stale data immediately so old period data doesn't show while loading
+    setData(null);setPeriodLabels([]);
     const params={period,year,store};
     if(period==='daily'){params.start=dateFrom;params.end=dateTo;}
     api('product/cr-performance',params)
@@ -3185,7 +3187,11 @@ function ProductCRPage({t,sd,ed,store}){
         setData(res.rows||[]);
         setLoading(false);
       })
-      .catch(e=>{setError(e.message);setLoading(false);});
+      .catch(e=>{
+        setError(e.message);
+        setData([]);
+        setLoading(false);
+      });
   },[period,year,store,dateFrom,dateTo]);
 
   // Filter by search
