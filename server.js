@@ -2353,7 +2353,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       sd = s; ed = e;
       groupExpr = `DATE(t.date)`;
       labelExpr = `DATE_FORMAT(t.date, '%Y-%m-%d')`;
-      orderExpr = `t.date ASC`;
+      orderExpr = `DATE(t.date) ASC`;
     } else if (period === 'weekly') {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
       groupExpr = `YEARWEEK(t.date, 1)`;
@@ -2420,18 +2420,35 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] asin master:', e.message); }
 
-    // Q3: productType + niche from seller_board_product
+    // Q3: productType + niche — try asin table first, fallback to seller_board_product
     let sbpRows = [];
     try {
-      sbpRows = await q(`
-        SELECT p.asin,
-          MAX(p.productType)    AS productType,
-          MAX(p.seasonAndNiche) AS niche
-        FROM seller_board_product p
-        WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
-        GROUP BY p.asin
-      `, asinSet, 20000);
-    } catch(e) { console.warn('[cr-performance] sbp:', e.message); }
+      // Try getting from asin table if columns exist
+      const asinCols = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
+      const hasPT    = asinCols.includes('productType');
+      const hasNiche = asinCols.includes('seasonAndNiche');
+      if (hasPT || hasNiche) {
+        sbpRows = await q(`
+          SELECT a.asin,
+            ${hasPT    ? 'a.productType'    : 'NULL'} AS productType,
+            ${hasNiche ? 'a.seasonAndNiche' : 'NULL'} AS niche
+          FROM asin a WHERE a.asin IN (${ph})
+        `, asinSet, 10000);
+      }
+    } catch(e) { console.warn('[cr-performance] asin ptNiche:', e.message); }
+    // Fallback: seller_board_product (last 365 days — wider range to catch sparse data)
+    if (!sbpRows.length || sbpRows.every(r => !r.productType && !r.niche)) {
+      try {
+        sbpRows = await q(`
+          SELECT p.asin,
+            MAX(p.productType)    AS productType,
+            MAX(p.seasonAndNiche) AS niche
+          FROM seller_board_product p
+          WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+          GROUP BY p.asin
+        `, asinSet, 20000);
+      } catch(e) { console.warn('[cr-performance] sbp:', e.message); }
+    }
 
     // Q4: SKU + FBA stock snapshot
     let stockRows = [];
