@@ -2337,6 +2337,98 @@ app.get('/api/product/asins-rt', async (req, res) => {
   }
 });
 
+/* ═══════════ PRODUCT CR PERFORMANCE ═══════════ */
+app.get('/api/product/cr-performance', async (req, res) => {
+  try {
+    const { period = 'monthly', year, start, end, store } = req.query;
+    const yr = parseInt(year) || new Date().getFullYear();
+    const accIds = await storeToAccIds(store);
+
+    let sd, ed, groupExpr, labelExpr, orderExpr;
+    if (period === 'daily') {
+      const { s, e } = defDates(start, end);
+      sd = s; ed = e;
+      groupExpr = `DATE(t.date)`;
+      labelExpr = `DATE_FORMAT(t.date, '%d/%m')`;
+      orderExpr = `t.date ASC`;
+    } else if (period === 'weekly') {
+      sd = `${yr}-01-01`; ed = `${yr}-12-31`;
+      groupExpr = `YEARWEEK(t.date, 1)`;
+      labelExpr = `CONCAT('W', LPAD(WEEK(t.date,1),2,'0'))`;
+      orderExpr = `YEARWEEK(t.date, 1) ASC`;
+    } else {
+      sd = `${yr}-01-01`; ed = `${yr}-12-31`;
+      groupExpr = `DATE_FORMAT(t.date, '%Y-%m')`;
+      labelExpr = `DATE_FORMAT(t.date, '%b %Y')`;
+      orderExpr = `DATE_FORMAT(t.date, '%Y-%m') ASC`;
+    }
+
+    let accFilter = ''; const accParams = [];
+    if (accIds && accIds.length) {
+      accFilter = ` AND t.accountId IN (${accIds.map(() => '?').join(',')})`;
+      accParams.push(...accIds);
+    }
+
+    const runQuery = async (memberCol, memberType) => qc(`
+      SELECT
+        a.${memberCol}                               AS member,
+        '${memberType}'                              AS memberType,
+        acc.shop                                     AS store,
+        t.asin,
+        ${labelExpr}                                 AS periodLabel,
+        ${groupExpr}                                 AS periodGroup,
+        ROUND(AVG(t.unitSessionPercentage), 2)       AS cr,
+        ROUND(AVG(scp.clickRate) * 100, 2)           AS ctr,
+        SUM(t.sessions)                              AS sessions,
+        SUM(t.unitsOrdered)                          AS units
+      FROM analytics_sale_traffiec_by_asin_date t
+      JOIN asin a ON t.asin = a.asin
+      JOIN accounts acc ON t.accountId = acc.id
+      LEFT JOIN analytics_search_catalog_performance scp
+        ON scp.asin = t.asin AND scp.accountId = t.accountId AND scp.startDate = t.date
+      WHERE t.typeDate = 'DAY'
+        AND t.date BETWEEN ? AND ?
+        AND a.${memberCol} IS NOT NULL AND a.${memberCol} != ''
+        ${accFilter}
+      GROUP BY a.${memberCol}, acc.shop, t.asin, ${groupExpr}
+      ORDER BY a.${memberCol}, acc.shop, t.asin, ${orderExpr}
+    `, [sd, ed, ...accParams], 60000);
+
+    const [contentRows, imageRows] = await Promise.all([
+      runQuery('contenters', 'content'),
+      runQuery('imagers', 'image'),
+    ]);
+
+    const pivot = (rows) => {
+      const map = {};
+      rows.forEach(r => {
+        const key = `${r.memberType}||${r.member}||${r.store}||${r.asin}`;
+        if (!map[key]) map[key] = { member: r.member, memberType: r.memberType, store: r.store, asin: r.asin, periods: {} };
+        map[key].periods[r.periodGroup] = {
+          label: r.periodLabel, cr: parseFloat(r.cr) || 0,
+          ctr: parseFloat(r.ctr) || 0, sessions: parseInt(r.sessions) || 0, units: parseInt(r.units) || 0,
+        };
+      });
+      return Object.values(map).map(item => ({
+        ...item,
+        periods: Object.entries(item.periods).sort(([a], [b]) => String(a).localeCompare(String(b))).map(([, v]) => v),
+      }));
+    };
+
+    const allRows = [...contentRows, ...imageRows];
+    const periodMap = {};
+    allRows.forEach(r => { periodMap[r.periodGroup] = r.periodLabel; });
+    const periodHeaders = Object.entries(periodMap)
+      .sort(([a], [b]) => String(a).localeCompare(String(b)))
+      .map(([, label]) => label);
+
+    res.json({ periodHeaders, data: [...pivot(contentRows), ...pivot(imageRows)] });
+  } catch (e) {
+    console.error('product/cr-performance:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ═══════════ SERVE FRONTEND ═══════════ */
 const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
