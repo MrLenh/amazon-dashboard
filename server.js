@@ -1347,6 +1347,83 @@ app.get('/api/inventory/by-asin', async (req, res) => {
 
 /* ═══════════ PLAN DEBUG ═══════════ */
 /* ═══════════ DEBUG ENDPOINTS ═══════════ */
+app.get('/api/debug/cr-sources', async (req, res) => {
+  const R = { ts: new Date().toISOString(), tests: {} };
+  const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
+
+  // Detect actual column names in analytics_sale_traffiec_by_asin_date
+  await test('traffiec_columns', () =>
+    q('SHOW COLUMNS FROM analytics_sale_traffiec_by_asin_date').then(r => r.map(c => c.Field))
+  );
+  await test('search_catalog_columns', () =>
+    q('SHOW COLUMNS FROM analytics_search_catalog_performance').then(r => r.map(c => c.Field))
+  );
+
+  // Auto-detect date column name
+  const cols = await q('SHOW COLUMNS FROM analytics_sale_traffiec_by_asin_date')
+    .then(r => r.map(c => c.Field)).catch(() => []);
+  const dateCol = cols.includes('date') ? 'date'
+    : cols.includes('dateStartTime') ? 'dateStartTime' : 'date';
+  R.tests.detected_date_column = dateCol;
+
+  // typeDate distribution
+  await test('traffic_typedates', () => q(`
+    SELECT typeDate, COUNT(*) AS cnt,
+      MIN(${dateCol}) AS minD, MAX(${dateCol}) AS maxD
+    FROM analytics_sale_traffiec_by_asin_date
+    GROUP BY typeDate ORDER BY typeDate
+  `));
+
+  // WEEK sample
+  await test('traffic_week_sample', () => q(`
+    SELECT asin, ${dateCol} AS d, typeDate, unitSessionPercentage, sessions, unitsOrdered
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE typeDate = 'WEEK' ORDER BY ${dateCol} DESC LIMIT 5
+  `));
+
+  // DAY sample
+  await test('traffic_day_sample', () => q(`
+    SELECT asin, ${dateCol} AS d, typeDate, unitSessionPercentage, sessions, unitsOrdered
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE typeDate = 'DAY' ORDER BY ${dateCol} DESC LIMIT 3
+  `));
+
+  // analytics_search_catalog_performance
+  await test('search_catalog_sample', () => q(`
+    SELECT asin, startDate, endDate, clickRate, clickCount, impressionCount
+    FROM analytics_search_catalog_performance ORDER BY startDate DESC LIMIT 5
+  `));
+  await test('search_catalog_months', () => q(`
+    SELECT DATE_FORMAT(startDate,'%Y-%m') AS m,
+      COUNT(DISTINCT asin) AS asins, COUNT(*) AS rows
+    FROM analytics_search_catalog_performance
+    GROUP BY DATE_FORMAT(startDate,'%Y-%m') ORDER BY m DESC LIMIT 6
+  `));
+
+  // pool2 ads check
+  if (pool2) {
+    try {
+      const conn = await pool2.getConnection();
+      try {
+        const [cnt] = await conn.execute(
+          `SELECT COUNT(*) AS cnt, MIN(date) AS minD, MAX(date) AS maxD FROM report_sp_advertised_product`
+        );
+        R.tests.ads_count = cnt[0];
+        const [s] = await conn.execute(
+          `SELECT advertisedAsin, date, impressions, clicks,
+             ROUND(clicks/NULLIF(impressions,0)*100,4) AS adsCtr
+           FROM report_sp_advertised_product
+           WHERE advertisedAsin IS NOT NULL AND advertisedAsin != ''
+           ORDER BY date DESC LIMIT 5`
+        );
+        R.tests.ads_sample = s;
+      } finally { conn.release(); }
+    } catch(e) { R.tests.ads_pool2 = { error: e.message }; }
+  } else { R.tests.ads_pool2 = 'pool2 not connected'; }
+
+  res.json(R);
+});
+
 app.get('/api/debug/all', async (req, res) => {
   const R = { ts: new Date().toISOString(), tests: {} };
   const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
@@ -2379,10 +2456,8 @@ app.get('/api/product/cr-performance', async (req, res) => {
     }
 
     // Q1: CR — use unitSessionPercentage directly (Amazon pre-calculates per typeDate)
-    // Daily:   typeDate='DAY'   → daily CR per ASIN
-    // Weekly:  typeDate='WEEK'  → weekly CR per ASIN (same as Lark Base W1..W52)
-    // Monthly: typeDate='MONTH' → monthly CR per ASIN (same as Lark Base T1..T12)
-    const analyticsRows = await q(`
+    // Try WEEK/MONTH typeDate first; fallback to DAY aggregation if table lacks those rows
+    let analyticsRows = await q(`
       SELECT
         t.asin,
         t.accountId,
@@ -2401,11 +2476,34 @@ app.get('/api/product/cr-performance', async (req, res) => {
       ORDER BY t.asin, ${orderExpr}
     `, [sd, ed, ...accParams], 90000);
 
+    // Fallback: if WEEK or MONTH rows don't exist, aggregate from DAY rows
+    if (analyticsRows.length === 0 && period !== 'daily') {
+      console.log(`[cr-performance] No ${typeDate} rows found — falling back to DAY aggregation`);
+      analyticsRows = await q(`
+        SELECT
+          t.asin,
+          t.accountId,
+          MIN(${labelExpr})                                            AS periodLabel,
+          ${groupExpr}                                                 AS periodGroup,
+          ROUND(
+            SUM(t.unitsOrdered) / NULLIF(SUM(t.sessions), 0) * 100, 2
+          )                                                            AS cr,
+          SUM(t.sessions)                                              AS sessions,
+          SUM(t.unitsOrdered)                                          AS units
+        FROM analytics_sale_traffiec_by_asin_date t
+        WHERE t.typeDate = 'DAY'
+          AND t.date BETWEEN ? AND ?
+          ${accFilter}
+        GROUP BY t.asin, t.accountId, ${groupExpr}
+        ORDER BY t.asin, ${orderExpr}
+      `, [sd, ed, ...accParams], 90000);
+    }
+
     if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
 
     // Q1b: CTR from analytics_search_catalog_performance
-    // Use SUM(clickCount)/SUM(impressionCount) — same groupExpr so periods align
-    // startDate in this table is start-of-week or start-of-month, group by same expr
+    // clickRate is pre-calculated (decimal 10,2). startDate/endDate = weekly or monthly range.
+    // Group by same period expression applied to startDate.
     let ctrGroupExpr;
     if (period === 'daily')       ctrGroupExpr = `DATE(scp.startDate)`;
     else if (period === 'weekly') ctrGroupExpr = `YEARWEEK(scp.startDate, 1)`;
@@ -2416,14 +2514,12 @@ app.get('/api/product/cr-performance', async (req, res) => {
       accFilterScp = ` AND scp.accountId IN (${accIds.map(() => '?').join(',')})`;
       accParamsScp.push(...accIds);
     }
-    const ctrMap = {}; // { asin: { periodGroup: ctr } }
+    const ctrMap = {};
     try {
       const ctrRows = await q(`
         SELECT scp.asin,
           ${ctrGroupExpr}                                              AS periodGroup,
-          ROUND(
-            SUM(scp.clickCount) / NULLIF(SUM(scp.impressionCount), 0) * 100, 4
-          )                                                            AS ctr
+          ROUND(AVG(scp.clickRate), 4)                                 AS ctr
         FROM analytics_search_catalog_performance scp
         WHERE scp.startDate BETWEEN ? AND ?
           ${accFilterScp}
@@ -2512,7 +2608,8 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 — date from report_sp_advertised_product.date (NOT created_at)
+    // Q6: Ads CTR from pool2 (amazon_ads_manager DB)
+    // report_sp_advertised_product has: advertisedAsin, clickThroughRate (pre-calculated), clicks, impressions, date
     const adsCtrMap = {};
     if (pool2) {
       try {
@@ -2522,22 +2619,22 @@ app.get('/api/product/cr-performance', async (req, res) => {
           if (period === 'daily')       adsGrp = `DATE(r.date)`;
           else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 1)`;
           else                          adsGrp = `MONTH(r.date)`;
+          // advertisedAsin is the ASIN column in report_sp_advertised_product
+          // clickThroughRate is pre-calculated; use AVG across the period
           const [adsRows] = await conn.execute(`
-            SELECT pa.asin, ${adsGrp} AS periodGroup,
-              ROUND(SUM(r.clicks)/NULLIF(SUM(r.impressions),0)*100, 4) AS adsCtr
-            FROM (
-              SELECT campaignId, adGroupId, ${adsGrp} AS pg,
-                SUM(clicks) AS clicks, SUM(impressions) AS impressions
-              FROM report_sp_advertised_product WHERE date BETWEEN ? AND ?
-              GROUP BY campaignId, adGroupId, ${adsGrp}
-            ) r
-            JOIN product_ads pa ON pa.campaignId=r.campaignId AND pa.adGroupId=r.adGroupId
-            WHERE pa.asin IS NOT NULL AND pa.asin != ''
-            GROUP BY pa.asin, ${adsGrp}
+            SELECT r.advertisedAsin                                    AS asin,
+              ${adsGrp}                                                AS periodGroup,
+              ROUND(
+                SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4
+              )                                                        AS adsCtr
+            FROM report_sp_advertised_product r
+            WHERE r.date BETWEEN ? AND ?
+              AND r.advertisedAsin IS NOT NULL AND r.advertisedAsin != ''
+            GROUP BY r.advertisedAsin, ${adsGrp}
           `, [sd, ed]);
           adsRows.forEach(r => {
             if (!adsCtrMap[r.asin]) adsCtrMap[r.asin] = {};
-            adsCtrMap[r.asin][String(r.periodGroup)] = parseFloat(r.adsCtr) || 0;
+            adsCtrMap[r.asin][String(r.periodGroup)] = parseFloat(r.adsCtr) || null;
           });
         } finally { conn.release(); }
       } catch(e) { console.warn('[cr-performance] adsCtr:', e.message); }
