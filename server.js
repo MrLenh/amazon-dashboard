@@ -2528,9 +2528,9 @@ app.get('/api/product/cr-performance', async (req, res) => {
 
     // Q1: CR — dev spec:
     //   Daily   → read unitSessionPercentage from analytics_sale_traffiec_by_asin_date (by date)
-    //   Weekly  → read unitSessionPercentage from analytics_sale_traffic_by_asin (by dateStartTime/dateEndTime)
+    //   Weekly  → read unitSessionPercentage from analytics_sale_traffic_by_asin (by dateStartTime)
     //   Monthly → same as weekly but month-level row
-    // Filter type='CHILD' to avoid double-counting with PARENT/SKU rows of the same ASIN.
+    // No type filter — matches dev's verified queries.
     let analyticsRows;
     if (period === 'daily') {
       analyticsRows = await q(`
@@ -2543,37 +2543,16 @@ app.get('/api/product/cr-performance', async (req, res) => {
           SUM(t.unitsOrdered)                                            AS units
         FROM ${tableName} t
         WHERE t.typeDate = '${typeDate}'
-          AND t.type = 'CHILD'
           AND t.${dateCol} BETWEEN ? AND ?
           ${accFilter}
         GROUP BY t.asin, ${groupExpr}
         ORDER BY t.asin, ${orderExpr}
       `, [sd, ed, ...accParams], 90000);
-      // Fallback to SKU / PARENT if no CHILD rows
-      if (analyticsRows.length === 0) {
-        analyticsRows = await q(`
-          SELECT
-            t.asin,
-            MIN(${labelExpr})                                            AS periodLabel,
-            ${groupExpr}                                                 AS periodGroup,
-            ROUND(AVG(t.unitSessionPercentage), 2)                       AS cr,
-            SUM(t.sessions)                                              AS sessions,
-            SUM(t.unitsOrdered)                                          AS units
-          FROM ${tableName} t
-          WHERE t.typeDate = '${typeDate}'
-            AND t.type IN ('SKU','PARENT')
-            AND t.${dateCol} BETWEEN ? AND ?
-            ${accFilter}
-          GROUP BY t.asin, ${groupExpr}
-          ORDER BY t.asin, ${orderExpr}
-        `, [sd, ed, ...accParams], 90000);
-      }
     } else {
       // Weekly/Monthly — dev spec: read unitSessionPercentage column DIRECTLY from
-      // analytics_sale_traffic_by_asin, filtered by dateStartTime/dateEndTime of the period.
-      // Filter type='CHILD' to ensure 1 row per (asin, accountId, period) — avoids mixing with
-      // PARENT/SKU rows that would skew AVG. If ASIN exists in multiple stores (different
-      // accountIds) without store filter, AVG across those rows matches Lark's simple aggregation.
+      // analytics_sale_traffic_by_asin, filtered by dateStartTime of the period.
+      // No type filter — matches dev's verified query that returns correct numbers.
+      // If ASIN has multiple rows (multi-account), AVG gives cross-store CR.
       analyticsRows = await q(`
         SELECT
           t.asin,
@@ -2584,32 +2563,11 @@ app.get('/api/product/cr-performance', async (req, res) => {
           SUM(t.unitsOrdered)                                            AS units
         FROM ${tableName} t
         WHERE t.typeDate = '${typeDate}'
-          AND t.type = 'CHILD'
           AND t.${dateCol} BETWEEN ? AND ?
           ${accFilter}
         GROUP BY t.asin, ${groupExpr}, ${labelExpr}
         ORDER BY t.asin, ${orderExpr}
       `, [sd, ed, ...accParams], 90000);
-
-      // Fallback: if no CHILD rows for any ASIN in range, try PARENT (for ASINs without variations)
-      if (analyticsRows.length === 0) {
-        analyticsRows = await q(`
-          SELECT
-            t.asin,
-            ${labelExpr}                                                 AS periodLabel,
-            ${groupExpr}                                                 AS periodGroup,
-            ROUND(AVG(t.unitSessionPercentage), 2)                       AS cr,
-            SUM(t.sessions)                                              AS sessions,
-            SUM(t.unitsOrdered)                                          AS units
-          FROM ${tableName} t
-          WHERE t.typeDate = '${typeDate}'
-            AND t.type = 'PARENT'
-            AND t.${dateCol} BETWEEN ? AND ?
-            ${accFilter}
-          GROUP BY t.asin, ${groupExpr}, ${labelExpr}
-          ORDER BY t.asin, ${orderExpr}
-        `, [sd, ed, ...accParams], 90000);
-      }
     }
 
     if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
