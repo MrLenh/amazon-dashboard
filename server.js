@@ -2635,23 +2635,41 @@ app.get('/api/product/cr-performance', async (req, res) => {
     });
     const ph = asinSet.map(() => '?').join(',');
 
-    // Q2: ASIN master — contenters (1/2/3), imagers, seller, tier
+    // Q2: ASIN master — contenters (1/2/3), imagers, seller
     let asinMaster = [];
     try {
-      const cols    = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
-      const has2    = cols.includes('contenters2');
-      const has3    = cols.includes('contenters3');
-      const hasTier = cols.includes('tier');
+      const cols = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
+      const has2 = cols.includes('contenters2');
+      const has3 = cols.includes('contenters3');
       asinMaster = await q(`
         SELECT a.asin, a.seller,
           a.contenters                                 AS content1,
           ${has2 ? 'a.contenters2' : 'NULL'}           AS content2,
           ${has3 ? 'a.contenters3' : 'NULL'}           AS content3,
-          a.imagers                                    AS image,
-          ${hasTier ? 'a.tier' : 'NULL'}               AS tier
+          a.imagers                                    AS image
         FROM asin a WHERE a.asin IN (${ph})
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] asin master:', e.message); }
+
+    // Q2b: Tier from asin_plan (latest year with tier value for each ASIN)
+    const tierMap = {};
+    try {
+      const planCols = (await q('SHOW COLUMNS FROM asin_plan', [], 5000)).map(c => c.Field);
+      const hasTier  = planCols.includes('tier');
+      if (hasTier) {
+        const tierRows = await q(`
+          SELECT ap.asin, ap.tier, ap.year
+          FROM asin_plan ap
+          WHERE ap.asin COLLATE utf8mb4_0900_ai_ci IN (${ph})
+            AND ap.tier IS NOT NULL AND ap.tier != ''
+          ORDER BY ap.asin, ap.year DESC
+        `, asinSet, 15000);
+        tierRows.forEach(r => { if (!tierMap[r.asin]) tierMap[r.asin] = r.tier; });
+      }
+    } catch(e) { console.warn('[cr-performance] tier:', e.message); }
+
+    // Q7: Design image URL from product_metadata (pool2 / IMG_DB)
+    const imageMap = await getImageMap(asinSet).catch(()=>({}));
 
     // Q3: productType + niche — try asin table first, fallback to seller_board_product
     let sbpRows = [];
@@ -2775,9 +2793,10 @@ app.get('/api/product/cr-performance', async (req, res) => {
         content2:    m.content2   || '',
         content3:    m.content3   || '',
         image:       m.image      || '',
-        tier:        m.tier       || '',
+        tier:        tierMap[asin] || '',
         productType: sb.productType || '',
         niche:       sb.niche      || '',
+        imageUrl:    imageMap[asin] || '',
         stock:       parseInt(st.stock) || 0,
         avail:       parseInt(av.avail) || 0,
         periods:     asinPeriods[asin] || {},
