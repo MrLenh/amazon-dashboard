@@ -4835,10 +4835,8 @@ function Dashboard({authUser,onLogout}){
             if(dr.defaultStart)setSd(dr.defaultStart);
           }
           api("product/filter-options",{store}).then(d=>{if(d)setFilterOpts({productTypes:d.productTypes||[],niches:d.niches||[]})}).catch(()=>{});
-          api("inventory/by-shop",{store}).then(d=>setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))).catch(()=>{});
-          api("inventory/stock-trend",{store}).then(d=>setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))).catch(()=>{});
-          api("inventory/storage-monthly",{store}).then(d=>setInvFeeMonthly(d||[])).catch(()=>{});
-          api("inventory/by-asin",{store}).then(d=>setInvAsin(d||[])).catch(()=>{});
+          // NOTE: Inventory data no longer fetched eagerly here —
+          // it's loaded lazily when user navigates to Inventory page (pg==='inv')
         }
       }catch(e){console.error("INIT ERROR:",e)}
       setDbConnecting(false);
@@ -4850,68 +4848,121 @@ function Dashboard({authUser,onLogout}){
   const [fetchTrigger,setFetchTrigger]=useState(0);
   const fetchParamsRef=useRef({sd,ed,store,seller,asinF,productType,niche});
   fetchParamsRef.current={sd,ed,store,seller,asinF,productType,niche};
+  const pgRef=useRef(pg);
+  pgRef.current=pg;
+  const fetchCacheRef=useRef({key:null,pages:new Set()});
   useEffect(()=>{
     if(!live||dbConnecting)return;
     const timer=setTimeout(()=>setFetchTrigger(t=>t+1),400);
     return()=>clearTimeout(timer);
   },[sd,ed,store,seller,asinF,productType,niche,live,dbConnecting]);
+
+  // When user switches to a page for the first time with current filters, trigger a fetch
+  useEffect(()=>{
+    if(!live||dbConnecting)return;
+    setFetchTrigger(t=>t+1);
+  },[pg,live,dbConnecting]);
   useEffect(()=>{
     if(!live||dbConnecting||fetchTrigger===0)return;
     let cancelled=false;
     const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af,productType:_pt,niche:_ni}=fetchParamsRef.current;
     const p={start:_sd,end:_ed,store:_st,seller:_sl,asin:_af,productType:_pt,niche:_ni};
+
+    // Build cache key from filters
+    const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt,_ni});
+    const isSameAsPrevious=fetchCacheRef.current.key===cacheKey;
+    if(!isSameAsPrevious){
+      fetchCacheRef.current={key:cacheKey,pages:new Set()};
+    }
+    const alreadyFetched=fetchCacheRef.current.pages;
+
+    // Page-based fetch gating:
+    // Only fetch data for pages user has actually navigated to (or may view soon)
+    // Exec is fetched always because it's the default landing and some KPIs show
+    // in Daily Ops / Executive dashboards regardless.
+    // Other pages fetch only when pg matches.
+    const currentPg=pgRef.current;
+    const needExec   =currentPg==='exec'||currentPg==='daily';
+    const needProduct=currentPg==='prod'||currentPg==='exec'; // exec uses asins for KPI drilldown
+    const needShops  =currentPg==='shops'||currentPg==='exec';
+    const needTeam   =currentPg==='team'||currentPg==='exec';
+    const needInv    =currentPg==='inv';
+
     setLoading(true);setFilterError(null);
     const days=Math.max(1,Math.round((new Date(_ed)-new Date(_sd))/86400000)+1);
     const pe=new Date(new Date(_sd+"T00:00:00").getTime()-86400000);
     const ps=new Date(pe.getTime()-(days-1)*86400000);
     setPrevPeriod({s:ps.toISOString().slice(0,10),e:pe.toISOString().slice(0,10)});
-    // Batch 1: critical data (summary + daily)
     const arr=v=>Array.isArray(v)?v:[];
+
     (async()=>{try{
-      const[summary,daily]=await Promise.all([
-        api("exec/summary",p).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Exec: '+e.message);return EMPTY_EM;}),
-        api("exec/daily",p).catch(e=>{console.error("exec/daily FAIL:",e);setFilterError(prev=>(prev?prev+" | ":"")+"Daily: "+e.message);return[];}),
-      ]);
+      // Batch 1: exec summary + daily (only if exec-related page)
+      if(needExec && !alreadyFetched.has('exec:'+cacheKey)){
+        const[summary,daily]=await Promise.all([
+          api("exec/summary",p).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Exec: '+e.message);return EMPTY_EM;}),
+          api("exec/daily",p).catch(e=>{console.error("exec/daily FAIL:",e);setFilterError(prev=>(prev?prev+" | ":"")+"Daily: "+e.message);return[];}),
+        ]);
+        if(cancelled)return;
+        setEm(summary&&summary.sales!=null?summary:EMPTY_EM);
+        setFDaily(arr(daily).map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+"T12:00:00");const label=isNaN(dt)?ds:MS[dt.getMonth()]+" "+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0,advCost:parseFloat(r.advCost)||0,sessions:parseInt(r.sessions)||0}}));
+        alreadyFetched.add('exec:'+cacheKey);
+      }
+      // Batch 2: secondary data + prev period
+      const secondaryCalls=[];
+      if(needExec && !alreadyFetched.has('prev:'+cacheKey)){
+        secondaryCalls.push(['prev',api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null)]);
+      } else secondaryCalls.push(['prev',null]);
+      if(needProduct && !alreadyFetched.has('asins:'+cacheKey)){
+        secondaryCalls.push(['asins',api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+      } else secondaryCalls.push(['asins',null]);
+      if(needShops && !alreadyFetched.has('shops:'+cacheKey)){
+        secondaryCalls.push(['shops',api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+      } else secondaryCalls.push(['shops',null]);
+      if(needTeam && !alreadyFetched.has('team:'+cacheKey)){
+        secondaryCalls.push(['team',api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];})]);
+      } else secondaryCalls.push(['team',null]);
+      const results=await Promise.all(secondaryCalls.map(([,p])=>p));
       if(cancelled)return;
-      setEm(summary&&summary.sales!=null?summary:EMPTY_EM);
-      setFDaily(arr(daily).map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+"T12:00:00");const label=isNaN(dt)?ds:MS[dt.getMonth()]+" "+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0,advCost:parseFloat(r.advCost)||0,sessions:parseInt(r.sessions)||0}}));
-      // Batch 2: secondary data + prev period (non-blocking)
-      const[prev,asins,shops,team]=await Promise.all([
-        api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null),
-        api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[]),
-        api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[]),
-        api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];}),
-      ]);
-      if(cancelled)return;
-      setPrevEm(prev&&prev.sales?prev:null);
-      // Fetch SPLY (same period last year) — non-blocking
-      const lyS=new Date(_sd+'T00:00:00');lyS.setFullYear(lyS.getFullYear()-1);
-      const lyE=new Date(_ed+'T00:00:00');lyE.setFullYear(lyE.getFullYear()-1);
-      const lyStart=lyS.toISOString().slice(0,10),lyEnd=lyE.toISOString().slice(0,10);
-      api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d)setExecDetail(d)}).catch(()=>{});
-      api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d))setShopExt(d)}).catch(()=>{});
-      api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d))setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}))}).catch(()=>{});
-      setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
-      setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
-      setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
+      const[prev,asins,shops,team]=results;
+      if(prev!==null){setPrevEm(prev&&prev.sales?prev:null);alreadyFetched.add('prev:'+cacheKey);}
+      // Fetch SPLY + exec/detail (exec-only, deferred)
+      if(needExec){
+        const lyS=new Date(_sd+'T00:00:00');lyS.setFullYear(lyS.getFullYear()-1);
+        const lyE=new Date(_ed+'T00:00:00');lyE.setFullYear(lyE.getFullYear()-1);
+        const lyStart=lyS.toISOString().slice(0,10),lyEnd=lyE.toISOString().slice(0,10);
+        if(!alreadyFetched.has('detail:'+cacheKey)){
+          api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d){setExecDetail(d);alreadyFetched.add('detail:'+cacheKey);}}).catch(()=>{});
+        }
+        if(!alreadyFetched.has('shopext:'+cacheKey)){
+          api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d)){setShopExt(d);alreadyFetched.add('shopext:'+cacheKey);}}).catch(()=>{});
+        }
+        if(!alreadyFetched.has('ly:'+cacheKey)){
+          api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d)){setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}));alreadyFetched.add('ly:'+cacheKey);}}).catch(()=>{});
+        }
+      }
+      if(asins!==null){setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));alreadyFetched.add('asins:'+cacheKey);}
+      if(shops!==null){setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));alreadyFetched.add('shops:'+cacheKey);}
+      if(team!==null){setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));alreadyFetched.add('team:'+cacheKey);}
     }catch(e){console.error("Fetch error:",e)}
-    // Re-fetch inventory when store/seller changes
-    if(!cancelled){
+    // Inventory: only fetch when on inv page
+    if(!cancelled && needInv && !alreadyFetched.has('inv:'+cacheKey)){
       api("inventory/snapshot",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvData(d||{})}).catch(()=>{});
       api("inventory/by-shop",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))}).catch(()=>{});
       api("inventory/stock-trend",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))}).catch(()=>{});
       api("inventory/storage-monthly",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvFeeMonthly(d||[])}).catch(()=>{});
       api("inventory/by-asin",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvAsin(d||[])}).catch(()=>{});
+      alreadyFetched.add('inv:'+cacheKey);
     }
     if(!cancelled)setLoading(false);})();
     return()=>{cancelled=true};
-  },[fetchTrigger]);
+  },[fetchTrigger,pg]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
+  // Only runs when user is on Executive Overview page (pg==='exec')
   const zoneAParamsRef=useRef({zoneAPreset,storeStr,productType,niche});
   zoneAParamsRef.current={zoneAPreset,storeStr,productType,niche};
   useEffect(()=>{
-    if(!live||dbConnecting)return;
+    if(!live||dbConnecting||pg!=='exec')return;
     let cancelled=false;
     const{zoneAPreset:_preset,storeStr:_store,productType:_pt,niche:_ni}=zoneAParamsRef.current;
     if(_preset==='custom')return;
@@ -4949,11 +5000,11 @@ function Dashboard({authUser,onLogout}){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,storeStr,productType,niche,live,dbConnecting]);
+  },[zoneAPreset,storeStr,productType,niche,live,dbConnecting,pg]);
 
   // ═══════════ ZONE A — CUSTOM RANGE FETCH ═══════════
   useEffect(()=>{
-    if(!live||dbConnecting||zoneAPreset!=='custom')return;
+    if(!live||dbConnecting||pg!=='exec'||zoneAPreset!=='custom')return;
     if(!customStart||!customEnd)return;
     let cancelled=false;
     const storeParam=storeStr==='All'?undefined:storeStr;
@@ -4990,7 +5041,7 @@ function Dashboard({authUser,onLogout}){
       setZoneALoading(false);
     });
     return()=>{cancelled=true};
-  },[zoneAPreset,customStart,customEnd,storeStr,productType,niche,live,dbConnecting]);
+  },[zoneAPreset,customStart,customEnd,storeStr,productType,niche,live,dbConnecting,pg]);
 
 
   // ═══════════ FETCH PLAN DATA (debounced) ═══════════
