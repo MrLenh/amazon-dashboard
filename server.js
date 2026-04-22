@@ -1347,6 +1347,82 @@ app.get('/api/inventory/by-asin', async (req, res) => {
 
 /* ═══════════ PLAN DEBUG ═══════════ */
 /* ═══════════ DEBUG ENDPOINTS ═══════════ */
+app.get('/api/debug/cr-for-asin', async (req, res) => {
+  const asin = req.query.asin;
+  const yr   = parseInt(req.query.year) || new Date().getFullYear();
+  if (!asin) return res.status(400).json({ error: 'asin query param required' });
+  const R = { asin, year: yr, tests: {} };
+  const test = async (n, fn) => { try { R.tests[n] = await fn(); } catch(e) { R.tests[n] = { error: e.message }; } };
+
+  // Check what type values exist for this ASIN
+  await test('type_distribution', () => q(`
+    SELECT type, typeDate, COUNT(*) AS cnt,
+      MIN(date) AS minD, MAX(date) AS maxD,
+      SUM(sessions) AS totalSessions, SUM(unitsOrdered) AS totalUnits
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE asin = ?
+    GROUP BY type, typeDate
+    ORDER BY type, typeDate
+  `, [asin]));
+
+  // Monthly CR — same formula as dashboard
+  await test('monthly_cr_dashboard_formula', () => q(`
+    SELECT
+      MONTH(date)                 AS monthNum,
+      MIN(date)                   AS monthStart,
+      MAX(date)                   AS monthEnd,
+      COUNT(*)                    AS dayRows,
+      SUM(sessions)               AS totalSessions,
+      SUM(unitsOrdered)           AS totalUnits,
+      SUM(sessionsB2B)            AS totalSessionsB2B,
+      SUM(unitsOrderedB2B)        AS totalUnitsB2B,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100, 2)                                                AS cr_b2c_only,
+      ROUND((SUM(unitsOrdered)+SUM(unitsOrderedB2B))/NULLIF(SUM(sessions)+SUM(sessionsB2B),0)*100, 2)        AS cr_b2c_plus_b2b
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE asin = ? AND typeDate = 'DAY'
+      AND date BETWEEN ? AND ?
+    GROUP BY MONTH(date)
+    ORDER BY monthNum
+  `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
+
+  // Weekly CR
+  await test('weekly_cr_iso_mon', () => q(`
+    SELECT
+      YEARWEEK(date, 1) AS yw,
+      MIN(date)         AS weekStart,
+      MAX(date)         AS weekEnd,
+      COUNT(*)          AS days,
+      SUM(sessions)     AS totalSessions,
+      SUM(unitsOrdered) AS totalUnits,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100, 2) AS cr_sum_formula
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE asin = ? AND typeDate = 'DAY'
+      AND date BETWEEN ? AND ?
+    GROUP BY YEARWEEK(date, 1)
+    ORDER BY yw
+  `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
+
+  // Daily detail for all days in T3 (March)
+  await test('daily_detail_T3_march', () => q(`
+    SELECT date, type, typeDate, sessions, unitsOrdered, unitSessionPercentage,
+      sessionsB2B, unitsOrderedB2B, accountId
+    FROM analytics_sale_traffiec_by_asin_date
+    WHERE asin = ? AND typeDate = 'DAY'
+      AND date BETWEEN ? AND ?
+    ORDER BY date, accountId
+  `, [asin, `${yr}-03-01`, `${yr}-03-31`]));
+
+  // CTR weekly from search_catalog
+  await test('ctr_weekly', () => q(`
+    SELECT startDate, endDate, clickCount, impressionCount, clickRate
+    FROM analytics_search_catalog_performance
+    WHERE asin = ? AND startDate BETWEEN ? AND ?
+    ORDER BY startDate
+  `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
+
+  res.json(R);
+});
+
 app.get('/api/debug/cr-sources', async (req, res) => {
   const R = { ts: new Date().toISOString(), tests: {} };
   const test = async (name, fn) => { try { R.tests[name] = await fn(); } catch(e) { R.tests[name] = { error: e.message }; } };
@@ -2413,8 +2489,12 @@ app.get('/api/product/asins-rt', async (req, res) => {
 });
 
 /* ═══════════ PRODUCT CR PERFORMANCE ═══════════ */
-// date/week/month all derived from analytics_sale_traffiec_by_asin_date.date
-// (Amazon report date — NOT created_at)
+// DATA SOURCES (confirmed by dev):
+//   Daily:   analytics_sale_traffiec_by_asin_date (typeDate='DAY',   date)
+//   Weekly:  analytics_sale_traffic_by_asin       (typeDate='WEEK',  dateStartTime..dateEndTime)
+//   Monthly: analytics_sale_traffic_by_asin       (typeDate='MONTH', dateStartTime..dateEndTime)
+// CR is taken DIRECTLY from unitSessionPercentage (Amazon pre-calculates per typeDate).
+// Weeks follow Amazon convention: Sunday-start, Sunday=first day (MySQL WEEK mode 6).
 app.get('/api/product/cr-performance', async (req, res) => {
   try {
     const { period = 'monthly', year, start, end, store } = req.query;
@@ -2422,29 +2502,33 @@ app.get('/api/product/cr-performance', async (req, res) => {
     const accIds  = await storeToAccIds(store);
     const shopMap = await getShopMap();
 
-    // analytics_sale_traffiec_by_asin_date has typeDate = 'DAY' | 'WEEK' | 'MONTH'
-    // Amazon pre-calculates unitSessionPercentage (CR) for each typeDate
-    // → use the matching typeDate directly instead of re-aggregating daily rows
-    let sd, ed, typeDate, groupExpr, labelExpr, orderExpr;
+    let sd, ed, tableName, dateCol, typeDate, groupExpr, labelExpr, orderExpr;
     if (period === 'daily') {
       const { s, e } = defDates(start, end);
       sd = s; ed = e;
-      typeDate  = `'DAY'`;
-      groupExpr = `DATE(t.date)`;
-      labelExpr = `DATE_FORMAT(t.date, '%Y-%m-%d')`;
-      orderExpr = `DATE(t.date) ASC`;
+      tableName = 'analytics_sale_traffiec_by_asin_date';
+      dateCol   = 'date';
+      typeDate  = 'DAY';
+      groupExpr = `DATE(t.${dateCol})`;
+      labelExpr = `DATE_FORMAT(t.${dateCol}, '%Y-%m-%d')`;
+      orderExpr = `DATE(t.${dateCol}) ASC`;
     } else if (period === 'weekly') {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
-      typeDate  = `'WEEK'`;
-      groupExpr = `YEARWEEK(t.date, 1)`;
-      labelExpr = `CONCAT('W', LPAD(WEEK(t.date,1),2,'0'))`;
-      orderExpr = `YEARWEEK(t.date, 1) ASC`;
+      tableName = 'analytics_sale_traffic_by_asin';
+      dateCol   = 'dateStartTime';
+      typeDate  = 'WEEK';
+      // Amazon week: Sunday-start. MySQL mode 6 = Sunday first, week 1 has 4+ days
+      groupExpr = `YEARWEEK(t.${dateCol}, 6)`;
+      labelExpr = `CONCAT('W', LPAD(WEEK(t.${dateCol}, 6), 2, '0'))`;
+      orderExpr = `YEARWEEK(t.${dateCol}, 6) ASC`;
     } else {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
-      typeDate  = `'MONTH'`;
-      groupExpr = `MONTH(t.date)`;
-      labelExpr = `CONCAT('T', MONTH(t.date))`;
-      orderExpr = `MONTH(t.date) ASC`;
+      tableName = 'analytics_sale_traffic_by_asin';
+      dateCol   = 'dateStartTime';
+      typeDate  = 'MONTH';
+      groupExpr = `MONTH(t.${dateCol})`;
+      labelExpr = `CONCAT('T', MONTH(t.${dateCol}))`;
+      orderExpr = `MONTH(t.${dateCol}) ASC`;
     }
 
     let accFilter = ''; const accParams = [];
@@ -2453,54 +2537,69 @@ app.get('/api/product/cr-performance', async (req, res) => {
       accParams.push(...accIds);
     }
 
-    // Q1: CR = SUM(units) / SUM(sessions) × 100 — always aggregate from DAY rows.
-    // Group by asin + period only (not accountId) so ASIN across multiple stores is merged correctly.
-    // Track accountId separately via a second query for store attribution.
-    let analyticsRows = await q(`
-      SELECT
-        t.asin,
-        MIN(${labelExpr})                                              AS periodLabel,
-        ${groupExpr}                                                   AS periodGroup,
-        ROUND(
-          SUM(t.unitsOrdered) / NULLIF(SUM(t.sessions), 0) * 100, 2
-        )                                                              AS cr,
-        SUM(t.sessions)                                                AS sessions,
-        SUM(t.unitsOrdered)                                            AS units
-      FROM analytics_sale_traffiec_by_asin_date t
-      WHERE t.typeDate = 'DAY'
-        AND t.date BETWEEN ? AND ?
-        ${accFilter}
-      GROUP BY t.asin, ${groupExpr}
-      ORDER BY t.asin, ${orderExpr}
-    `, [sd, ed, ...accParams], 90000);
+    // Q1: CR — for weekly/monthly read unitSessionPercentage directly from pre-aggregated table.
+    // For daily: compute SUM(units)/SUM(sessions) from DAY rows.
+    let analyticsRows;
+    if (period === 'daily') {
+      analyticsRows = await q(`
+        SELECT
+          t.asin,
+          MIN(${labelExpr})                                              AS periodLabel,
+          ${groupExpr}                                                   AS periodGroup,
+          ROUND(
+            SUM(t.unitsOrdered) / NULLIF(SUM(t.sessions), 0) * 100, 2
+          )                                                              AS cr,
+          SUM(t.sessions)                                                AS sessions,
+          SUM(t.unitsOrdered)                                            AS units
+        FROM ${tableName} t
+        WHERE t.typeDate = '${typeDate}'
+          AND t.${dateCol} BETWEEN ? AND ?
+          ${accFilter}
+        GROUP BY t.asin, ${groupExpr}
+        ORDER BY t.asin, ${orderExpr}
+      `, [sd, ed, ...accParams], 90000);
+    } else {
+      // Weekly/Monthly: read unitSessionPercentage directly (already computed by Amazon)
+      analyticsRows = await q(`
+        SELECT
+          t.asin,
+          ${labelExpr}                                                   AS periodLabel,
+          ${groupExpr}                                                   AS periodGroup,
+          AVG(t.unitSessionPercentage)                                   AS cr,
+          SUM(t.sessions)                                                AS sessions,
+          SUM(t.unitsOrdered)                                            AS units
+        FROM ${tableName} t
+        WHERE t.typeDate = '${typeDate}'
+          AND t.${dateCol} BETWEEN ? AND ?
+          ${accFilter}
+        GROUP BY t.asin, ${groupExpr}, ${labelExpr}
+        ORDER BY t.asin, ${orderExpr}
+      `, [sd, ed, ...accParams], 90000);
+    }
 
     if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
 
-    // Separately map ASIN → most recent accountId (for store attribution)
+    // Separately map ASIN → most recent accountId (for store attribution, daily table)
     const asinAccRows = await q(`
       SELECT t.asin, t.accountId, MAX(t.date) AS lastDate
       FROM analytics_sale_traffiec_by_asin_date t
       WHERE t.typeDate = 'DAY'
-        AND t.date BETWEEN ? AND ?
+        AND t.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
         ${accFilter}
       GROUP BY t.asin, t.accountId
       ORDER BY t.asin, lastDate DESC
-    `, [sd, ed, ...accParams], 30000).catch(()=>[]);
+    `, [...accParams], 30000).catch(()=>[]);
 
     // Q1b: CTR from analytics_search_catalog_performance
-    // Source data is WEEKLY (startDate..endDate spans 7 days). Use SUM(clicks)/SUM(impressions)
-    // for correct impression-weighted CTR across multiple accounts/rows.
-    // For daily period: there's no daily CTR data — map each day to its containing week.
-    let ctrGroupExpr, ctrSortExpr;
-    if (period === 'daily') {
-      // Weekly source → can't be shown per-day. Skip CTR for daily mode; frontend will show "—"
-      ctrGroupExpr = null;
-    } else if (period === 'weekly') {
-      ctrGroupExpr = `YEARWEEK(scp.startDate, 1)`;
-      ctrSortExpr  = ctrGroupExpr;
-    } else {
+    // For weekly/monthly, match dateStartTime period using same expression on startDate.
+    // Skip CTR for daily mode (source has only weekly buckets).
+    let ctrGroupExpr = null, ctrLabelExpr = null;
+    if (period === 'weekly') {
+      ctrGroupExpr = `YEARWEEK(scp.startDate, 6)`;
+      ctrLabelExpr = `CONCAT('W', LPAD(WEEK(scp.startDate, 6), 2, '0'))`;
+    } else if (period === 'monthly') {
       ctrGroupExpr = `MONTH(scp.startDate)`;
-      ctrSortExpr  = ctrGroupExpr;
+      ctrLabelExpr = `CONCAT('T', MONTH(scp.startDate))`;
     }
 
     const ctrMap = {};
@@ -2532,7 +2631,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
     const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
     const asinAccMap = {};
     asinAccRows.forEach(r => {
-      if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId; // most recent accountId wins
+      if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId;
     });
     const ph = asinSet.map(() => '?').join(',');
 
@@ -2557,7 +2656,6 @@ app.get('/api/product/cr-performance', async (req, res) => {
     // Q3: productType + niche — try asin table first, fallback to seller_board_product
     let sbpRows = [];
     try {
-      // Try getting from asin table if columns exist
       const asinCols = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
       const hasPT    = asinCols.includes('productType');
       const hasNiche = asinCols.includes('seasonAndNiche');
@@ -2570,7 +2668,6 @@ app.get('/api/product/cr-performance', async (req, res) => {
         `, asinSet, 10000);
       }
     } catch(e) { console.warn('[cr-performance] asin ptNiche:', e.message); }
-    // Fallback: seller_board_product (last 365 days — wider range to catch sparse data)
     if (!sbpRows.length || sbpRows.every(r => !r.productType && !r.niche)) {
       try {
         sbpRows = await q(`
@@ -2584,7 +2681,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       } catch(e) { console.warn('[cr-performance] sbp:', e.message); }
     }
 
-    // Q4: SKU + FBA stock snapshot
+    // Q4: SKU + FBA stock
     let stockRows = [];
     try {
       stockRows = await q(`
@@ -2594,7 +2691,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 10000);
     } catch(e) { console.warn('[cr-performance] stock:', e.message); }
 
-    // Q5: Available from fba_iventory_planning (latest snapshot)
+    // Q5: Available (latest snapshot)
     let availRows = [];
     try {
       availRows = await q(`
@@ -2608,18 +2705,17 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 — only query ASINs already in analytics result (not full 5.5M rows)
+    // Q6: Ads CTR from pool2 — match period expression to same Sunday-start week
     const adsCtrMap = {};
     if (pool2 && asinSet.length > 0) {
       try {
         const conn = await pool2.getConnection();
         try {
-          await conn.execute(`SET SESSION MAX_EXECUTION_TIME=15000`); // 15s timeout
+          await conn.execute(`SET SESSION MAX_EXECUTION_TIME=15000`);
           let adsGrp;
           if (period === 'daily')       adsGrp = `DATE(r.date)`;
-          else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 1)`;
+          else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 6)`;
           else                          adsGrp = `MONTH(r.date)`;
-          // Filter by asinSet — turns 5.5M row scan into targeted lookup
           const asinPh = asinSet.map(() => '?').join(',');
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
@@ -2640,20 +2736,20 @@ app.get('/api/product/cr-performance', async (req, res) => {
       } catch(e) { console.warn('[cr-performance] adsCtr:', e.message); }
     }
 
-    // Build maps
+    // Build lookup maps
     const masterMap = {}; asinMaster.forEach(r => { masterMap[r.asin] = r; });
     const sbpMap    = {}; sbpRows.forEach(r => { sbpMap[r.asin] = r; });
     const stockMap  = {}; stockRows.forEach(r => { stockMap[r.asin] = r; });
     const availMap  = {}; availRows.forEach(r => { availMap[r.asin] = r; });
 
-    // Period label ordering — numeric sort so T10/T11/T12 come after T2, W10 after W9, etc.
+    // Period label ordering — numeric sort
     const periodMap = {};
     analyticsRows.forEach(r => { periodMap[String(r.periodGroup)] = r.periodLabel; });
     const periodLabels = Object.entries(periodMap)
       .sort(([a], [b]) => Number(a) - Number(b))
       .map(([, label]) => label);
 
-    // Pivot analytics per ASIN — merge CR + CTR + Ads CTR
+    // Pivot analytics per ASIN
     const asinPeriods = {};
     analyticsRows.forEach(r => {
       if (!asinPeriods[r.asin]) asinPeriods[r.asin] = {};
@@ -2694,6 +2790,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 
 /* ═══════════ SERVE FRONTEND ═══════════ */
 const distPath = join(__dirname, 'dist');
