@@ -2375,7 +2375,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
         '${memberType}'                              AS memberType,
         acc.shop                                     AS store,
         t.asin,
-        ${labelExpr}                                 AS periodLabel,
+        MIN(${labelExpr})                            AS periodLabel,
         ${groupExpr}                                 AS periodGroup,
         ROUND(AVG(t.unitSessionPercentage), 2)       AS cr,
         ROUND(AVG(scp.clickRate) * 100, 2)           AS ctr,
