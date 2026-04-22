@@ -3218,6 +3218,13 @@ function ProductCRPage({t,sd,ed,store}){
   const ctrClr =v=>v==null?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
   const crBg   =v=>v!=null&&v>=15?t.green+'14':v!=null&&v<8?t.orange+'14':'transparent';
 
+  // Solid header tints — semi-transparent backgrounds bleed through when scrolling sticky rows.
+  // Using solid pastel hex ensures headers fully occlude scrolling content beneath.
+  const HDR_BLUE_BG   = t.primaryLight;              // already solid
+  const HDR_ORANGE_BG = t.mode==='dark' ? '#3D2914' : '#FFEDD5';
+  // Sticky row 2 top offset — measured from row 1 header height (padding 9px*2 + content ~16px ≈ 36px)
+  const ROW2_TOP = 36;
+
   // Auto-detect if any row actually has content2 or content3 — skip those columns if all empty
   const hasAnyContent23=useMemo(()=>
     filtered.some(r=>(r.content2&&r.content2.trim())||(r.content3&&r.content3.trim())),
@@ -3265,23 +3272,27 @@ function ProductCRPage({t,sd,ed,store}){
     whiteSpace:'nowrap',letterSpacing:.4,...extra});
   const TD=(extra={})=>({padding:'9px 10px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
 
-  const InfoTH=({hasSku,hasDate,hasContent23})=><>
-    {hasDate&&<th style={TH({textAlign:'left',minWidth:95,position:'sticky',top:0,left:0,zIndex:4,background:t.tableBg})}>Date</th>}
-    <th style={TH({textAlign:'left',minWidth:115,position:'sticky',top:0,left:hasDate?95:0,zIndex:4,background:t.tableBg})}>ASIN</th>
-    {hasSku&&<th style={TH({textAlign:'left',minWidth:150,position:'sticky',top:0,zIndex:3})}>SKU</th>}
-    <th style={TH({textAlign:'left',minWidth:70, position:'sticky',top:0,zIndex:3})}>Stores</th>
-    <th style={TH({textAlign:'center',minWidth:50,position:'sticky',top:0,zIndex:3})}>Design</th>
-    <th style={TH({textAlign:'left',minWidth:95, position:'sticky',top:0,zIndex:3})}>Product Type</th>
-    <th style={TH({textAlign:'left',minWidth:105,position:'sticky',top:0,zIndex:3})}>Niche/Theme</th>
-    <th style={TH({textAlign:'left',minWidth:95, position:'sticky',top:0,zIndex:3})}>Tier</th>
-    <th style={TH({textAlign:'left',minWidth:50, position:'sticky',top:0,zIndex:3})}>Sellers</th>
-    <th style={TH({textAlign:'left',minWidth:125,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content</th>
-    <th style={TH({textAlign:'left',minWidth:105,position:'sticky',top:0,zIndex:3,color:t.purple||'#7C3AED'})}>Image</th>
-    {hasContent23&&<>
-      <th style={TH({textAlign:'left',minWidth:105,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content 2</th>
-      <th style={TH({textAlign:'left',minWidth:105,position:'sticky',top:0,zIndex:3,color:t.primary})}>Content 3</th>
-    </>}
-  </>;
+  const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
+    const baseStick={position:'sticky',top:0,zIndex:5,background:t.tableBg};
+    const rs=rowSpan>1?{rowSpan}:{};
+    return<>
+      {hasDate&&<th {...rs} style={TH({textAlign:'left',minWidth:95,left:0,zIndex:6,...baseStick})}>Date</th>}
+      <th {...rs} style={TH({textAlign:'left',minWidth:115,left:hasDate?95:0,zIndex:6,...baseStick,color:t.primary})}>ASIN</th>
+      {hasSku&&<th {...rs} style={TH({textAlign:'left',minWidth:150,...baseStick})}>SKU</th>}
+      <th {...rs} style={TH({textAlign:'left',minWidth:70, ...baseStick})}>Stores</th>
+      <th {...rs} style={TH({textAlign:'center',minWidth:50,...baseStick})}>Design</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick})}>Product Type</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:105,...baseStick})}>Niche/Theme</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick})}>Tier</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:50, ...baseStick})}>Sellers</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:125,color:t.primary,...baseStick})}>Content</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.purple||'#7C3AED',...baseStick})}>Image</th>
+      {hasContent23&&<>
+        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick})}>Content 2</th>
+        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick})}>Content 3</th>
+      </>}
+    </>;
+  };
 
   const InfoTD=({r,hasSku,hasDate,dateVal,isNew,hasContent23})=>{
     const bTop=isNew?'2px solid '+t.primary+'55':'none';
@@ -3380,10 +3391,10 @@ function ProductCRPage({t,sd,ed,store}){
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
           <thead><tr>
             <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
-            <th style={TH({textAlign:'center',minWidth:80,borderLeft:'2px solid '+t.primary+'44',background:t.primaryLight,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:3})}>CR%</th>
-            <th style={TH({textAlign:'center',minWidth:85,background:t.orange+'33',color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:3})}>CTR Ads</th>
-            <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:3})}>Stock</th>
-            <th style={TH({textAlign:'right',minWidth:55,position:'sticky',top:0,zIndex:3})}>Avail</th>
+            <th style={TH({textAlign:'center',minWidth:80,borderLeft:'2px solid '+t.primary+'44',background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</th>
+            <th style={TH({textAlign:'center',minWidth:85,background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CTR Ads</th>
+            <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
+            <th style={TH({textAlign:'right',minWidth:55,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
           </tr></thead>
           <tbody>{flatDaily.map((r,i)=>{
             const isNew=i===0||r._date!==flatDaily[i-1]._date;
@@ -3410,19 +3421,18 @@ function ProductCRPage({t,sd,ed,store}){
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
-              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23}/>
+              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
               {periodLabels.map(w=>(
-                <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:175,position:'sticky',top:0,zIndex:3})}>
+                <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',minWidth:175,fontWeight:800,position:'sticky',top:0,zIndex:5})}>
                   Report {w} {year}
                 </th>
               ))}
             </tr>
             <tr>
-              <th colSpan={hasAnyContent23?12:10} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
               {periodLabels.map(w=>[
-                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR</th>,
-                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR</th>,
-                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',minWidth:65,background:t.orange+'33',color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:2})}>Ads CTR</th>,
+                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
+                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
+                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',minWidth:65,background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
               ])}
             </tr>
           </thead>
@@ -3451,19 +3461,18 @@ function ProductCRPage({t,sd,ed,store}){
         <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
-              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23}/>
-              <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:3})}>Stock</th>
+              <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
+              <th rowSpan={2} style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
               {periodLabels.map(m=>(
-                <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:t.primaryLight,textAlign:'center',minWidth:105,position:'sticky',top:0,zIndex:3})}>
+                <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',minWidth:105,fontWeight:800,position:'sticky',top:0,zIndex:5})}>
                   {m}
                 </th>
               ))}
             </tr>
             <tr>
-              <th colSpan={hasAnyContent23?13:11} style={{background:t.tableBg,borderBottom:'1px solid '+t.divider,position:'sticky',top:0,zIndex:3}}/>
               {periodLabels.map(m=>[
-                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:t.primaryLight,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CR%</th>,
-                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,position:'sticky',top:0,zIndex:2})}>CTR%</th>,
+                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',minWidth:55,position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
+                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',minWidth:55,background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
               ])}
             </tr>
           </thead>
