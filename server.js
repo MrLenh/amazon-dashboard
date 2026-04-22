@@ -2338,18 +2338,21 @@ app.get('/api/product/asins-rt', async (req, res) => {
 });
 
 /* ═══════════ PRODUCT CR PERFORMANCE ═══════════ */
+// date/week/month all derived from analytics_sale_traffiec_by_asin_date.date
+// (Amazon report date — NOT created_at)
 app.get('/api/product/cr-performance', async (req, res) => {
   try {
     const { period = 'monthly', year, start, end, store } = req.query;
-    const yr = parseInt(year) || new Date().getFullYear();
-    const accIds = await storeToAccIds(store);
+    const yr      = parseInt(year) || new Date().getFullYear();
+    const accIds  = await storeToAccIds(store);
+    const shopMap = await getShopMap();
 
     let sd, ed, groupExpr, labelExpr, orderExpr;
     if (period === 'daily') {
       const { s, e } = defDates(start, end);
       sd = s; ed = e;
       groupExpr = `DATE(t.date)`;
-      labelExpr = `DATE_FORMAT(t.date, '%d/%m')`;
+      labelExpr = `DATE_FORMAT(t.date, '%Y-%m-%d')`;
       orderExpr = `t.date ASC`;
     } else if (period === 'weekly') {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
@@ -2358,9 +2361,9 @@ app.get('/api/product/cr-performance', async (req, res) => {
       orderExpr = `YEARWEEK(t.date, 1) ASC`;
     } else {
       sd = `${yr}-01-01`; ed = `${yr}-12-31`;
-      groupExpr = `DATE_FORMAT(t.date, '%Y-%m')`;
-      labelExpr = `DATE_FORMAT(t.date, '%b %Y')`;
-      orderExpr = `DATE_FORMAT(t.date, '%Y-%m') ASC`;
+      groupExpr = `MONTH(t.date)`;
+      labelExpr = `CONCAT('T', MONTH(t.date))`;
+      orderExpr = `MONTH(t.date) ASC`;
     }
 
     let accFilter = ''; const accParams = [];
@@ -2369,62 +2372,173 @@ app.get('/api/product/cr-performance', async (req, res) => {
       accParams.push(...accIds);
     }
 
-    const runQuery = async (memberCol, memberType) => qc(`
+    // Q1: Analytics — CR + CTR per ASIN per period
+    const analyticsRows = await q(`
       SELECT
-        a.${memberCol}                               AS member,
-        '${memberType}'                              AS memberType,
-        acc.shop                                     AS store,
         t.asin,
-        MIN(${labelExpr})                            AS periodLabel,
-        ${groupExpr}                                 AS periodGroup,
-        ROUND(AVG(t.unitSessionPercentage), 2)       AS cr,
-        ROUND(AVG(scp.clickRate) * 100, 2)           AS ctr,
-        SUM(t.sessions)                              AS sessions,
-        SUM(t.unitsOrdered)                          AS units
+        t.accountId,
+        MIN(${labelExpr})                              AS periodLabel,
+        ${groupExpr}                                   AS periodGroup,
+        ROUND(AVG(t.unitSessionPercentage), 2)         AS cr,
+        ROUND(AVG(scp.clickRate) * 100, 2)             AS ctr,
+        SUM(t.sessions)                                AS sessions,
+        SUM(t.unitsOrdered)                            AS units
       FROM analytics_sale_traffiec_by_asin_date t
-      JOIN asin a ON t.asin = a.asin
-      JOIN accounts acc ON t.accountId = acc.id
       LEFT JOIN analytics_search_catalog_performance scp
-        ON scp.asin = t.asin AND scp.accountId = t.accountId AND scp.startDate = t.date
+        ON  scp.asin      = t.asin
+        AND scp.accountId = t.accountId
+        AND scp.startDate = t.date
       WHERE t.typeDate = 'DAY'
         AND t.date BETWEEN ? AND ?
-        AND a.${memberCol} IS NOT NULL AND a.${memberCol} != ''
         ${accFilter}
-      GROUP BY a.${memberCol}, acc.shop, t.asin, ${groupExpr}
-      ORDER BY a.${memberCol}, acc.shop, t.asin, ${orderExpr}
-    `, [sd, ed, ...accParams], 60000);
+      GROUP BY t.asin, t.accountId, ${groupExpr}
+      ORDER BY t.asin, ${orderExpr}
+    `, [sd, ed, ...accParams], 90000);
 
-    const [contentRows, imageRows] = await Promise.all([
-      runQuery('contenters', 'content'),
-      runQuery('imagers', 'image'),
-    ]);
+    if (analyticsRows.length === 0) return res.json({ periodLabels: [], rows: [] });
 
-    const pivot = (rows) => {
-      const map = {};
-      rows.forEach(r => {
-        const key = `${r.memberType}||${r.member}||${r.store}||${r.asin}`;
-        if (!map[key]) map[key] = { member: r.member, memberType: r.memberType, store: r.store, asin: r.asin, periods: {} };
-        map[key].periods[r.periodGroup] = {
-          label: r.periodLabel, cr: parseFloat(r.cr) || 0,
-          ctr: parseFloat(r.ctr) || 0, sessions: parseInt(r.sessions) || 0, units: parseInt(r.units) || 0,
-        };
-      });
-      return Object.values(map).map(item => ({
-        ...item,
-        periods: Object.entries(item.periods).sort(([a], [b]) => String(a).localeCompare(String(b))).map(([, v]) => v),
-      }));
-    };
+    const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
+    const asinAccMap = {};
+    analyticsRows.forEach(r => { if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId; });
+    const ph = asinSet.map(() => '?').join(',');
 
-    const allRows = [...contentRows, ...imageRows];
+    // Q2: ASIN master — contenters (1/2/3), imagers, seller, tier
+    let asinMaster = [];
+    try {
+      const cols    = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
+      const has2    = cols.includes('contenters2');
+      const has3    = cols.includes('contenters3');
+      const hasTier = cols.includes('tier');
+      asinMaster = await q(`
+        SELECT a.asin, a.seller,
+          a.contenters                                 AS content1,
+          ${has2 ? 'a.contenters2' : 'NULL'}           AS content2,
+          ${has3 ? 'a.contenters3' : 'NULL'}           AS content3,
+          a.imagers                                    AS image,
+          ${hasTier ? 'a.tier' : 'NULL'}               AS tier
+        FROM asin a WHERE a.asin IN (${ph})
+      `, asinSet, 15000);
+    } catch(e) { console.warn('[cr-performance] asin master:', e.message); }
+
+    // Q3: productType + niche from seller_board_product
+    let sbpRows = [];
+    try {
+      sbpRows = await q(`
+        SELECT p.asin,
+          MAX(p.productType)    AS productType,
+          MAX(p.seasonAndNiche) AS niche
+        FROM seller_board_product p
+        WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+        GROUP BY p.asin
+      `, asinSet, 20000);
+    } catch(e) { console.warn('[cr-performance] sbp:', e.message); }
+
+    // Q4: SKU + FBA stock snapshot
+    let stockRows = [];
+    try {
+      stockRows = await q(`
+        SELECT s.asin, MIN(s.sku) AS sku, SUM(s.FBAStock) AS stock
+        FROM seller_board_stock s WHERE s.asin IN (${ph})
+        GROUP BY s.asin
+      `, asinSet, 10000);
+    } catch(e) { console.warn('[cr-performance] stock:', e.message); }
+
+    // Q5: Available from fba_iventory_planning (latest snapshot)
+    let availRows = [];
+    try {
+      availRows = await q(`
+        SELECT f.asin,
+          SUM(GREATEST(CAST(f.available AS SIGNED), 0)) AS avail
+        FROM fba_iventory_planning f
+        JOIN (SELECT accountId AS aid, MAX(date) AS maxDate FROM fba_iventory_planning GROUP BY accountId) latest
+          ON f.accountId = latest.aid AND f.date = latest.maxDate
+        WHERE f.asin IN (${ph})
+        GROUP BY f.asin
+      `, asinSet, 15000);
+    } catch(e) { console.warn('[cr-performance] avail:', e.message); }
+
+    // Q6: Ads CTR from pool2 — date from report_sp_advertised_product.date (NOT created_at)
+    const adsCtrMap = {};
+    if (pool2) {
+      try {
+        const conn = await pool2.getConnection();
+        try {
+          let adsGrp;
+          if (period === 'daily')       adsGrp = `DATE(r.date)`;
+          else if (period === 'weekly') adsGrp = `YEARWEEK(r.date, 1)`;
+          else                          adsGrp = `MONTH(r.date)`;
+          const [adsRows] = await conn.execute(`
+            SELECT pa.asin, ${adsGrp} AS periodGroup,
+              ROUND(SUM(r.clicks)/NULLIF(SUM(r.impressions),0)*100, 4) AS adsCtr
+            FROM (
+              SELECT campaignId, adGroupId, ${adsGrp} AS pg,
+                SUM(clicks) AS clicks, SUM(impressions) AS impressions
+              FROM report_sp_advertised_product WHERE date BETWEEN ? AND ?
+              GROUP BY campaignId, adGroupId, ${adsGrp}
+            ) r
+            JOIN product_ads pa ON pa.campaignId=r.campaignId AND pa.adGroupId=r.adGroupId
+            WHERE pa.asin IS NOT NULL AND pa.asin != ''
+            GROUP BY pa.asin, ${adsGrp}
+          `, [sd, ed]);
+          adsRows.forEach(r => {
+            if (!adsCtrMap[r.asin]) adsCtrMap[r.asin] = {};
+            adsCtrMap[r.asin][String(r.periodGroup)] = parseFloat(r.adsCtr) || 0;
+          });
+        } finally { conn.release(); }
+      } catch(e) { console.warn('[cr-performance] adsCtr:', e.message); }
+    }
+
+    // Build maps
+    const masterMap = {}; asinMaster.forEach(r => { masterMap[r.asin] = r; });
+    const sbpMap    = {}; sbpRows.forEach(r => { sbpMap[r.asin] = r; });
+    const stockMap  = {}; stockRows.forEach(r => { stockMap[r.asin] = r; });
+    const availMap  = {}; availRows.forEach(r => { availMap[r.asin] = r; });
+
+    // Period label ordering
     const periodMap = {};
-    allRows.forEach(r => { periodMap[r.periodGroup] = r.periodLabel; });
-    const periodHeaders = Object.entries(periodMap)
+    analyticsRows.forEach(r => { periodMap[String(r.periodGroup)] = r.periodLabel; });
+    const periodLabels = Object.entries(periodMap)
       .sort(([a], [b]) => String(a).localeCompare(String(b)))
       .map(([, label]) => label);
 
-    res.json({ periodHeaders, data: [...pivot(contentRows), ...pivot(imageRows)] });
-  } catch (e) {
-    console.error('product/cr-performance:', e.message);
+    // Pivot analytics per ASIN
+    const asinPeriods = {};
+    analyticsRows.forEach(r => {
+      if (!asinPeriods[r.asin]) asinPeriods[r.asin] = {};
+      const lbl = periodMap[String(r.periodGroup)];
+      asinPeriods[r.asin][lbl] = {
+        cr:     r.cr  != null ? parseFloat(r.cr)  : null,
+        ctr:    r.ctr != null ? parseFloat(r.ctr) : null,
+        adsCtr: adsCtrMap[r.asin]?.[String(r.periodGroup)] ?? null,
+      };
+    });
+
+    const rows = asinSet.map(asin => {
+      const m  = masterMap[asin] || {};
+      const sb = sbpMap[asin]    || {};
+      const st = stockMap[asin]  || {};
+      const av = availMap[asin]  || {};
+      return {
+        asin,
+        sku:         st.sku  || '',
+        store:       shopMap[asinAccMap[asin]] || '',
+        sellers:     m.seller     || '',
+        content1:    m.content1   || '',
+        content2:    m.content2   || '',
+        content3:    m.content3   || '',
+        image:       m.image      || '',
+        tier:        m.tier       || '',
+        productType: sb.productType || '',
+        niche:       sb.niche      || '',
+        stock:       parseInt(st.stock) || 0,
+        avail:       parseInt(av.avail) || 0,
+        periods:     asinPeriods[asin] || {},
+      };
+    });
+
+    res.json({ periodLabels, rows });
+  } catch(e) {
+    console.error('[cr-performance]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
