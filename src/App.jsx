@@ -3273,23 +3273,23 @@ function ProductCRPage({t,sd,ed,store}){
   const TD=(extra={})=>({padding:'9px 10px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
 
   const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
-    const baseStick={position:'sticky',top:0,zIndex:5,background:t.tableBg};
+    const baseStick={position:'sticky',top:0,background:t.tableBg};
     const rs=rowSpan>1?{rowSpan}:{};
     return<>
-      {hasDate&&<th {...rs} style={TH({textAlign:'left',minWidth:95,left:0,zIndex:6,...baseStick})}>Date</th>}
-      <th {...rs} style={TH({textAlign:'left',minWidth:115,left:hasDate?95:0,zIndex:6,...baseStick,color:t.primary})}>ASIN</th>
-      {hasSku&&<th {...rs} style={TH({textAlign:'left',minWidth:150,...baseStick})}>SKU</th>}
-      <th {...rs} style={TH({textAlign:'left',minWidth:70, ...baseStick})}>Stores</th>
-      <th {...rs} style={TH({textAlign:'center',minWidth:50,...baseStick})}>Design</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick})}>Product Type</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:105,...baseStick})}>Niche/Theme</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick})}>Tier</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:50, ...baseStick})}>Sellers</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:125,color:t.primary,...baseStick})}>Content</th>
-      <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.purple||'#7C3AED',...baseStick})}>Image</th>
+      {hasDate&&<th {...rs} className="sticky-col" style={TH({textAlign:'left',minWidth:95,...baseStick,left:0,zIndex:7})}>Date</th>}
+      <th {...rs} className="sticky-col" style={TH({textAlign:'left',minWidth:115,color:t.primary,...baseStick,left:hasDate?95:0,zIndex:7})}>ASIN</th>
+      {hasSku&&<th {...rs} style={TH({textAlign:'left',minWidth:150,...baseStick,zIndex:5})}>SKU</th>}
+      <th {...rs} style={TH({textAlign:'left',minWidth:70, ...baseStick,zIndex:5})}>Stores</th>
+      <th {...rs} style={TH({textAlign:'center',minWidth:50,...baseStick,zIndex:5})}>Design</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick,zIndex:5})}>Product Type</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:105,...baseStick,zIndex:5})}>Niche/Theme</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:95, ...baseStick,zIndex:5})}>Tier</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:50, ...baseStick,zIndex:5})}>Sellers</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:125,color:t.primary,...baseStick,zIndex:5})}>Content</th>
+      <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.purple||'#7C3AED',...baseStick,zIndex:5})}>Image</th>
       {hasContent23&&<>
-        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick})}>Content 2</th>
-        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick})}>Content 3</th>
+        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick,zIndex:5})}>Content 2</th>
+        <th {...rs} style={TH({textAlign:'left',minWidth:105,color:t.primary,...baseStick,zIndex:5})}>Content 3</th>
       </>}
     </>;
   };
@@ -3302,7 +3302,7 @@ function ProductCRPage({t,sd,ed,store}){
     // 'inherit' — they pick up tr background.
     const stickyBase={position:'sticky',background:t.card,zIndex:2};
     return<>
-      {hasDate&&<td className="sticky-col" style={TD({fontWeight:isNew?700:400,color:isNew?t.text:t.textMuted,borderTop:bTop,whiteSpace:'nowrap',fontSize:isNew?12:11,left:0,...stickyBase})}>{isNew?dateVal:''}</td>}
+      {hasDate&&<td className="sticky-col" style={TD({fontWeight:600,color:t.text,borderTop:bTop,whiteSpace:'nowrap',fontSize:11,left:0,...stickyBase})}>{dateVal}</td>}
       <td className="sticky-col" style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,left:hasDate?95:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
       {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
       <td style={TD({borderTop:bTop})}><span style={{padding:'2px 8px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600}}>{r.store||'—'}</span></td>
