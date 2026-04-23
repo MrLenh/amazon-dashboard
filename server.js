@@ -1350,67 +1350,136 @@ app.get('/api/inventory/by-asin', async (req, res) => {
 app.get('/api/debug/cr-for-asin', async (req, res) => {
   const asin = req.query.asin;
   const yr   = parseInt(req.query.year) || new Date().getFullYear();
-  if (!asin) return res.status(400).json({ error: 'asin query param required' });
-  const R = { asin, year: yr, tests: {} };
+  if (!asin) return res.status(400).json({ error: 'asin query param required. Usage: /api/debug/cr-for-asin?asin=B0XXXXX&year=2026' });
+  const R = { asin, year: yr, ts: new Date().toISOString(), tests: {} };
   const test = async (n, fn) => { try { R.tests[n] = await fn(); } catch(e) { R.tests[n] = { error: e.message }; } };
 
-  // MONTHLY — from analytics_sale_traffic_by_asin, grouped by type
-  await test('monthly_by_type', () => q(`
-    SELECT
-      MONTH(dateStartTime)  AS month,
-      type,
-      COUNT(*)              AS rows,
-      SUM(sessions)         AS totalSessions,
-      SUM(unitsOrdered)     AS totalUnits,
-      AVG(unitSessionPercentage)                              AS cr_avg,
-      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2)  AS cr_sum
-    FROM analytics_sale_traffic_by_asin
-    WHERE asin = ? AND typeDate = 'MONTH' AND YEAR(dateStartTime) = ?
-    GROUP BY MONTH(dateStartTime), type
-    ORDER BY month, type
-  `, [asin, yr]));
+  // ── CONTENT / IMAGE / TIER / NICHE for this ASIN (master data check) ──
+  await test('1_master_data_asin_table', () => q(`
+    SELECT asin, seller, contenters AS content1,
+      ${'contenters2'} AS content2_raw, ${'contenters3'} AS content3_raw,
+      imagers AS image
+    FROM asin WHERE asin = ?
+  `, [asin]).catch(()=>q(`SELECT asin, seller, contenters AS content1, imagers AS image FROM asin WHERE asin = ?`, [asin])));
 
-  // WEEKLY — from analytics_sale_traffic_by_asin
-  await test('weekly_by_type', () => q(`
-    SELECT
-      WEEK(dateStartTime, 6) AS week,
-      MIN(dateStartTime)     AS weekStart,
-      MAX(dateEndTime)       AS weekEnd,
-      type,
-      COUNT(*)               AS rows,
-      SUM(sessions)          AS totalSessions,
-      SUM(unitsOrdered)      AS totalUnits,
-      AVG(unitSessionPercentage)                              AS cr_avg,
-      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100,2)  AS cr_sum
-    FROM analytics_sale_traffic_by_asin
-    WHERE asin = ? AND typeDate = 'WEEK' AND YEAR(dateStartTime) = ?
-    GROUP BY WEEK(dateStartTime, 6), type
-    ORDER BY week, type
-  `, [asin, yr]));
-
-  // Daily from analytics_sale_traffiec_by_asin_date — grouped by type
-  await test('daily_by_type_recent', () => q(`
-    SELECT date, type, COUNT(*) AS rows,
-      SUM(sessions) AS totalSessions, SUM(unitsOrdered) AS totalUnits,
-      unitSessionPercentage
-    FROM analytics_sale_traffiec_by_asin_date
-    WHERE asin = ? AND typeDate = 'DAY'
-      AND date BETWEEN DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND CURDATE()
-    GROUP BY date, type, unitSessionPercentage
-    ORDER BY date DESC, type
+  await test('2_tier_from_asin_plan', () => q(`
+    SELECT asin, tier, year
+    FROM asin_plan WHERE asin COLLATE utf8mb4_0900_ai_ci = ?
+    ORDER BY year DESC LIMIT 5
   `, [asin]));
 
-  // CTR weekly
-  await test('ctr_weekly', () => q(`
-    SELECT startDate, endDate, clickCount, impressionCount, clickRate
+  await test('3_niche_productType_from_asin_table', () => q(`
+    SELECT asin, productType, seasonAndNiche
+    FROM asin WHERE asin = ?
+  `, [asin]).catch(e => ({error: 'asin table has no productType/seasonAndNiche cols: ' + e.message})));
+
+  await test('4_niche_fallback_from_seller_board_product', () => q(`
+    SELECT asin, MAX(productType) AS productType, MAX(seasonAndNiche) AS niche, MAX(date) AS lastDate
+    FROM seller_board_product
+    WHERE asin = ? AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+    GROUP BY asin
+  `, [asin]));
+
+  // ── IMAGE URL from product_metadata (IMG_DB) ──
+  if (pool2) {
+    try {
+      const conn = await pool2.getConnection();
+      try {
+        const [rows] = await conn.execute(
+          `SELECT asin, imageUrl FROM product_metadata WHERE asin = ?`, [asin]
+        );
+        R.tests['5_imageUrl_from_product_metadata'] = rows.length ? rows[0] : 'NOT FOUND in product_metadata';
+      } finally { conn.release(); }
+    } catch(e) { R.tests['5_imageUrl_from_product_metadata'] = { error: e.message }; }
+  }
+
+  // ── MONTHLY CR (dashboard formula, same table dashboard reads) ──
+  await test('6_monthly_from_analytics_sale_traffic_by_asin', () => q(`
+    SELECT
+      MONTH(dateStartTime) AS month,
+      type,
+      accountId,
+      dateStartTime, dateEndTime,
+      sessions, unitsOrdered, unitSessionPercentage
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'MONTH' AND YEAR(dateStartTime) = ?
+    ORDER BY month, type, accountId
+  `, [asin, yr]));
+
+  await test('7_monthly_dashboard_computed_AVG', () => q(`
+    SELECT
+      MONTH(dateStartTime) AS month,
+      COUNT(*)             AS rows_counted,
+      ROUND(AVG(unitSessionPercentage), 2) AS dashboard_cr,
+      SUM(sessions)        AS sumSessions,
+      SUM(unitsOrdered)    AS sumUnits,
+      ROUND(SUM(unitsOrdered)/NULLIF(SUM(sessions),0)*100, 2) AS alt_cr_sum_formula
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'MONTH' AND YEAR(dateStartTime) = ?
+    GROUP BY MONTH(dateStartTime)
+    ORDER BY month
+  `, [asin, yr]));
+
+  // ── WEEKLY CR ──
+  await test('8_weekly_from_analytics_sale_traffic_by_asin', () => q(`
+    SELECT
+      dateStartTime, dateEndTime,
+      (FLOOR(DATEDIFF(dateStartTime, DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)) / 7) + 1) AS amzWeek,
+      type, accountId,
+      sessions, unitsOrdered, unitSessionPercentage
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'WEEK'
+      AND dateStartTime BETWEEN ? AND ?
+    ORDER BY dateStartTime, type, accountId
+  `, [asin, `${yr-1}-12-25`, `${yr}-12-31`]));
+
+  await test('9_weekly_dashboard_computed_AVG', () => q(`
+    SELECT
+      (FLOOR(DATEDIFF(dateStartTime, DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)) / 7) + 1) AS amzWeek,
+      MIN(dateStartTime)   AS weekStart,
+      MAX(dateEndTime)     AS weekEnd,
+      COUNT(*)             AS rows_counted,
+      ROUND(AVG(unitSessionPercentage), 2) AS dashboard_cr,
+      SUM(sessions)        AS sumSessions,
+      SUM(unitsOrdered)    AS sumUnits
+    FROM analytics_sale_traffic_by_asin
+    WHERE asin = ? AND typeDate = 'WEEK'
+      AND dateStartTime BETWEEN ? AND ?
+    GROUP BY amzWeek
+    ORDER BY amzWeek
+  `, [asin, `${yr-1}-12-25`, `${yr}-12-31`]));
+
+  // ── CTR (organic search) ──
+  await test('10_ctr_from_search_catalog', () => q(`
+    SELECT startDate, endDate, accountId,
+      impressionCount, clickCount, clickRate
     FROM analytics_search_catalog_performance
     WHERE asin = ? AND startDate BETWEEN ? AND ?
     ORDER BY startDate
   `, [asin, `${yr}-01-01`, `${yr}-12-31`]));
 
+  // ── Ads CTR from pool2 ──
+  if (pool2) {
+    try {
+      const conn = await pool2.getConnection();
+      try {
+        const [rows] = await conn.execute(`
+          SELECT DATE_FORMAT(date,'%Y-%m') AS month,
+            COUNT(*) AS rows_count,
+            SUM(impressions) AS sumImp,
+            SUM(clicks)      AS sumClk,
+            ROUND(SUM(clicks)/NULLIF(SUM(impressions),0)*100, 4) AS adsCtr
+          FROM report_sp_advertised_product
+          WHERE advertisedAsin = ? AND YEAR(date) = ?
+          GROUP BY month ORDER BY month
+        `, [asin, yr]);
+        R.tests['11_ads_ctr_monthly'] = rows;
+      } finally { conn.release(); }
+    } catch(e) { R.tests['11_ads_ctr_monthly'] = { error: e.message }; }
+  }
+
   res.json(R);
 });
-
 
 app.get('/api/debug/cr-sources', async (req, res) => {
   const R = { ts: new Date().toISOString(), tests: {} };
