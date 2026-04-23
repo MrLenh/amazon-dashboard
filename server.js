@@ -2659,8 +2659,8 @@ app.get('/api/product/cr-performance', async (req, res) => {
     `, [...accParams], 30000).catch(()=>[]);
 
     // Q1b: CTR from analytics_search_catalog_performance
-    // For weekly/monthly, match period group using same Amazon week formula on startDate.
-    // Skip CTR for daily mode (source has only weekly buckets).
+    // Dev spec: read clickRate column directly (not compute from clicks/impressions).
+    // Source data is weekly (startDate..endDate spans 7 days). Skip CTR for daily mode.
     let ctrGroupExpr = null;
     if (period === 'weekly') {
       const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
@@ -2680,9 +2680,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
         const ctrRows = await q(`
           SELECT scp.asin,
             ${ctrGroupExpr}                                              AS periodGroup,
-            ROUND(
-              SUM(scp.clickCount) / NULLIF(SUM(scp.impressionCount), 0) * 100, 4
-            )                                                            AS ctr
+            ROUND(AVG(scp.clickRate), 4)                                 AS ctr
           FROM analytics_search_catalog_performance scp
           WHERE scp.startDate BETWEEN ? AND ?
             ${accFilterScp}
@@ -2790,7 +2788,8 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 — match period expression to Amazon week
+    // Q6: Ads CTR from pool2 — read clickThroughRate directly (Amazon pre-calculated)
+    // Same approach as CTR: use the pre-calculated column, not compute from clicks/impressions.
     const adsCtrMap = {};
     if (pool2 && asinSet.length > 0) {
       try {
@@ -2805,12 +2804,12 @@ app.get('/api/product/cr-performance', async (req, res) => {
           }
           else                          adsGrp = `MONTH(r.date)`;
           const asinPh = asinSet.map(() => '?').join(',');
+          // clickThroughRate is pre-calculated per row. Amazon stores it as percentage (e.g. 0.5 = 0.5%).
+          // AVG across rows in the period gives the period-level CTR.
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
               ${adsGrp}                                                AS periodGroup,
-              ROUND(
-                SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4
-              )                                                        AS adsCtr
+              ROUND(AVG(r.clickThroughRate) * 100, 4)                  AS adsCtr
             FROM report_sp_advertised_product r
             WHERE r.date BETWEEN ? AND ?
               AND r.advertisedAsin IN (${asinPh})
