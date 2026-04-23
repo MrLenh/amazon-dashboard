@@ -3296,9 +3296,14 @@ function ProductCRPage({t,sd,ed,store}){
 
   const InfoTD=({r,hasSku,hasDate,dateVal,isNew,hasContent23})=>{
     const bTop=isNew?'2px solid '+t.primary+'55':'none';
+    // Frozen cells need solid bg. Use t.card (matches row default).
+    // The row's :hover bg is handled by the row-level hover effect, but sticky cells override
+    // it because they have explicit background. We solve by making sticky cells use
+    // 'inherit' — they pick up tr background.
+    const stickyBase={position:'sticky',background:t.card,zIndex:2};
     return<>
-      {hasDate&&<td style={TD({fontWeight:isNew?700:400,color:isNew?t.text:t.textMuted,borderTop:bTop,whiteSpace:'nowrap',fontSize:isNew?12:11,position:'sticky',left:0,background:t.card,zIndex:1})}>{isNew?dateVal:''}</td>}
-      <td style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,position:'sticky',left:hasDate?95:0,background:t.card,zIndex:1,whiteSpace:'nowrap'})}>{r.asin}</td>
+      {hasDate&&<td className="sticky-col" style={TD({fontWeight:isNew?700:400,color:isNew?t.text:t.textMuted,borderTop:bTop,whiteSpace:'nowrap',fontSize:isNew?12:11,left:0,...stickyBase})}>{isNew?dateVal:''}</td>}
+      <td className="sticky-col" style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,left:hasDate?95:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
       {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
       <td style={TD({borderTop:bTop})}><span style={{padding:'2px 8px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600}}>{r.store||'—'}</span></td>
       <td style={TD({textAlign:'center',borderTop:bTop,padding:'6px 10px'})}><DesignImg r={r}/></td>
@@ -3334,6 +3339,10 @@ function ProductCRPage({t,sd,ed,store}){
   const years=[2024,2025,2026];
 
   return<div>
+    <style>{`
+      .cr-table tbody tr:hover td { background: ${t.tableHover} !important; }
+      .cr-table .sticky-col { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); }
+    `}</style>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:16,flexWrap:'wrap'}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -3388,7 +3397,7 @@ function ProductCRPage({t,sd,ed,store}){
     {/* ── DAILY VIEW ── */}
     {!loading&&period==='daily'&&flatDaily.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
-        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
           <thead><tr>
             <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
             <th style={TH({textAlign:'center',minWidth:80,borderLeft:'2px solid '+t.primary+'44',background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</th>
@@ -3398,8 +3407,8 @@ function ProductCRPage({t,sd,ed,store}){
           </tr></thead>
           <tbody>{flatDaily.map((r,i)=>{
             const isNew=i===0||r._date!==flatDaily[i-1]._date;
-            return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
-              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            return<tr key={i}
+              >
               <InfoTD r={r} hasDate hasSku={false} hasContent23={hasAnyContent23} dateVal={r._date} isNew={isNew}/>
               <PctCell v={r._cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'2px solid '+t.primary+'44'}}/>
               <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>
@@ -3418,7 +3427,7 @@ function ProductCRPage({t,sd,ed,store}){
     {/* ── WEEKLY VIEW ── */}
     {!loading&&period==='weekly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
-        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
               <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
@@ -3437,8 +3446,8 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
           </thead>
           <tbody>{filtered.map((r,i)=>(
-            <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
-                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <tr key={i}
+                >
               <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
               {periodLabels.map(w=>{const p=r.periods[w]||{};return[
                 <PctCell key={w+'-cr'}  v={p.cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
@@ -3458,7 +3467,7 @@ function ProductCRPage({t,sd,ed,store}){
     {/* ── MONTHLY VIEW ── */}
     {!loading&&period==='monthly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
-        <table style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
               <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
@@ -3477,8 +3486,8 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
           </thead>
           <tbody>{filtered.map((r,i)=>(
-            <tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover}
-                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <tr key={i}
+                >
               <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
               <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
               {periodLabels.map(m=>{const p=r.periods[m]||{};return[
