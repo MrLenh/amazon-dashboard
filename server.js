@@ -2571,15 +2571,16 @@ app.get('/api/product/cr-performance', async (req, res) => {
       labelExpr = `DATE_FORMAT(t.${dateCol}, '%Y-%m-%d')`;
       orderExpr = `DATE(t.${dateCol}) ASC`;
     } else if (period === 'weekly') {
-      // Amazon weekly rows span Sun..Sat. W1 of year Y starts on the Sunday on or before Jan 1 of Y
-      // (e.g. W1 2026 = 2025-12-28 .. 2026-01-03). To include these boundary weeks, expand the
-      // filter to dateStartTime >= (Y-1)-12-25 (covers the Sunday before Jan 1).
+      // Amazon week: W1 of year Y = Sunday on/before Jan 1 of Y to Saturday 6 days later.
+      // e.g. W1 2026 = 2025-12-28 (Sun) .. 2026-01-03 (Sat).
+      // Expand date filter to include rows with dateStartTime = Sunday of previous year.
       sd = `${yr-1}-12-25`; ed = `${yr}-12-31`;
       tableName = 'analytics_sale_traffic_by_asin';
       dateCol   = 'dateStartTime';
       typeDate  = 'WEEK';
-      // Amazon week number formula: floor((dateStartTime - amzY1Start) / 7) + 1
-      // amzY1Start = first Sunday on or before Jan 1 of target year (yr)
+      // amzY1Start = Sunday on/before Jan 1 of target year
+      //   If Jan 1 is Sunday (DAYOFWEEK=1) → Jan 1 itself
+      //   Else → Jan 1 minus (DAYOFWEEK - 1) days
       const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
       const AMZ_WEEK     = `(FLOOR(DATEDIFF(t.${dateCol}, ${AMZ_Y1_START}) / 7) + 1)`;
       groupExpr = AMZ_WEEK;
@@ -2659,14 +2660,21 @@ app.get('/api/product/cr-performance', async (req, res) => {
     `, [...accParams], 30000).catch(()=>[]);
 
     // Q1b: CTR from analytics_search_catalog_performance
-    // Dev spec: read clickRate column directly (not compute from clicks/impressions).
-    // Source data is weekly (startDate..endDate spans 7 days). Skip CTR for daily mode.
+    // Amazon returns both weekly rows (startDate..endDate = 7 days) AND a monthly row
+    // (startDate = day 1, endDate = last day of month) with pre-aggregated clickRate.
+    // For monthly view → prefer Amazon's monthly row (endDate - startDate >= 27 days).
+    // For weekly view → use weekly rows (endDate - startDate < 10 days).
     let ctrGroupExpr = null;
+    let ctrRangeFilter = '';
     if (period === 'weekly') {
       const AMZ_Y1_START = `DATE_SUB(MAKEDATE(${yr}, 1), INTERVAL (DAYOFWEEK(MAKEDATE(${yr}, 1)) - 1) DAY)`;
       ctrGroupExpr = `(FLOOR(DATEDIFF(scp.startDate, ${AMZ_Y1_START}) / 7) + 1)`;
+      // Weekly rows only — skip monthly aggregate rows
+      ctrRangeFilter = `AND DATEDIFF(scp.endDate, scp.startDate) < 10`;
     } else if (period === 'monthly') {
       ctrGroupExpr = `MONTH(scp.startDate)`;
+      // Monthly rows only — pre-aggregated by Amazon (27+ days between start and end)
+      ctrRangeFilter = `AND DATEDIFF(scp.endDate, scp.startDate) >= 27`;
     }
 
     const ctrMap = {};
@@ -2676,16 +2684,21 @@ app.get('/api/product/cr-performance', async (req, res) => {
         accFilterScp = ` AND scp.accountId IN (${accIds.map(() => '?').join(',')})`;
         accParamsScp.push(...accIds);
       }
+      const ctrStart = period === 'weekly' ? `${yr-1}-12-25` : `${yr}-01-01`;
+      const ctrEnd   = `${yr}-12-31`;
       try {
+        // Read clickRate directly (Amazon pre-calculates per row).
+        // For monthly: 1 row per (asin, accountId, month) — AVG gives cross-store CTR.
         const ctrRows = await q(`
           SELECT scp.asin,
             ${ctrGroupExpr}                                              AS periodGroup,
-            ROUND(AVG(scp.clickRate), 4)                                 AS ctr
+            ROUND(AVG(scp.clickRate), 2)                                 AS ctr
           FROM analytics_search_catalog_performance scp
           WHERE scp.startDate BETWEEN ? AND ?
+            ${ctrRangeFilter}
             ${accFilterScp}
           GROUP BY scp.asin, ${ctrGroupExpr}
-        `, [sd, ed, ...accParamsScp], 30000);
+        `, [ctrStart, ctrEnd, ...accParamsScp], 30000);
         ctrRows.forEach(r => {
           if (!ctrMap[r.asin]) ctrMap[r.asin] = {};
           ctrMap[r.asin][String(r.periodGroup)] = parseFloat(r.ctr) || null;
@@ -2788,8 +2801,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       `, asinSet, 15000);
     } catch(e) { console.warn('[cr-performance] avail:', e.message); }
 
-    // Q6: Ads CTR from pool2 — read clickThroughRate directly (Amazon pre-calculated)
-    // Same approach as CTR: use the pre-calculated column, not compute from clicks/impressions.
+    // Q6: Ads CTR from pool2 — same Amazon week formula
     const adsCtrMap = {};
     if (pool2 && asinSet.length > 0) {
       try {
@@ -2804,12 +2816,13 @@ app.get('/api/product/cr-performance', async (req, res) => {
           }
           else                          adsGrp = `MONTH(r.date)`;
           const asinPh = asinSet.map(() => '?').join(',');
-          // clickThroughRate is pre-calculated per row. Amazon stores it as percentage (e.g. 0.5 = 0.5%).
-          // AVG across rows in the period gives the period-level CTR.
+          // Use SUM/SUM for impression-weighted CTR (matches Lark)
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
               ${adsGrp}                                                AS periodGroup,
-              ROUND(AVG(r.clickThroughRate) * 100, 4)                  AS adsCtr
+              ROUND(
+                SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4
+              )                                                        AS adsCtr
             FROM report_sp_advertised_product r
             WHERE r.date BETWEEN ? AND ?
               AND r.advertisedAsin IN (${asinPh})
