@@ -609,6 +609,66 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// ═══════════ RESPONSE CACHE ═══════════
+// In-memory cache for GET responses. Cuts DB load drastically when multiple users
+// hit the same endpoint with the same filters within TTL.
+const responseCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;        // 5 minutes default
+const CACHE_TTL_INVENTORY = 10 * 60 * 1000; // inventory changes slow → 10 min
+const CACHE_MAX_SIZE = 500;                 // hard cap to prevent memory bloat
+
+const getCacheTTL = (path) => {
+  if (path.includes('/inventory/'))                      return CACHE_TTL_INVENTORY;
+  if (path.includes('/auth/') || path === '/health')     return 0; // no cache
+  if (path.startsWith('/debug/'))                        return 0;
+  return CACHE_TTL_MS;
+};
+
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const ttl = getCacheTTL(req.path);
+  if (ttl === 0) return next();
+  // Cache key includes path + sorted query params + user (for store-filtered data)
+  const sortedQuery = Object.keys(req.query).sort().map(k=>`${k}=${req.query[k]}`).join('&');
+  const userKey = req.user?.email || 'anon';
+  const cacheKey = `${userKey}::${req.path}?${sortedQuery}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached && Date.now() - cached.t < ttl) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached.data);
+  }
+  // Wrap res.json to capture and cache
+  const origJson = res.json.bind(res);
+  res.json = (data) => {
+    if (res.statusCode === 200 && data && !data.error) {
+      // Evict oldest if over cap
+      if (responseCache.size >= CACHE_MAX_SIZE) {
+        const firstKey = responseCache.keys().next().value;
+        responseCache.delete(firstKey);
+      }
+      responseCache.set(cacheKey, { t: Date.now(), data });
+    }
+    res.set('X-Cache', 'MISS');
+    return origJson(data);
+  };
+  next();
+});
+
+// Periodically evict expired entries (runs every 2 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of responseCache.entries()) {
+    if (now - v.t > CACHE_TTL_INVENTORY) responseCache.delete(k);
+  }
+}, 2 * 60 * 1000);
+
+// Manual cache clear endpoint (for testing/admin)
+app.post('/api/cache/clear', (req, res) => {
+  const before = responseCache.size;
+  responseCache.clear();
+  res.json({ cleared: before });
+});
+
 /* ═══════════ DEBUG ═══════════ */
 app.get('/api/debug/filters', async (req, res) => {
   const R = { version: VER, steps: {} };
