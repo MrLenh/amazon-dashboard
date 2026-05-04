@@ -4913,19 +4913,21 @@ function Dashboard({authUser,onLogout}){
     }
     const alreadyFetched=fetchCacheRef.current.pages;
 
-    // Page-based gating: only fetch endpoints for current page (lazy load)
-    const needExec   =currentPg==='exec';
-    const needDaily  =currentPg==='daily'||currentPg==='exec';
-    const needProduct=currentPg==='prod';
-    const needShops  =currentPg==='shops';
-    const needTeam   =currentPg==='team';
-    const needInv    =currentPg==='inv';
-
     // Self-contained pages (cr, plan) — main fetch does nothing
     if (currentPg === 'cr' || currentPg === 'plan') {
       setLoading(false);
       return;
     }
+
+    // Page-based gating: which endpoints does this page need?
+    // NOTE: 'exec' embeds Shop Performance and ASIN Performance sections,
+    // so it needs asins + shops + team data too (not just exec/summary).
+    const needExec   =currentPg==='exec';
+    const needDaily  =currentPg==='daily'||currentPg==='exec';
+    const needProduct=currentPg==='prod'||currentPg==='exec';
+    const needShops  =currentPg==='shops'||currentPg==='exec';
+    const needTeam   =currentPg==='team'||currentPg==='exec';
+    const needInv    =currentPg==='inv';
 
     // Skip entirely if everything for this page is cached
     const pageKeys={
