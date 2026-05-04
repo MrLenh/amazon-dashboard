@@ -4921,6 +4921,12 @@ function Dashboard({authUser,onLogout}){
     const needTeam   =currentPg==='team';
     const needInv    =currentPg==='inv';
 
+    // Self-contained pages (cr, plan) — main fetch does nothing
+    if (currentPg === 'cr' || currentPg === 'plan') {
+      setLoading(false);
+      return;
+    }
+
     // Skip entirely if everything for this page is cached
     const pageKeys={
       exec:['exec','prev','asins','shops','team','detail','shopext','ly'],
@@ -4929,11 +4935,11 @@ function Dashboard({authUser,onLogout}){
       shops:['shops'],
       team:['team'],
       inv:['inv'],
-      cr:[],plan:[]
     };
     const requiredKeys=(pageKeys[currentPg]||[]).map(k=>k+':'+cacheKey);
     if(requiredKeys.length>0&&requiredKeys.every(k=>alreadyFetched.has(k))){
-      // All needed data already cached for this page+filter combo → no fetch
+      // All cached — turn off loading to ensure UI shows existing data
+      setLoading(false);
       return;
     }
 
