@@ -5013,6 +5013,64 @@ function Dashboard({authUser,onLogout}){
     return()=>{cancelled=true};
   },[fetchTrigger]);
 
+  // ═══════════ EAGER PRELOAD — fetch other pages in background after exec page loads ═══════════
+  // After main fetch completes for current page, prefetch data for adjacent pages.
+  // Backend cache (5 min TTL) makes subsequent requests instant. So even though we issue
+  // queries here, they execute once per filter combo and serve from cache afterwards.
+  // This trades a tiny bit of initial bandwidth for instant tab switches.
+  const preloadStartedRef=useRef(null);
+  useEffect(()=>{
+    if(!live||dbConnecting||loading)return;
+    if(fetchTrigger===0)return;
+    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
+    const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt:fetchParamsRef.current.productType,_ni:fetchParamsRef.current.niche});
+    // Avoid re-running preload for same filter combo
+    if(preloadStartedRef.current===cacheKey)return;
+    preloadStartedRef.current=cacheKey;
+    // Wait 1.5s after current page loads to avoid contention with user interactions
+    const timer=setTimeout(()=>{
+      const fetched=fetchCacheRef.current.pages;
+      const has=k=>fetched.has(k+':'+cacheKey);
+      // Fire-and-forget — these populate backend cache so when user clicks page, it's instant
+      // Each call is wrapped in catch to never disrupt UX if a preload fails
+      const preload=(name,call)=>{
+        if(has(name))return;
+        call().then(d=>{ fetched.add(name+':'+cacheKey); return d; }).catch(()=>{});
+      };
+      // Inventory (5 endpoints — heaviest, prefetch first)
+      if(!has('inv')){
+        Promise.all([
+          api("inventory/snapshot",{store:_st,seller:_sl}).catch(()=>null),
+          api("inventory/by-shop",{store:_st,seller:_sl}).catch(()=>null),
+          api("inventory/stock-trend",{store:_st,seller:_sl}).catch(()=>null),
+          api("inventory/storage-monthly",{store:_st,seller:_sl}).catch(()=>null),
+          api("inventory/by-asin",{store:_st,seller:_sl}).catch(()=>null),
+        ]).then(([snap,shop,trend,fee,asin])=>{
+          if(snap)setInvData(snap||{});
+          if(shop)setInvShop((shop||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})));
+          if(trend)setInvTrend((trend||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}));
+          if(fee)setInvFeeMonthly(fee||[]);
+          if(asin)setInvAsin(asin||[]);
+          fetched.add('inv:'+cacheKey);
+        }).catch(()=>{});
+      }
+      // ASIN/Shops/Team (only if not already in cache from current page)
+      preload('asins',()=>api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(asins=>{
+        const arr=v=>Array.isArray(v)?v:[];
+        setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
+      }));
+      preload('shops',()=>api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(shops=>{
+        const arr=v=>Array.isArray(v)?v:[];
+        setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
+      }));
+      preload('team',()=>api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).then(team=>{
+        const arr=v=>Array.isArray(v)?v:[];
+        setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
+      }));
+    },1500);
+    return()=>clearTimeout(timer);
+  },[loading,fetchTrigger,live,dbConnecting]);
+
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
   // Only runs when user is on Executive Overview page (pg==='exec')
   const zoneAParamsRef=useRef({zoneAPreset,storeStr,productType,niche});
