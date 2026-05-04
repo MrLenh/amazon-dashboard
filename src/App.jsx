@@ -4888,43 +4888,54 @@ function Dashboard({authUser,onLogout}){
   fetchParamsRef.current={sd,ed,store,seller,asinF,productType,niche};
   const pgRef=useRef(pg);
   pgRef.current=pg;
+  // Cache: tracks which (page, filterKey) combos have been fetched
   const fetchCacheRef=useRef({key:null,pages:new Set()});
-  useEffect(()=>{
-    if(!live||dbConnecting)return;
-    const timer=setTimeout(()=>setFetchTrigger(t=>t+1),400);
-    return()=>clearTimeout(timer);
-  },[sd,ed,store,seller,asinF,productType,niche,live,dbConnecting]);
 
-  // When user switches to a page for the first time with current filters, trigger a fetch
+  // Fetch trigger fires on filter change OR page switch
   useEffect(()=>{
     if(!live||dbConnecting)return;
-    setFetchTrigger(t=>t+1);
-  },[pg,live,dbConnecting]);
+    const timer=setTimeout(()=>setFetchTrigger(t=>t+1),300);
+    return()=>clearTimeout(timer);
+  },[sd,ed,store,seller,asinF,productType,niche,pg,live,dbConnecting]);
+
   useEffect(()=>{
     if(!live||dbConnecting||fetchTrigger===0)return;
     let cancelled=false;
     const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af,productType:_pt,niche:_ni}=fetchParamsRef.current;
     const p={start:_sd,end:_ed,store:_st,seller:_sl,asin:_af,productType:_pt,niche:_ni};
+    const currentPg=pgRef.current;
 
-    // Build cache key from filters
+    // Cache key from filters only (page tracked separately as Set entries)
     const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt,_ni});
-    const isSameAsPrevious=fetchCacheRef.current.key===cacheKey;
-    if(!isSameAsPrevious){
+    if(fetchCacheRef.current.key!==cacheKey){
+      // Filter changed → invalidate all cached pages
       fetchCacheRef.current={key:cacheKey,pages:new Set()};
     }
     const alreadyFetched=fetchCacheRef.current.pages;
 
-    // Page-based fetch gating:
-    // Only fetch data for pages user has actually navigated to (or may view soon)
-    // Exec is fetched always because it's the default landing and some KPIs show
-    // in Daily Ops / Executive dashboards regardless.
-    // Other pages fetch only when pg matches.
-    const currentPg=pgRef.current;
-    const needExec   =currentPg==='exec'||currentPg==='daily';
-    const needProduct=currentPg==='prod'||currentPg==='exec'; // exec uses asins for KPI drilldown
-    const needShops  =currentPg==='shops'||currentPg==='exec';
-    const needTeam   =currentPg==='team'||currentPg==='exec';
+    // Page-based gating: only fetch endpoints for current page (lazy load)
+    const needExec   =currentPg==='exec';
+    const needDaily  =currentPg==='daily'||currentPg==='exec';
+    const needProduct=currentPg==='prod';
+    const needShops  =currentPg==='shops';
+    const needTeam   =currentPg==='team';
     const needInv    =currentPg==='inv';
+
+    // Skip entirely if everything for this page is cached
+    const pageKeys={
+      exec:['exec','prev','asins','shops','team','detail','shopext','ly'],
+      daily:['exec'],
+      prod:['asins'],
+      shops:['shops'],
+      team:['team'],
+      inv:['inv'],
+      cr:[],plan:[]
+    };
+    const requiredKeys=(pageKeys[currentPg]||[]).map(k=>k+':'+cacheKey);
+    if(requiredKeys.length>0&&requiredKeys.every(k=>alreadyFetched.has(k))){
+      // All needed data already cached for this page+filter combo → no fetch
+      return;
+    }
 
     setLoading(true);setFilterError(null);
     const days=Math.max(1,Math.round((new Date(_ed)-new Date(_sd))/86400000)+1);
@@ -4934,8 +4945,8 @@ function Dashboard({authUser,onLogout}){
     const arr=v=>Array.isArray(v)?v:[];
 
     (async()=>{try{
-      // Batch 1: exec summary + daily (only if exec-related page)
-      if(needExec && !alreadyFetched.has('exec:'+cacheKey)){
+      // Batch 1: exec/summary + exec/daily (only for exec or daily ops)
+      if(needDaily && !alreadyFetched.has('exec:'+cacheKey)){
         const[summary,daily]=await Promise.all([
           api("exec/summary",p).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Exec: '+e.message);return EMPTY_EM;}),
           api("exec/daily",p).catch(e=>{console.error("exec/daily FAIL:",e);setFilterError(prev=>(prev?prev+" | ":"")+"Daily: "+e.message);return[];}),
@@ -4945,29 +4956,33 @@ function Dashboard({authUser,onLogout}){
         setFDaily(arr(daily).map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+"T12:00:00");const label=isNaN(dt)?ds:MS[dt.getMonth()]+" "+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0,netProfit:parseFloat(r.netProfit)||0,units:parseInt(r.units)||0,advCost:parseFloat(r.advCost)||0,sessions:parseInt(r.sessions)||0}}));
         alreadyFetched.add('exec:'+cacheKey);
       }
-      // Batch 2: secondary data + prev period
-      const secondaryCalls=[];
+      // Page-specific batch
+      const calls=[];
       if(needExec && !alreadyFetched.has('prev:'+cacheKey)){
-        secondaryCalls.push(['prev',api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null)]);
-      } else secondaryCalls.push(['prev',null]);
+        calls.push(['prev',api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null)]);
+      }
       if(needProduct && !alreadyFetched.has('asins:'+cacheKey)){
-        secondaryCalls.push(['asins',api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
-      } else secondaryCalls.push(['asins',null]);
+        calls.push(['asins',api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+      }
       if(needShops && !alreadyFetched.has('shops:'+cacheKey)){
-        secondaryCalls.push(['shops',api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
-      } else secondaryCalls.push(['shops',null]);
+        calls.push(['shops',api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+      }
       if(needTeam && !alreadyFetched.has('team:'+cacheKey)){
-        secondaryCalls.push(['team',api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];})]);
-      } else secondaryCalls.push(['team',null]);
-      const results=await Promise.all(secondaryCalls.map(([,p])=>p));
+        calls.push(['team',api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];})]);
+      }
+      const results=await Promise.all(calls.map(([,p])=>p));
       if(cancelled)return;
-      const[prev,asins,shops,team]=results;
-      if(prev!==null){setPrevEm(prev&&prev.sales?prev:null);alreadyFetched.add('prev:'+cacheKey);}
-      // Fetch SPLY + exec/detail (exec-only, deferred)
+      results.forEach((data,i)=>{
+        const[name]=calls[i];
+        if(name==='prev'&&data!==null){setPrevEm(data&&data.sales?data:null);alreadyFetched.add('prev:'+cacheKey);}
+        if(name==='asins'){setFAsin(arr(data).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));alreadyFetched.add('asins:'+cacheKey);}
+        if(name==='shops'){setFShopData(arr(data).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));alreadyFetched.add('shops:'+cacheKey);}
+        if(name==='team'){setFSeller(arr(data).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));alreadyFetched.add('team:'+cacheKey);}
+      });
+      // Exec-only: detail + shop-extended + daily-LY (deferred, non-blocking)
       if(needExec){
         const lyS=new Date(_sd+'T00:00:00');lyS.setFullYear(lyS.getFullYear()-1);
         const lyE=new Date(_ed+'T00:00:00');lyE.setFullYear(lyE.getFullYear()-1);
-        const lyStart=lyS.toISOString().slice(0,10),lyEnd=lyE.toISOString().slice(0,10);
         if(!alreadyFetched.has('detail:'+cacheKey)){
           api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d){setExecDetail(d);alreadyFetched.add('detail:'+cacheKey);}}).catch(()=>{});
         }
@@ -4975,14 +4990,11 @@ function Dashboard({authUser,onLogout}){
           api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d)){setShopExt(d);alreadyFetched.add('shopext:'+cacheKey);}}).catch(()=>{});
         }
         if(!alreadyFetched.has('ly:'+cacheKey)){
-          api('exec/daily',{start:lyStart,end:lyEnd,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d)){setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}));alreadyFetched.add('ly:'+cacheKey);}}).catch(()=>{});
+          api('exec/daily',{start:lyS.toISOString().slice(0,10),end:lyE.toISOString().slice(0,10),store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d)){setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}));alreadyFetched.add('ly:'+cacheKey);}}).catch(()=>{});
         }
       }
-      if(asins!==null){setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));alreadyFetched.add('asins:'+cacheKey);}
-      if(shops!==null){setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));alreadyFetched.add('shops:'+cacheKey);}
-      if(team!==null){setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));alreadyFetched.add('team:'+cacheKey);}
     }catch(e){console.error("Fetch error:",e)}
-    // Inventory: only fetch when on inv page
+    // Inventory: only when on inv page, only once per filter
     if(!cancelled && needInv && !alreadyFetched.has('inv:'+cacheKey)){
       api("inventory/snapshot",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvData(d||{})}).catch(()=>{});
       api("inventory/by-shop",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))}).catch(()=>{});
@@ -4993,7 +5005,7 @@ function Dashboard({authUser,onLogout}){
     }
     if(!cancelled)setLoading(false);})();
     return()=>{cancelled=true};
-  },[fetchTrigger,pg]);
+  },[fetchTrigger]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
   // Only runs when user is on Executive Overview page (pg==='exec')
