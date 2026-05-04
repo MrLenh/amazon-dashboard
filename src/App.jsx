@@ -5013,63 +5013,78 @@ function Dashboard({authUser,onLogout}){
     return()=>{cancelled=true};
   },[fetchTrigger]);
 
-  // ═══════════ EAGER PRELOAD — fetch other pages in background after exec page loads ═══════════
-  // After main fetch completes for current page, prefetch data for adjacent pages.
-  // Backend cache (5 min TTL) makes subsequent requests instant. So even though we issue
-  // queries here, they execute once per filter combo and serve from cache afterwards.
-  // This trades a tiny bit of initial bandwidth for instant tab switches.
+  // ═══════════ SMART PRELOAD ═══════════
+  // Strategy: only auto-preload Product Performance (most-used page).
+  // Other pages (Inventory/Shops/Team) load on hover via prefetchPage() — see sidebar handler.
+  // This balances anh dev's "query when needed" with user's "click should be instant".
   const preloadStartedRef=useRef(null);
   useEffect(()=>{
     if(!live||dbConnecting||loading)return;
     if(fetchTrigger===0)return;
     const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
     const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt:fetchParamsRef.current.productType,_ni:fetchParamsRef.current.niche});
-    // Avoid re-running preload for same filter combo
     if(preloadStartedRef.current===cacheKey)return;
     preloadStartedRef.current=cacheKey;
-    // Wait 1.5s after current page loads to avoid contention with user interactions
+    // Wait 1.5s so we don't compete with current page render.
     const timer=setTimeout(()=>{
       const fetched=fetchCacheRef.current.pages;
-      const has=k=>fetched.has(k+':'+cacheKey);
-      // Fire-and-forget — these populate backend cache so when user clicks page, it's instant
-      // Each call is wrapped in catch to never disrupt UX if a preload fails
-      const preload=(name,call)=>{
-        if(has(name))return;
-        call().then(d=>{ fetched.add(name+':'+cacheKey); return d; }).catch(()=>{});
-      };
-      // Inventory (5 endpoints — heaviest, prefetch first)
-      if(!has('inv')){
-        Promise.all([
-          api("inventory/snapshot",{store:_st,seller:_sl}).catch(()=>null),
-          api("inventory/by-shop",{store:_st,seller:_sl}).catch(()=>null),
-          api("inventory/stock-trend",{store:_st,seller:_sl}).catch(()=>null),
-          api("inventory/storage-monthly",{store:_st,seller:_sl}).catch(()=>null),
-          api("inventory/by-asin",{store:_st,seller:_sl}).catch(()=>null),
-        ]).then(([snap,shop,trend,fee,asin])=>{
-          if(snap)setInvData(snap||{});
-          if(shop)setInvShop((shop||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})));
-          if(trend)setInvTrend((trend||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}));
-          if(fee)setInvFeeMonthly(fee||[]);
-          if(asin)setInvAsin(asin||[]);
-          fetched.add('inv:'+cacheKey);
-        }).catch(()=>{});
-      }
-      // ASIN/Shops/Team (only if not already in cache from current page)
-      preload('asins',()=>api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(asins=>{
+      if(fetched.has('asins:'+cacheKey))return; // already cached
+      // Auto-preload only Product Performance (most frequently visited page).
+      api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(asins=>{
         const arr=v=>Array.isArray(v)?v:[];
         setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
-      }));
-      preload('shops',()=>api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(shops=>{
-        const arr=v=>Array.isArray(v)?v:[];
-        setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
-      }));
-      preload('team',()=>api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).then(team=>{
-        const arr=v=>Array.isArray(v)?v:[];
-        setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
-      }));
+        fetched.add('asins:'+cacheKey);
+      }).catch(()=>{});
     },1500);
     return()=>clearTimeout(timer);
   },[loading,fetchTrigger,live,dbConnecting]);
+
+  // ═══════════ HOVER PREFETCH ═══════════
+  // When user hovers over a sidebar tab, prefetch its data. Browser typically gives
+  // 200-300ms between hover and click, enough to fire query and populate cache.
+  // If user clicks → page renders from already-cached data → instant.
+  const prefetchPage = useCallback((targetPg)=>{
+    if(!live||dbConnecting)return;
+    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
+    const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt:fetchParamsRef.current.productType,_ni:fetchParamsRef.current.niche});
+    const fetched=fetchCacheRef.current.pages;
+    const has=k=>fetched.has(k+':'+cacheKey);
+    const arr=v=>Array.isArray(v)?v:[];
+    if(targetPg==='inv' && !has('inv')){
+      Promise.all([
+        api("inventory/snapshot",{store:_st,seller:_sl}).catch(()=>null),
+        api("inventory/by-shop",{store:_st,seller:_sl}).catch(()=>null),
+        api("inventory/stock-trend",{store:_st,seller:_sl}).catch(()=>null),
+        api("inventory/storage-monthly",{store:_st,seller:_sl}).catch(()=>null),
+        api("inventory/by-asin",{store:_st,seller:_sl}).catch(()=>null),
+      ]).then(([snap,shop,trend,fee,asin])=>{
+        if(snap)setInvData(snap||{});
+        if(shop)setInvShop((shop||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})));
+        if(trend)setInvTrend((trend||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}));
+        if(fee)setInvFeeMonthly(fee||[]);
+        if(asin)setInvAsin(asin||[]);
+        fetched.add('inv:'+cacheKey);
+      }).catch(()=>{});
+    }
+    if(targetPg==='shops' && !has('shops')){
+      api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(shops=>{
+        setFShopData(arr(shops).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));
+        fetched.add('shops:'+cacheKey);
+      }).catch(()=>{});
+    }
+    if(targetPg==='team' && !has('team')){
+      api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).then(team=>{
+        setFSeller(arr(team).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));
+        fetched.add('team:'+cacheKey);
+      }).catch(()=>{});
+    }
+    if(targetPg==='prod' && !has('asins')){
+      api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(asins=>{
+        setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
+        fetched.add('asins:'+cacheKey);
+      }).catch(()=>{});
+    }
+  },[live,dbConnecting]);
 
   // ═══════════ ZONE A FETCH — exec/summary only (detail is lazy on More click) ═══════════
   // Only runs when user is on Executive Overview page (pg==='exec')
@@ -5254,7 +5269,7 @@ function Dashboard({authUser,onLogout}){
     {/* SIDEBAR (desktop) or BOTTOM NAV (mobile) */}
     {!mob&&<div style={{width:(tab||!sb)?56:220,background:t.sidebar,borderRight:"1px solid "+t.sidebarBorder,display:"flex",flexDirection:"column",transition:"width .2s",flexShrink:0,overflow:"hidden"}}>
       <div style={{padding:"16px 14px 12px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid "+t.sidebarBorder,minHeight:54}}><div style={{width:34,height:34,borderRadius:10,background:isDark?"#1E2348":"linear-gradient(135deg,#3B4A8A,#6B7FD7)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 2px 8px rgba(59,74,138,.3)"}}><svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="4,24 10,16 16,19 22,10 28,14" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/><circle cx="10" cy="16" r="2.2" fill="white"/><circle cx="16" cy="19" r="2.2" fill="white"/><circle cx="22" cy="10" r="2.2" fill="white"/></svg></div>{!tab&&sb&&<div><div style={{fontSize:15,fontWeight:800,color:t.text,lineHeight:1.1,letterSpacing:-.3}}>Amazon</div><div style={{fontSize:8.5,color:t.textMuted,letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginTop:1}}>Dashboard</div></div>}</div>
-      <div style={{flex:1,padding:6,overflowY:"auto"}}>{NAV_SECTIONS.map((sec,si)=><div key={si} style={{marginBottom:4}}>{(!tab&&sb)&&<div style={{padding:'8px 16px 4px',fontSize:10,fontWeight:700,color:t.textMuted,letterSpacing:1.5,textTransform:'uppercase'}}>{sec.label}</div>}{sec.items.map(n=><button key={n.id} onClick={()=>setPg(n.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:(!tab&&sb)?"11px 16px":"11px 0",borderRadius:10,border:"none",cursor:"pointer",marginBottom:2,background:pg===n.id?t.sidebarActive:"transparent",color:pg===n.id?t.primary:t.textSec,justifyContent:(!tab&&sb)?"flex-start":"center",fontSize:13.5,transition:"all .15s ease"}} onMouseEnter={e=>{if(pg!==n.id)e.currentTarget.style.background=t.tableHover}} onMouseLeave={e=>{if(pg!==n.id)e.currentTarget.style.background="transparent"}}><NavIco d={n.ico} size={18} color={pg===n.id?t.primary:t.textMuted}/>{(!tab&&sb)&&<span style={{fontWeight:pg===n.id?700:500,whiteSpace:"nowrap",letterSpacing:-.1}}>{n.l}</span>}</button>)}</div>)}</div>
+      <div style={{flex:1,padding:6,overflowY:"auto"}}>{NAV_SECTIONS.map((sec,si)=><div key={si} style={{marginBottom:4}}>{(!tab&&sb)&&<div style={{padding:'8px 16px 4px',fontSize:10,fontWeight:700,color:t.textMuted,letterSpacing:1.5,textTransform:'uppercase'}}>{sec.label}</div>}{sec.items.map(n=><button key={n.id} onClick={()=>setPg(n.id)} onMouseEnter={e=>{if(pg!==n.id){e.currentTarget.style.background=t.tableHover; prefetchPage(n.id);}}} onMouseLeave={e=>{if(pg!==n.id)e.currentTarget.style.background="transparent"}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:(!tab&&sb)?"11px 16px":"11px 0",borderRadius:10,border:"none",cursor:"pointer",marginBottom:2,background:pg===n.id?t.sidebarActive:"transparent",color:pg===n.id?t.primary:t.textSec,justifyContent:(!tab&&sb)?"flex-start":"center",fontSize:13.5,transition:"all .15s ease"}}><NavIco d={n.ico} size={18} color={pg===n.id?t.primary:t.textMuted}/>{(!tab&&sb)&&<span style={{fontWeight:pg===n.id?700:500,whiteSpace:"nowrap",letterSpacing:-.1}}>{n.l}</span>}</button>)}</div>)}</div>
       {!tab&&<div style={{padding:'8px 8px 10px',borderTop:'1px solid '+t.sidebarBorder}}><button onClick={()=>setSb(!sb)} title={sb?'Collapse sidebar':'Expand sidebar'} style={{width:'100%',padding:'8px 10px',borderRadius:9,border:'none',cursor:'pointer',background:'transparent',color:t.textMuted,display:'flex',alignItems:'center',justifyContent:sb?'flex-start':'center',gap:8,fontSize:12,fontWeight:500,transition:'all .15s'}} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transform:sb?'rotate(0deg)':'rotate(180deg)',transition:'transform .2s',flexShrink:0}}><path d="M15 18l-6-6 6-6"/></svg>{sb&&<span>Collapse</span>}</button></div>}
     </div>}
 
@@ -5321,7 +5336,7 @@ function Dashboard({authUser,onLogout}){
     </div>
 
     {/* MOBILE BOTTOM NAV */}
-    {mob&&<div style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid "+t.sidebarBorder,display:"flex",justifyContent:"space-around",padding:"8px 0",zIndex:998}}>{NAV.map(n=><button key={n.id} onClick={()=>{setPg(n.id);setMobileFilters(false)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"4px 6px",borderRadius:6,color:pg===n.id?t.primary:t.textMuted,fontSize:10,fontWeight:pg===n.id?700:500,minWidth:0}}><NavIco d={n.ico} size={16} color={pg===n.id?t.primary:t.textMuted}/><span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:52}}>{n.l.split(" ")[0]}</span></button>)}</div>}
+    {mob&&<div style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid "+t.sidebarBorder,display:"flex",justifyContent:"space-around",padding:"8px 0",zIndex:998}}>{NAV.map(n=><button key={n.id} onClick={()=>{setPg(n.id);setMobileFilters(false)}} onMouseEnter={()=>{if(pg!==n.id)prefetchPage(n.id)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"4px 6px",borderRadius:6,color:pg===n.id?t.primary:t.textMuted,fontSize:10,fontWeight:pg===n.id?700:500,minWidth:0}}><NavIco d={n.ico} size={16} color={pg===n.id?t.primary:t.textMuted}/><span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:52}}>{n.l.split(" ")[0]}</span></button>)}</div>}
 
     <AiChat t={t} pg={pg} contextData={{em,fAsin,fShopData,fSeller,invData,invShop,fDaily,sd,ed}}/>
     <StockModal asin={stockAsin} t={t} onClose={()=>setStockAsin(null)}/>
