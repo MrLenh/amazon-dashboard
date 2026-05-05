@@ -2826,7 +2826,21 @@ app.get('/api/product/cr-performance', async (req, res) => {
       } catch(e) { console.warn('[cr-performance] ctr:', e.message); }
     }
 
-    const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
+    // Limit to top 500 ASINs by total sessions for performance.
+    // Without DB indexes, querying 1500+ ASINs on stock/avail/master tables is slow.
+    // Most ASINs with very low traffic add noise anyway.
+    const ASIN_LIMIT = 500;
+    const asinTotals = {};
+    analyticsRows.forEach(r => {
+      asinTotals[r.asin] = (asinTotals[r.asin] || 0) + (parseInt(r.sessions) || 0);
+    });
+    const asinSet = Object.entries(asinTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, ASIN_LIMIT)
+      .map(([asin]) => asin);
+    // Filter analyticsRows to only top ASINs to keep response payload small
+    const asinSetCheck = new Set(asinSet);
+    analyticsRows = analyticsRows.filter(r => asinSetCheck.has(r.asin));
     const asinAccMap = {};
     asinAccRows.forEach(r => {
       if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId;
@@ -3046,7 +3060,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       };
     });
 
-    res.json({ periodLabels, rows });
+    res.json({ periodLabels, rows, totalAsins: Object.keys(asinTotals).length, limited: Object.keys(asinTotals).length > ASIN_LIMIT });
   } catch(e) {
     console.error('[cr-performance]', e.message);
     res.status(500).json({ error: e.message });
