@@ -59,11 +59,14 @@ try {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'expeditee',
-    waitForConnections: true, connectionLimit: 20, queueLimit: 50,
+    waitForConnections: true, connectionLimit: 10, queueLimit: 30,
     connectTimeout: 10000,
+    idleTimeout: 60000,        // close idle connections after 60s
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
   });
-  console.log('✅ MySQL pool created');
+  console.log('✅ MySQL pool created (limit: 10)');
 } catch (e) { console.warn('⚠️ MySQL pool failed:', e.message); }
 
 /* ═══════════ IMAGE DB — same host, different credentials ═══════════ */
@@ -78,11 +81,14 @@ if (process.env.DB2_NAME && process.env.DB2_USER) {
       user:     process.env.DB2_USER,
       password: process.env.DB2_PASSWORD || '',
       database: process.env.DB2_NAME,
-      waitForConnections: true, connectionLimit: 5, queueLimit: 20,
+      waitForConnections: true, connectionLimit: 3, queueLimit: 15,
       connectTimeout: 10000,
+      idleTimeout: 60000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
     });
-    console.log('✅ MySQL pool2 (image DB) created');
+    console.log('✅ MySQL pool2 (image DB) created (limit: 3)');
   } catch (e) { console.warn('⚠️ MySQL pool2 failed:', e.message); }
 }
 
@@ -207,6 +213,21 @@ async function q(sql, params = [], timeoutMs = 45000) {
   if (!pool) throw new Error('Database not connected');
   const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error(`signal timed out`)), timeoutMs));
   return Promise.race([pool.execute(sql, params).then(([rows]) => rows), timeout]);
+}
+
+// Cache table column names — schema rarely changes, no need to query every request.
+// SHOW COLUMNS is fast but adds latency when called from many endpoints concurrently.
+const _columnsCache = {};
+async function getColumnsCache(tableName) {
+  if (_columnsCache[tableName]) return _columnsCache[tableName];
+  try {
+    const cols = (await q(`SHOW COLUMNS FROM \`${tableName}\``, [], 5000)).map(c => c.Field);
+    _columnsCache[tableName] = cols;
+    return cols;
+  } catch(e) {
+    console.warn(`[getColumnsCache] ${tableName}:`, e.message);
+    return [];
+  }
 }
 
 /* ═══════════ BOOT: create indexes if missing ═══════════ */
@@ -615,23 +636,33 @@ app.use('/api', (req, res, next) => {
 const responseCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;        // 5 minutes default
 const CACHE_TTL_INVENTORY = 10 * 60 * 1000; // inventory changes slow → 10 min
+const CACHE_TTL_LIVE = 60 * 1000;           // current-year data → 1 min (so new daily/weekly data appears soon)
 const CACHE_MAX_SIZE = 500;                 // hard cap to prevent memory bloat
 
-const getCacheTTL = (path) => {
+const getCacheTTL = (path, query) => {
   if (path.includes('/inventory/'))                      return CACHE_TTL_INVENTORY;
-  if (path.includes('/auth/') || path === '/health')     return 0; // no cache
+  if (path.includes('/auth/') || path === '/health')     return 0;
   if (path.startsWith('/debug/'))                        return 0;
+  // Current-year data needs shorter TTL to pick up newly-pulled rows
+  const currentYear = new Date().getFullYear();
+  if (query.year && parseInt(query.year) === currentYear) return CACHE_TTL_LIVE;
+  // Recent date ranges (within last 30 days) → shorter TTL too
+  if (query.end) {
+    const endTime = new Date(query.end).getTime();
+    const daysAgo = (Date.now() - endTime) / 86400000;
+    if (daysAgo < 30) return CACHE_TTL_LIVE;
+  }
   return CACHE_TTL_MS;
 };
 
 app.use('/api', (req, res, next) => {
   if (req.method !== 'GET') return next();
-  const ttl = getCacheTTL(req.path);
+  const ttl = getCacheTTL(req.path, req.query);
   if (ttl === 0) return next();
-  // Cache key includes path + sorted query params + user (for store-filtered data)
+  // Cache key = path + sorted query. Don't include user — same query returns same data
+  // for all users (data is org-wide). This dramatically improves cache hit rate.
   const sortedQuery = Object.keys(req.query).sort().map(k=>`${k}=${req.query[k]}`).join('&');
-  const userKey = req.user?.email || 'anon';
-  const cacheKey = `${userKey}::${req.path}?${sortedQuery}`;
+  const cacheKey = `${req.path}?${sortedQuery}`;
   const cached = responseCache.get(cacheKey);
   if (cached && Date.now() - cached.t < ttl) {
     res.set('X-Cache', 'HIT');
@@ -667,6 +698,38 @@ app.post('/api/cache/clear', (req, res) => {
   const before = responseCache.size;
   responseCache.clear();
   res.json({ cleared: before });
+});
+
+// Debug pool stats — shows current MySQL connection usage
+app.get('/api/debug/pool-stats', async (req, res) => {
+  const stats = (p, name) => {
+    if (!p) return { name, status: 'not initialized' };
+    return {
+      name,
+      // mysql2 internal stats (may differ across versions)
+      connectionLimit: p.config?.connectionLimit,
+      poolUsed:        p._allConnections?.length || 0,
+      poolFree:        p._freeConnections?.length || 0,
+      poolPending:     p._connectionQueue?.length || 0,
+    };
+  };
+  // Also check MySQL server-level connection usage
+  let serverConn = null;
+  try {
+    const r = await q(`SHOW STATUS LIKE 'Threads_connected'`);
+    const r2 = await q(`SHOW VARIABLES LIKE 'max_connections'`);
+    serverConn = {
+      threads_connected: r[0]?.Value,
+      max_connections:   r2[0]?.Value,
+    };
+  } catch(e) { serverConn = { error: e.message }; }
+  res.json({
+    ts: new Date().toISOString(),
+    cacheSize: responseCache.size,
+    pool1: stats(pool, 'main'),
+    pool2: stats(pool2, 'image_db'),
+    mysqlServer: serverConn,
+  });
 });
 
 /* ═══════════ DEBUG ═══════════ */
@@ -2773,60 +2836,58 @@ app.get('/api/product/cr-performance', async (req, res) => {
     });
     const ph = asinSet.map(() => '?').join(',');
 
-    // Q2: ASIN master — contenters (1/2/3), imagers, seller
-    let asinMaster = [];
-    try {
-      const cols = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
-      const has2 = cols.includes('contenters2');
-      const has3 = cols.includes('contenters3');
-      asinMaster = await q(`
-        SELECT a.asin, a.seller,
-          a.contenters                                 AS content1,
-          ${has2 ? 'a.contenters2' : 'NULL'}           AS content2,
-          ${has3 ? 'a.contenters3' : 'NULL'}           AS content3,
-          a.imagers                                    AS image
-        FROM asin a WHERE a.asin IN (${ph})
-      `, asinSet, 15000);
-    } catch(e) { console.warn('[cr-performance] asin master:', e.message); }
+    // ═══ PARALLELIZE: Q2 (master) + Q2b (tier) + Q7 (image) + Q3 (niche) + Q4 (stock) + Q5 (avail) + Q6 (adsCtr) ═══
+    // Run all 7 queries concurrently instead of sequentially. Cuts ~5x total time.
+    // SHOW COLUMNS calls are cached at module level (see top of file).
 
-    // Q2b: Tier from asin_plan (latest year with tier value for each ASIN)
-    const tierMap = {};
-    try {
-      const planCols = (await q('SHOW COLUMNS FROM asin_plan', [], 5000)).map(c => c.Field);
-      const hasTier  = planCols.includes('tier');
-      if (hasTier) {
-        const tierRows = await q(`
+    const masterPromise = (async () => {
+      try {
+        const cols = await getColumnsCache('asin');
+        const has2 = cols.includes('contenters2');
+        const has3 = cols.includes('contenters3');
+        return await q(`
+          SELECT a.asin, a.seller,
+            a.contenters                                 AS content1,
+            ${has2 ? 'a.contenters2' : 'NULL'}           AS content2,
+            ${has3 ? 'a.contenters3' : 'NULL'}           AS content3,
+            a.imagers                                    AS image
+          FROM asin a WHERE a.asin IN (${ph})
+        `, asinSet, 15000);
+      } catch(e) { console.warn('[cr-performance] master:', e.message); return []; }
+    })();
+
+    const tierPromise = (async () => {
+      try {
+        const planCols = await getColumnsCache('asin_plan');
+        if (!planCols.includes('tier')) return [];
+        return await q(`
           SELECT ap.asin, ap.tier, ap.year
           FROM asin_plan ap
           WHERE ap.asin COLLATE utf8mb4_0900_ai_ci IN (${ph})
             AND ap.tier IS NOT NULL AND ap.tier != ''
           ORDER BY ap.asin, ap.year DESC
         `, asinSet, 15000);
-        tierRows.forEach(r => { if (!tierMap[r.asin]) tierMap[r.asin] = r.tier; });
-      }
-    } catch(e) { console.warn('[cr-performance] tier:', e.message); }
+      } catch(e) { console.warn('[cr-performance] tier:', e.message); return []; }
+    })();
 
-    // Q7: Design image URL from product_metadata (pool2 / IMG_DB)
-    const imageMap = await getImageMap(asinSet).catch(()=>({}));
+    const imagePromise = getImageMap(asinSet).catch(()=>({}));
 
-    // Q3: productType + niche — try asin table first, fallback to seller_board_product
-    let sbpRows = [];
-    try {
-      const asinCols = (await q('SHOW COLUMNS FROM asin', [], 5000)).map(c => c.Field);
-      const hasPT    = asinCols.includes('productType');
-      const hasNiche = asinCols.includes('seasonAndNiche');
-      if (hasPT || hasNiche) {
-        sbpRows = await q(`
-          SELECT a.asin,
-            ${hasPT    ? 'a.productType'    : 'NULL'} AS productType,
-            ${hasNiche ? 'a.seasonAndNiche' : 'NULL'} AS niche
-          FROM asin a WHERE a.asin IN (${ph})
-        `, asinSet, 10000);
-      }
-    } catch(e) { console.warn('[cr-performance] asin ptNiche:', e.message); }
-    if (!sbpRows.length || sbpRows.every(r => !r.productType && !r.niche)) {
+    const ptNichePromise = (async () => {
       try {
-        sbpRows = await q(`
+        const asinCols = await getColumnsCache('asin');
+        const hasPT    = asinCols.includes('productType');
+        const hasNiche = asinCols.includes('seasonAndNiche');
+        if (hasPT || hasNiche) {
+          const rows = await q(`
+            SELECT a.asin,
+              ${hasPT    ? 'a.productType'    : 'NULL'} AS productType,
+              ${hasNiche ? 'a.seasonAndNiche' : 'NULL'} AS niche
+            FROM asin a WHERE a.asin IN (${ph})
+          `, asinSet, 10000);
+          if (rows.length && rows.some(r => r.productType || r.niche)) return rows;
+        }
+        // Fallback to seller_board_product
+        return await q(`
           SELECT p.asin,
             MAX(p.productType)    AS productType,
             MAX(p.seasonAndNiche) AS niche
@@ -2834,36 +2895,29 @@ app.get('/api/product/cr-performance', async (req, res) => {
           WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
           GROUP BY p.asin
         `, asinSet, 20000);
-      } catch(e) { console.warn('[cr-performance] sbp:', e.message); }
-    }
+      } catch(e) { console.warn('[cr-performance] ptNiche:', e.message); return []; }
+    })();
 
-    // Q4: SKU + FBA stock
-    let stockRows = [];
-    try {
-      stockRows = await q(`
-        SELECT s.asin, MIN(s.sku) AS sku, SUM(s.FBAStock) AS stock
-        FROM seller_board_stock s WHERE s.asin IN (${ph})
-        GROUP BY s.asin
-      `, asinSet, 10000);
-    } catch(e) { console.warn('[cr-performance] stock:', e.message); }
+    const stockPromise = q(`
+      SELECT s.asin, MIN(s.sku) AS sku, SUM(s.FBAStock) AS stock
+      FROM seller_board_stock s WHERE s.asin IN (${ph})
+      GROUP BY s.asin
+    `, asinSet, 10000).catch(e => { console.warn('[cr-performance] stock:', e.message); return []; });
 
-    // Q5: Available (latest snapshot)
-    let availRows = [];
-    try {
-      availRows = await q(`
-        SELECT f.asin,
-          SUM(GREATEST(CAST(f.available AS SIGNED), 0)) AS avail
-        FROM fba_iventory_planning f
-        JOIN (SELECT accountId AS aid, MAX(date) AS maxDate FROM fba_iventory_planning GROUP BY accountId) latest
-          ON f.accountId = latest.aid AND f.date = latest.maxDate
-        WHERE f.asin IN (${ph})
-        GROUP BY f.asin
-      `, asinSet, 15000);
-    } catch(e) { console.warn('[cr-performance] avail:', e.message); }
+    const availPromise = q(`
+      SELECT f.asin,
+        SUM(GREATEST(CAST(f.available AS SIGNED), 0)) AS avail
+      FROM fba_iventory_planning f
+      JOIN (SELECT accountId AS aid, MAX(date) AS maxDate FROM fba_iventory_planning GROUP BY accountId) latest
+        ON f.accountId = latest.aid AND f.date = latest.maxDate
+      WHERE f.asin IN (${ph})
+      GROUP BY f.asin
+    `, asinSet, 15000).catch(e => { console.warn('[cr-performance] avail:', e.message); return []; });
 
-    // Q6: Ads CTR from pool2 — same Amazon week formula
-    const adsCtrMap = {};
-    if (pool2 && asinSet.length > 0) {
+    // Ads CTR from pool2 (separate DB)
+    const adsCtrPromise = (async () => {
+      const adsCtrMap = {};
+      if (!pool2 || asinSet.length === 0) return adsCtrMap;
       try {
         const conn = await pool2.getConnection();
         try {
@@ -2876,13 +2930,10 @@ app.get('/api/product/cr-performance', async (req, res) => {
           }
           else                          adsGrp = `MONTH(r.date)`;
           const asinPh = asinSet.map(() => '?').join(',');
-          // Use SUM/SUM for impression-weighted CTR (matches Lark)
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
               ${adsGrp}                                                AS periodGroup,
-              ROUND(
-                SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4
-              )                                                        AS adsCtr
+              ROUND(SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4) AS adsCtr
             FROM report_sp_advertised_product r
             WHERE r.date BETWEEN ? AND ?
               AND r.advertisedAsin IN (${asinPh})
@@ -2894,7 +2945,16 @@ app.get('/api/product/cr-performance', async (req, res) => {
           });
         } finally { conn.release(); }
       } catch(e) { console.warn('[cr-performance] adsCtr:', e.message); }
-    }
+      return adsCtrMap;
+    })();
+
+    // Wait for all in parallel
+    const [asinMaster, tierRows, imageMap, sbpRows, stockRows, availRows, adsCtrMap] = await Promise.all([
+      masterPromise, tierPromise, imagePromise, ptNichePromise, stockPromise, availPromise, adsCtrPromise
+    ]);
+
+    const tierMap = {};
+    tierRows.forEach(r => { if (!tierMap[r.asin]) tierMap[r.asin] = r.tier; });
 
     // Build lookup maps
     const masterMap = {}; asinMaster.forEach(r => { masterMap[r.asin] = r; });
@@ -2902,12 +2962,59 @@ app.get('/api/product/cr-performance', async (req, res) => {
     const stockMap  = {}; stockRows.forEach(r => { stockMap[r.asin] = r; });
     const availMap  = {}; availRows.forEach(r => { availMap[r.asin] = r; });
 
-    // Period label ordering — numeric sort
-    const periodMap = {};
-    analyticsRows.forEach(r => { periodMap[String(r.periodGroup)] = r.periodLabel; });
-    const periodLabels = Object.entries(periodMap)
-      .sort(([a], [b]) => Number(a) - Number(b))
-      .map(([, label]) => label);
+    // Period label generation — show ALL periods up to the current one (not only those with data).
+    // For past years: show all 12 months / 52 weeks.
+    // For current year: show up to current month / current week.
+    const today = new Date();
+    const currentYear  = today.getFullYear();
+    const currentMonth = today.getMonth() + 1; // 1-12
+    const periodLabels = [];
+    const periodMap    = {}; // periodGroup -> periodLabel (for matching analytics rows)
+
+    if (period === 'daily') {
+      // Daily: keep behavior — only periods with data (date range usually small)
+      analyticsRows.forEach(r => { periodMap[String(r.periodGroup)] = r.periodLabel; });
+      periodLabels.push(...Object.entries(periodMap)
+        .sort(([a], [b]) => String(a).localeCompare(String(b)))
+        .map(([, label]) => label));
+    } else if (period === 'monthly') {
+      // Monthly: T1..T(currentMonth) for current year, T1..T12 for past years
+      const maxMonth = (yr === currentYear) ? currentMonth : 12;
+      for (let m = 1; m <= maxMonth; m++) {
+        const lbl = 'T' + m;
+        periodLabels.push(lbl);
+        periodMap[String(m)] = lbl;
+      }
+    } else if (period === 'weekly') {
+      // Weekly: W1..W(currentWeek) for current year, W1..W52 for past years
+      // Compute current Amazon week using same formula as the SQL query
+      const jan1 = new Date(currentYear, 0, 1);
+      const dayOfWeekJan1 = jan1.getDay() + 1; // JS getDay: 0=Sun, MySQL DAYOFWEEK: 1=Sun
+      const amzY1Start = new Date(jan1);
+      amzY1Start.setDate(jan1.getDate() - (dayOfWeekJan1 - 1));
+      const todayMs = today.getTime();
+      const startMs = amzY1Start.getTime();
+      const currentAmzWeek = Math.floor((todayMs - startMs) / (7 * 86400000)) + 1;
+      const maxWeek = (yr === currentYear) ? Math.min(currentAmzWeek, 53) : 53;
+      for (let w = 1; w <= maxWeek; w++) {
+        const lbl = 'W' + String(w).padStart(2, '0');
+        periodLabels.push(lbl);
+        periodMap[String(w)] = lbl;
+      }
+    }
+
+    // For non-daily, also merge in any periodLabel that came from analyticsRows (in case data exists for periods our generator missed, e.g. W53)
+    if (period !== 'daily') {
+      analyticsRows.forEach(r => {
+        const key = String(r.periodGroup);
+        if (!periodMap[key]) {
+          periodMap[key] = r.periodLabel;
+          periodLabels.push(r.periodLabel);
+        }
+      });
+      // Re-sort numerically
+      periodLabels.sort((a, b) => parseInt(a.replace(/\D/g, '')) - parseInt(b.replace(/\D/g, '')));
+    }
 
     // Pivot analytics per ASIN
     const asinPeriods = {};
