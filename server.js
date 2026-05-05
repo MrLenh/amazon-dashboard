@@ -231,27 +231,30 @@ async function getColumnsCache(tableName) {
 }
 
 /* ═══════════ BOOT: create indexes if missing ═══════════ */
-/* ═══════════ INDEXES ═══════════
-   DISABLED — do not modify DB schema. The dashboard runs in read-only mode.
-   If the dev wants to add indexes for performance, they can run the SQL manually.
-   Recommended indexes (for dev to apply if desired):
-     ALTER TABLE seller_board_sales              ADD INDEX idx_sbs_date (date);
-     ALTER TABLE seller_board_sales              ADD INDEX idx_sbs_date_acc (date, accountId);
-     ALTER TABLE seller_board_product            ADD INDEX idx_sbp_date (date);
-     ALTER TABLE seller_board_product            ADD INDEX idx_sbp_date_acc (date, accountId);
-     ALTER TABLE seller_board_product            ADD INDEX idx_sbp_asin (asin(20));
-     ALTER TABLE fba_iventory_planning           ADD INDEX idx_inv_date_acc (date, accountId);
-     ALTER TABLE fba_iventory_planning           ADD INDEX idx_inv_asin (asin(20));
-     ALTER TABLE analytics_sale_traffiec_by_asin_date ADD INDEX idx_astd_type_date (typeDate, date);
-     ALTER TABLE analytics_sale_traffiec_by_asin_date ADD INDEX idx_astd_asin_date (asin(20), date);
-     ALTER TABLE analytics_sale_traffic_by_asin  ADD INDEX idx_ast_type_start (typeDate, dateStartTime);
-     ALTER TABLE analytics_sale_traffic_by_asin  ADD INDEX idx_ast_asin (asin(20));
-     ALTER TABLE analytics_search_catalog_performance ADD INDEX idx_scp_start (startDate);
-     ALTER TABLE analytics_search_catalog_performance ADD INDEX idx_scp_asin_start (asin(20), startDate);
-     ALTER TABLE seller_board_stock              ADD INDEX idx_sbstk_asin (asin(20));
-     ALTER TABLE asin_plan                       ADD INDEX idx_ap_asin_year (asin(20), year);
-*/
-async function ensureIndexes() { /* disabled */ }
+async function ensureIndexes() {
+  if (!pool) return;
+  // Check existing indexes first to avoid ALTER on already-indexed tables
+  try {
+    const existingIdx = await q(`SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME LIKE 'idx_%'`, [], 10000);
+    const existing = new Set(existingIdx.map(r=>r.INDEX_NAME));
+
+    const idxSQL = [
+      ['idx_sbs_date',     `ALTER TABLE seller_board_sales ADD INDEX idx_sbs_date (date)`],
+      ['idx_sbs_date_acc', `ALTER TABLE seller_board_sales ADD INDEX idx_sbs_date_acc (date, accountId)`],
+      ['idx_sbp_date',     `ALTER TABLE seller_board_product ADD INDEX idx_sbp_date (date)`],
+      ['idx_sbp_date_acc', `ALTER TABLE seller_board_product ADD INDEX idx_sbp_date_acc (date, accountId)`],
+      ['idx_sbp_asin',     `ALTER TABLE seller_board_product ADD INDEX idx_sbp_asin (asin(20))`],
+      ['idx_inv_date_acc', `ALTER TABLE fba_iventory_planning ADD INDEX idx_inv_date_acc (date, accountId)`],
+    ];
+    for (const [name, sql] of idxSQL) {
+      if (existing.has(name)) { console.log('✓ Index exists:', name); continue; }
+      try { await q(sql, [], 60000); console.log('✅ Index created:', name); }
+      catch(e) { console.warn('⚠️ Index skip:', name, '-', e.message.slice(0,80)); }
+    }
+  } catch(e) { console.warn('ensureIndexes failed:', e.message); }
+}
+setTimeout(() => ensureIndexes(), 5000);
 
 /* ═══════════ SALES TABLE ═══════════ */
 function salesFrom(alias = 'sc') { return `seller_board_sales ${alias}`; }
@@ -2826,79 +2829,74 @@ app.get('/api/product/cr-performance', async (req, res) => {
       } catch(e) { console.warn('[cr-performance] ctr:', e.message); }
     }
 
-    // Limit to top 500 ASINs by total sessions for performance.
-    // Without DB indexes, querying 1500+ ASINs on stock/avail/master tables is slow.
-    // Most ASINs with very low traffic add noise anyway.
-    const ASIN_LIMIT = 500;
-    const asinTotals = {};
-    analyticsRows.forEach(r => {
-      asinTotals[r.asin] = (asinTotals[r.asin] || 0) + (parseInt(r.sessions) || 0);
-    });
-    const asinSet = Object.entries(asinTotals)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, ASIN_LIMIT)
-      .map(([asin]) => asin);
-    // Filter analyticsRows to only top ASINs to keep response payload small
-    const asinSetCheck = new Set(asinSet);
-    analyticsRows = analyticsRows.filter(r => asinSetCheck.has(r.asin));
+    const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
     const asinAccMap = {};
     asinAccRows.forEach(r => {
       if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId;
     });
     const ph = asinSet.map(() => '?').join(',');
 
-    // ═══ PARALLELIZE: 5 queries in parallel (down from 7) ═══
-    // Combined master+tier+ptNiche into single JOIN.
+    // ═══ PARALLELIZE: Q2 (master) + Q2b (tier) + Q7 (image) + Q3 (niche) + Q4 (stock) + Q5 (avail) + Q6 (adsCtr) ═══
+    // Run all 7 queries concurrently instead of sequentially. Cuts ~5x total time.
+    // SHOW COLUMNS calls are cached at module level (see top of file).
 
-    // Q2+Q2b+Q3 combined: ASIN master with tier (from asin_plan) and productType/niche.
-    // Single LEFT JOIN avoids 3 separate round-trips.
     const masterPromise = (async () => {
       try {
         const cols = await getColumnsCache('asin');
         const has2 = cols.includes('contenters2');
         const has3 = cols.includes('contenters3');
-        const hasPT    = cols.includes('productType');
-        const hasNiche = cols.includes('seasonAndNiche');
-        const planCols = await getColumnsCache('asin_plan');
-        const hasTier  = planCols.includes('tier');
-        // Latest tier per ASIN via correlated subquery (fast with the new idx_ap_asin_year)
-        const tierJoin = hasTier ? `LEFT JOIN (
-          SELECT ap.asin, ap.tier
-          FROM asin_plan ap
-          INNER JOIN (
-            SELECT asin AS a, MAX(year) AS my FROM asin_plan
-            WHERE tier IS NOT NULL AND tier != ''
-            GROUP BY asin
-          ) latest ON ap.asin = latest.a AND ap.year = latest.my
-        ) tier_t ON tier_t.asin COLLATE utf8mb4_0900_ai_ci = a.asin` : '';
         return await q(`
           SELECT a.asin, a.seller,
             a.contenters                                 AS content1,
             ${has2 ? 'a.contenters2' : 'NULL'}           AS content2,
             ${has3 ? 'a.contenters3' : 'NULL'}           AS content3,
-            a.imagers                                    AS image,
-            ${hasPT    ? 'a.productType'    : 'NULL'}    AS productType,
-            ${hasNiche ? 'a.seasonAndNiche' : 'NULL'}    AS niche,
-            ${hasTier  ? 'tier_t.tier'      : 'NULL'}    AS tier
-          FROM asin a
-          ${tierJoin}
-          WHERE a.asin IN (${ph})
+            a.imagers                                    AS image
+          FROM asin a WHERE a.asin IN (${ph})
         `, asinSet, 15000);
       } catch(e) { console.warn('[cr-performance] master:', e.message); return []; }
     })();
 
-    // Fallback for productType/niche from seller_board_product when asin table is empty.
-    // Only runs if master query returns rows with no productType/niche at all.
-    const sbpFallbackPromise = q(`
-      SELECT p.asin,
-        MAX(p.productType)    AS productType,
-        MAX(p.seasonAndNiche) AS niche
-      FROM seller_board_product p
-      WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
-      GROUP BY p.asin
-    `, asinSet, 20000).catch(e => { console.warn('[cr-performance] sbp:', e.message); return []; });
+    const tierPromise = (async () => {
+      try {
+        const planCols = await getColumnsCache('asin_plan');
+        if (!planCols.includes('tier')) return [];
+        return await q(`
+          SELECT ap.asin, ap.tier, ap.year
+          FROM asin_plan ap
+          WHERE ap.asin COLLATE utf8mb4_0900_ai_ci IN (${ph})
+            AND ap.tier IS NOT NULL AND ap.tier != ''
+          ORDER BY ap.asin, ap.year DESC
+        `, asinSet, 15000);
+      } catch(e) { console.warn('[cr-performance] tier:', e.message); return []; }
+    })();
 
     const imagePromise = getImageMap(asinSet).catch(()=>({}));
+
+    const ptNichePromise = (async () => {
+      try {
+        const asinCols = await getColumnsCache('asin');
+        const hasPT    = asinCols.includes('productType');
+        const hasNiche = asinCols.includes('seasonAndNiche');
+        if (hasPT || hasNiche) {
+          const rows = await q(`
+            SELECT a.asin,
+              ${hasPT    ? 'a.productType'    : 'NULL'} AS productType,
+              ${hasNiche ? 'a.seasonAndNiche' : 'NULL'} AS niche
+            FROM asin a WHERE a.asin IN (${ph})
+          `, asinSet, 10000);
+          if (rows.length && rows.some(r => r.productType || r.niche)) return rows;
+        }
+        // Fallback to seller_board_product
+        return await q(`
+          SELECT p.asin,
+            MAX(p.productType)    AS productType,
+            MAX(p.seasonAndNiche) AS niche
+          FROM seller_board_product p
+          WHERE p.asin IN (${ph}) AND p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+          GROUP BY p.asin
+        `, asinSet, 20000);
+      } catch(e) { console.warn('[cr-performance] ptNiche:', e.message); return []; }
+    })();
 
     const stockPromise = q(`
       SELECT s.asin, MIN(s.sku) AS sku, SUM(s.FBAStock) AS stock
@@ -2950,19 +2948,13 @@ app.get('/api/product/cr-performance', async (req, res) => {
       return adsCtrMap;
     })();
 
-    // Wait for all in parallel — 6 queries instead of 7 (saved 1 round-trip)
-    const [asinMaster, sbpFallbackRows, imageMap, stockRows, availRows, adsCtrMap] = await Promise.all([
-      masterPromise, sbpFallbackPromise, imagePromise, stockPromise, availPromise, adsCtrPromise
+    // Wait for all in parallel
+    const [asinMaster, tierRows, imageMap, sbpRows, stockRows, availRows, adsCtrMap] = await Promise.all([
+      masterPromise, tierPromise, imagePromise, ptNichePromise, stockPromise, availPromise, adsCtrPromise
     ]);
 
-    // tierMap is now built directly from masterMap (tier is part of master query)
     const tierMap = {};
-    asinMaster.forEach(r => { if (r.tier) tierMap[r.asin] = r.tier; });
-
-    // Use sbpFallback for ASINs where master query didn't return productType/niche
-    const sbpRows = asinMaster.length && asinMaster.some(r => r.productType || r.niche)
-      ? asinMaster.map(r => ({ asin: r.asin, productType: r.productType, niche: r.niche }))
-      : sbpFallbackRows;
+    tierRows.forEach(r => { if (!tierMap[r.asin]) tierMap[r.asin] = r.tier; });
 
     // Build lookup maps
     const masterMap = {}; asinMaster.forEach(r => { masterMap[r.asin] = r; });
@@ -3060,7 +3052,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       };
     });
 
-    res.json({ periodLabels, rows, totalAsins: Object.keys(asinTotals).length, limited: Object.keys(asinTotals).length > ASIN_LIMIT });
+    res.json({ periodLabels, rows });
   } catch(e) {
     console.error('[cr-performance]', e.message);
     res.status(500).json({ error: e.message });
