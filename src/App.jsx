@@ -3336,7 +3336,8 @@ function ProductCRPage({t,sd,ed,store}){
     background:t.card+' url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2394a3b8\' stroke-width=\'2.5\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 10px center',
     backgroundSize:'10px',color:t.text,fontSize:12,outline:'none',cursor:'pointer',appearance:'none',WebkitAppearance:'none',minWidth:100};
 
-  const years=[2024,2025,2026];
+  // Years dropdown: dynamically include current year and 2 previous years
+  const years=(()=>{const cy=new Date().getFullYear();return [cy-2,cy-1,cy];})();
 
   return<div>
     <style>{`
