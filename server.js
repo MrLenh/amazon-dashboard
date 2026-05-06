@@ -768,6 +768,26 @@ app.post('/api/cache/clear', (req, res) => {
 });
 
 // Debug pool stats — shows current MySQL connection usage
+app.get('/api/debug/cr-raw', async (req, res) => {
+  // Returns first 3 rows + periodLabels for given period to debug labels
+  const period = req.query.period || 'daily';
+  const year = parseInt(req.query.year) || new Date().getFullYear();
+  let url = `/api/product/cr-performance?period=${period}&year=${year}`;
+  if (period === 'daily') {
+    const e = new Date().toISOString().slice(0,10);
+    const s = new Date(Date.now() - 14*86400000).toISOString().slice(0,10);
+    url += `&start=${s}&end=${e}`;
+  }
+  res.json({
+    debug_url: url,
+    note: 'Fetch this URL to see actual response. Check periodLabels[0] and rows[0].periods keys.',
+    expected: {
+      daily: 'periodLabels = ["2026-04-22","2026-04-23",...] (date format)',
+      weekly: 'periodLabels = ["W17","W18",...]',
+      monthly: 'periodLabels = ["T1","T2",...]',
+    },
+  });
+});
 app.get('/api/debug/pool-stats', async (req, res) => {
   const stats = (p, name) => {
     if (!p) return { name, status: 'not initialized' };
