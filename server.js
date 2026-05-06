@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import crypto from 'crypto';
+import http from 'http';
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -678,7 +679,6 @@ const REFRESH_TIMEOUT_MS = 60 * 1000; // unflag refreshing after 60s safety
 
 // Background cache refresh: makes internal HTTP request with X-Cache-Refresh header
 // to force middleware to fetch fresh data and update cache.
-const http = require('http');
 function refreshCacheBg(req, cached) {
   const port = process.env.PORT || 3000;
   const cleanup = () => { if (cached) cached.refreshing = false; };
