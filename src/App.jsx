@@ -3171,6 +3171,20 @@ function ProductCRPage({t,sd,ed,store}){
   const[error,setError]=useState(null);
   const[search,setSearch]=useState('');
 
+  // ═══════════ VIRTUAL SCROLLING STATE ═══════════
+  // Render only rows currently visible in viewport. Massive speedup with 1500+ ASINs.
+  // Each table row is ~44px tall. With 600px viewport we render ~14 rows + 10 buffer = 24 rows total.
+  const ROW_HEIGHT = 44;
+  const VIEWPORT_HEIGHT = 600;
+  const BUFFER = 10; // extra rows above/below viewport for smooth scrolling
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollContainerRef = useRef(null);
+  // Reset scroll on period/filter change
+  useEffect(()=>{
+    if(scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    setScrollTop(0);
+  },[period,year,store,search,dateFrom,dateTo]);
+
   // Note: we deliberately DO NOT sync local dateFrom/dateTo with global sd/ed.
   // Once user picks their own range, it stays independent until they change period or navigate away.
 
@@ -3217,6 +3231,22 @@ function ProductCRPage({t,sd,ed,store}){
   const crClr  =v=>v==null?t.textMuted:v>=15?t.green:v>=8?t.text:t.orange;
   const ctrClr =v=>v==null?t.textMuted:v>=0.5?t.green:v>=0.2?t.text:t.orange;
   const crBg   =v=>v!=null&&v>=15?t.green+'14':v!=null&&v<8?t.orange+'14':'transparent';
+
+  // Virtual slice: given a list, return only rows visible in viewport plus padding rows for spacing.
+  // startIndex/endIndex bound the visible range; topPad/bottomPad are heights of empty space above/below.
+  const virtualSlice = (list)=>{
+    const total = list.length;
+    if (total <= 50) return { rows: list, topPad: 0, bottomPad: 0, startIndex: 0 };
+    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER);
+    const visibleCount = Math.ceil(VIEWPORT_HEIGHT / ROW_HEIGHT) + BUFFER * 2;
+    const endIndex = Math.min(total, startIndex + visibleCount);
+    const rows = list.slice(startIndex, endIndex);
+    const topPad = startIndex * ROW_HEIGHT;
+    const bottomPad = (total - endIndex) * ROW_HEIGHT;
+    return { rows, topPad, bottomPad, startIndex };
+  };
+
+  const handleScroll = (e)=>setScrollTop(e.currentTarget.scrollTop);
 
   // Solid header tints — semi-transparent backgrounds bleed through when scrolling sticky rows.
   // Using solid pastel hex ensures headers fully occlude scrolling content beneath.
@@ -3396,8 +3426,11 @@ function ProductCRPage({t,sd,ed,store}){
     {error&&<div style={{padding:'10px 14px',borderRadius:8,background:t.red+'18',border:'1px solid '+t.red+'44',fontSize:12,color:t.red,marginBottom:12}}>Error: {error}</div>}
 
     {/* ── DAILY VIEW ── */}
-    {!loading&&period==='daily'&&flatDaily.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
-      <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
+    {!loading&&period==='daily'&&flatDaily.length>0&&(()=>{
+      const v = virtualSlice(flatDaily);
+      const COLS = 5 + (hasAnyContent23?13:11); // info cols + 5 metric cols (CR, CTR Ads, Stock, Avail)
+      return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
         <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
           <thead><tr>
             <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
@@ -3406,28 +3439,38 @@ function ProductCRPage({t,sd,ed,store}){
             <th style={TH({textAlign:'right',minWidth:60,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
             <th style={TH({textAlign:'right',minWidth:55,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
           </tr></thead>
-          <tbody>{flatDaily.map((r,i)=>{
-            const isNew=i===0||r._date!==flatDaily[i-1]._date;
-            return<tr key={i}
-              >
-              <InfoTD r={r} hasDate hasSku={false} hasContent23={hasAnyContent23} dateVal={r._date} isNew={isNew}/>
-              <PctCell v={r._cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'2px solid '+t.primary+'44'}}/>
-              <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>
-              <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
-              <td style={TD({textAlign:'right',color:r.avail===0?t.textMuted:t.textSec})}>{r.avail}</td>
-            </tr>;
-          })}</tbody>
+          <tbody>
+            {v.topPad>0 && <tr style={{height:v.topPad}}><td colSpan={COLS}/></tr>}
+            {v.rows.map((r,localI)=>{
+              const i = v.startIndex + localI;
+              const prevRow = i>0 ? flatDaily[i-1] : null;
+              const isNew = !prevRow || r._date !== prevRow._date;
+              return <tr key={i} style={{height:ROW_HEIGHT}}>
+                <InfoTD r={r} hasDate hasSku={false} hasContent23={hasAnyContent23} dateVal={r._date} isNew={isNew}/>
+                <PctCell v={r._cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'2px solid '+t.primary+'44'}}/>
+                <PctCell v={r._adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>
+                <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
+                <td style={TD({textAlign:'right',color:r.avail===0?t.textMuted:t.textSec})}>{r.avail}</td>
+              </tr>;
+            })}
+            {v.bottomPad>0 && <tr style={{height:v.bottomPad}}><td colSpan={COLS}/></tr>}
+          </tbody>
         </table>
       </div>
       <TableFooter t={t} count={flatDaily.length} label="entries" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
         {label:'CR = unitSessionPercentage (daily)'},{label:'CTR Ads = from advertising report'}
       ]}/>
-    </div>}
+    </div>;
+    })()}
 
     {/* ── WEEKLY VIEW ── */}
-    {!loading&&period==='weekly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
-      <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
+    {!loading&&period==='weekly'&&filtered.length>0&&periodLabels.length>0&&(()=>{
+      const v = virtualSlice(filtered);
+      const INFO_COLS = hasAnyContent23 ? 13 : 11;
+      const COLS = INFO_COLS + periodLabels.length * 3;
+      return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
         <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
@@ -3446,28 +3489,37 @@ function ProductCRPage({t,sd,ed,store}){
               ])}
             </tr>
           </thead>
-          <tbody>{filtered.map((r,i)=>(
-            <tr key={i}
-                >
-              <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
-              {periodLabels.map(w=>{const p=r.periods[w]||{};return[
-                <PctCell key={w+'-cr'}  v={p.cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
-                <PctCell key={w+'-ctr'} v={p.ctr}    cf={ctrClr}/>,
-                <PctCell key={w+'-ads'} v={p.adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>,
-              ];})}
-            </tr>
-          ))}</tbody>
+          <tbody>
+            {v.topPad>0 && <tr style={{height:v.topPad}}><td colSpan={COLS}/></tr>}
+            {v.rows.map((r,localI)=>{
+              const i = v.startIndex + localI;
+              return <tr key={r.asin||i} style={{height:ROW_HEIGHT}}>
+                <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
+                {periodLabels.map(w=>{const p=r.periods[w]||{};return[
+                  <PctCell key={w+'-cr'}  v={p.cr}     cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
+                  <PctCell key={w+'-ctr'} v={p.ctr}    cf={ctrClr}/>,
+                  <PctCell key={w+'-ads'} v={p.adsCtr} cf={ctrClr} extraStyle={{background:t.orange+'14'}}/>,
+                ];})}
+              </tr>;
+            })}
+            {v.bottomPad>0 && <tr style={{height:v.bottomPad}}><td colSpan={COLS}/></tr>}
+          </tbody>
         </table>
       </div>
       <TableFooter t={t} count={filtered.length} label="ASINs" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
         {label:'3 metrics/week: CR · CTR (organic search) · Ads CTR (sponsored)'}
       ]}/>
-    </div>}
+    </div>;
+    })()}
 
     {/* ── MONTHLY VIEW ── */}
-    {!loading&&period==='monthly'&&filtered.length>0&&periodLabels.length>0&&<div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
-      <div style={{overflowX:'auto',maxHeight:640,overflowY:'auto'}}>
+    {!loading&&period==='monthly'&&filtered.length>0&&periodLabels.length>0&&(()=>{
+      const v = virtualSlice(filtered);
+      const INFO_COLS = hasAnyContent23 ? 13 : 11;
+      const COLS = INFO_COLS + 1 + periodLabels.length * 2; // +1 for Stock col
+      return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
+      <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
         <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead>
             <tr>
@@ -3486,24 +3538,29 @@ function ProductCRPage({t,sd,ed,store}){
               ])}
             </tr>
           </thead>
-          <tbody>{filtered.map((r,i)=>(
-            <tr key={i}
-                >
-              <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
-              <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
-              {periodLabels.map(m=>{const p=r.periods[m]||{};return[
-                <PctCell key={m+'-cr'}  v={p.cr}  cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
-                <PctCell key={m+'-ctr'} v={p.ctr} cf={ctrClr}/>,
-              ];})}
-            </tr>
-          ))}</tbody>
+          <tbody>
+            {v.topPad>0 && <tr style={{height:v.topPad}}><td colSpan={COLS}/></tr>}
+            {v.rows.map((r,localI)=>{
+              const i = v.startIndex + localI;
+              return <tr key={r.asin||i} style={{height:ROW_HEIGHT}}>
+                <InfoTD r={r} hasDate={false} hasSku hasContent23={hasAnyContent23} isNew={false}/>
+                <td style={TD({textAlign:'right',fontWeight:600,color:r.stock===0?t.textMuted:t.text})}>{r.stock}</td>
+                {periodLabels.map(m=>{const p=r.periods[m]||{};return[
+                  <PctCell key={m+'-cr'}  v={p.cr}  cf={crClr}  bg={crBg}  extraStyle={{borderLeft:'1px solid '+t.divider}}/>,
+                  <PctCell key={m+'-ctr'} v={p.ctr} cf={ctrClr}/>,
+                ];})}
+              </tr>;
+            })}
+            {v.bottomPad>0 && <tr style={{height:v.bottomPad}}><td colSpan={COLS}/></tr>}
+          </tbody>
         </table>
       </div>
       <TableFooter t={t} count={filtered.length} label="ASINs" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
         {label:'CR = unitSessionPercentage · CTR = organic search CTR'}
       ]}/>
-    </div>}
+    </div>;
+    })()}
 
     {!loading&&!error&&(period==='daily'?flatDaily.length===0:filtered.length===0)&&<div style={{textAlign:'center',padding:80,color:t.textMuted,fontSize:13,borderRadius:12,border:'1px dashed '+t.cardBorder,background:t.card}}>
       <div style={{fontSize:28,marginBottom:8,opacity:.3}}>—</div>
@@ -5016,31 +5073,12 @@ function Dashboard({authUser,onLogout}){
     return()=>{cancelled=true};
   },[fetchTrigger]);
 
-  // ═══════════ SMART PRELOAD ═══════════
-  // Strategy: only auto-preload Product Performance (most-used page).
-  // Other pages (Inventory/Shops/Team) load on hover via prefetchPage() — see sidebar handler.
-  // This balances anh dev's "query when needed" with user's "click should be instant".
+  // ═══════════ SMART PRELOAD — DISABLED ═══════════
+  // Per anh dev's request: "vào xem cái nào thì chỉ cần query cái đó thôi"
+  // Auto-preload was firing 14s+ queries in background. Now disabled.
+  // Hover-prefetch (below) still runs since it only fires when user actually intends to visit.
   const preloadStartedRef=useRef(null);
-  useEffect(()=>{
-    if(!live||dbConnecting||loading)return;
-    if(fetchTrigger===0)return;
-    const{sd:_sd,ed:_ed,store:_st,seller:_sl,asinF:_af}=fetchParamsRef.current;
-    const cacheKey=JSON.stringify({_sd,_ed,_st,_sl,_af,_pt:fetchParamsRef.current.productType,_ni:fetchParamsRef.current.niche});
-    if(preloadStartedRef.current===cacheKey)return;
-    preloadStartedRef.current=cacheKey;
-    // Wait 1.5s so we don't compete with current page render.
-    const timer=setTimeout(()=>{
-      const fetched=fetchCacheRef.current.pages;
-      if(fetched.has('asins:'+cacheKey))return; // already cached
-      // Auto-preload only Product Performance (most frequently visited page).
-      api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(asins=>{
-        const arr=v=>Array.isArray(v)?v:[];
-        setFAsin(arr(asins).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));
-        fetched.add('asins:'+cacheKey);
-      }).catch(()=>{});
-    },1500);
-    return()=>clearTimeout(timer);
-  },[loading,fetchTrigger,live,dbConnecting]);
+  // (preload effect disabled)
 
   // ═══════════ HOVER PREFETCH ═══════════
   // When user hovers over a sidebar tab, prefetch its data. Browser typically gives
@@ -5181,10 +5219,10 @@ function Dashboard({authUser,onLogout}){
   const planParamsRef=useRef({planYear,store,seller,asinF});
   planParamsRef.current={planYear,store,seller,asinF};
   useEffect(()=>{
-    if(!live||dbConnecting)return;
+    if(!live||dbConnecting||pg!=='plan')return;
     const timer=setTimeout(()=>setPlanTrigger(t=>t+1),400);
     return()=>clearTimeout(timer);
-  },[planYear,store,seller,asinF,live,dbConnecting]);
+  },[planYear,store,seller,asinF,live,dbConnecting,pg]);
   useEffect(()=>{
     if(!live||dbConnecting||planTrigger===0)return;
     let cancelled=false;
