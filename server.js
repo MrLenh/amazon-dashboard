@@ -2081,8 +2081,9 @@ app.get('/api/plan/actuals', async (req, res) => {
     }
 
     // ═══ BATCH 1: Run main queries in PARALLEL (was sequential → ~3x faster) ═══
+    // Use date range BETWEEN instead of YEAR() function — allows MySQL to use index on startDate
     const impWhere=(prefix)=>{
-      let iw=`WHERE YEAR(${prefix}.startDate)=?`; const ip=[yr];
+      let iw=`WHERE ${prefix}.startDate BETWEEN ? AND ?`; const ip=[`${yr}-01-01`,`${yr}-12-31`];
       { const _ac=accIdClause(prefix,accId); iw+=_ac.w; ip.push(..._ac.p); }
       if(af && af!=='All'){iw+=` AND ${prefix}.asin=?`;ip.push(af);}
       else if(selAsins.length){iw+=` AND ${prefix}.asin IN (${selAsins.map(()=>'?').join(',')})`;ip.push(...selAsins);}
