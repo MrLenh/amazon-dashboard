@@ -3223,6 +3223,7 @@ function ProductCRPage({t,sd,ed,store}){
   const [colFilters, setColFilters] = useState({});  // { stores: Set, productType: Set, ... }
   const [openFilter, setOpenFilter] = useState(null); // which column's dropdown is open
   const [filterSearch, setFilterSearch] = useState(''); // search inside dropdown
+  const [filterDropPos, setFilterDropPos] = useState(null); // {top, left} for dropdown position
   // Toggle a value in column filter
   const toggleColFilter = (col, val) => {
     setColFilters(prev => {
@@ -3267,15 +3268,30 @@ function ProductCRPage({t,sd,ed,store}){
   useEffect(()=>{
     setLoading(true);setError(null);
     setData(null);setPeriodLabels([]);
+    let cancelled = false;
     const params={period,year,store};
     if(period==='daily'){params.start=dateFrom;params.end=dateTo;}
     api('product/cr-performance',params)
       .then(res=>{
+        if (cancelled) return;
         setPeriodLabels(res.periodLabels||[]);
         setData(res.rows||[]);
         setLoading(false);
       })
-      .catch(e=>{setError(e.message);setData([]);setLoading(false);});
+      .catch(e=>{
+        if (cancelled) return;
+        // Suppress AbortError (effect cleanup, navigation) — those aren't real errors
+        const msg = e?.message || '';
+        if (e?.name === 'AbortError' || /aborted|signal/i.test(msg)) {
+          // Don't show error UI for aborts; just stop loading silently
+          setLoading(false);
+          return;
+        }
+        setError(msg || 'Failed to load');
+        setData([]);
+        setLoading(false);
+      });
+    return ()=>{ cancelled = true; };
   },[period,year,store,dateFrom,dateTo]);
 
   const filtered=useMemo(()=>{
@@ -3535,28 +3551,30 @@ function ProductCRPage({t,sd,ed,store}){
     const filteredValues = filterSearch
       ? values.filter(v => v.toLowerCase().includes(filterSearch.toLowerCase()))
       : values;
-    const triggerRef = useRef(null);
-    const [dropPos, setDropPos] = useState(null);
-    // Compute dropdown position from trigger button rect (use position:fixed to escape table layout)
-    useEffect(()=>{
-      if (!isOpen || !triggerRef.current) return;
-      const rect = triggerRef.current.getBoundingClientRect();
-      setDropPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
-    },[isOpen]);
+    const dropPos = isOpen ? (filterDropPos || {top:60,left:60}) : null;
 
     return (
       <th {...thProps} style={{...thProps.style, userSelect:'none'}}>
         <div style={{display:'flex',alignItems:'center',gap:3,minWidth:0}}>
-          {/* Click name to sort */}
           <span onClick={()=>toggleSort(sortKeyVal)}
                 style={{cursor:'pointer',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                 title={isSortActive?(sortDir==='asc'?'Sorted asc — click to flip':'Sorted desc — click to flip'):'Click to sort'}>
             {children}
             {sortArrow && <span style={{marginLeft:3,fontSize:9,color:t.primary,fontWeight:900}}>{sortArrow}</span>}
           </span>
-          {/* Filter trigger button */}
-          <button ref={triggerRef} className="col-filter-trigger"
-            onClick={(e)=>{e.stopPropagation(); setOpenFilter(o=>o===filterKey?null:filterKey); setFilterSearch('');}}
+          <button className="col-filter-trigger"
+            onClick={(e)=>{
+              e.stopPropagation();
+              if (openFilter === filterKey) {
+                setOpenFilter(null); setFilterSearch('');
+              } else {
+                // Compute drop position from this button's rect
+                const rect = e.currentTarget.getBoundingClientRect();
+                setFilterDropPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                setOpenFilter(filterKey);
+                setFilterSearch('');
+              }
+            }}
             title={isFilterActive ? `${selected.size} selected — click to edit` : 'Filter'}
             style={{
               flexShrink:0,border:'none',
