@@ -3469,12 +3469,12 @@ function ProductCRPage({t,sd,ed,store}){
     date: 130,
     asin: 130,
     sku: 170,
-    stores: 130,        // bumped to fit multiple store badges
+    stores: 145,        // multi badges + filter icon
     design: 60,
-    productType: 120,
-    niche: 130,
-    tier: 110,
-    sellers: 80,
+    productType: 145,
+    niche: 150,
+    tier: 130,
+    sellers: 110,
     content: 140,
     image: 120,
     content2: 120,
@@ -3527,8 +3527,7 @@ function ProductCRPage({t,sd,ed,store}){
   // FilterableTH: sort + Excel-style dropdown filter (checkboxes for unique values)
   const FilterableTH = ({sortKeyVal, filterKey, children, ...thProps}) => {
     const isSortActive = sortKey === sortKeyVal;
-    const sortArrow = isSortActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
-    const sortOpacity = isSortActive ? 1 : 0.25;
+    const sortArrow = isSortActive ? (sortDir === 'asc' ? '▲' : '▼') : '';
     const isFilterActive = hasColFilter(filterKey);
     const isOpen = openFilter === filterKey;
     const values = uniqueValues[filterKey] || [];
@@ -3536,71 +3535,73 @@ function ProductCRPage({t,sd,ed,store}){
     const filteredValues = filterSearch
       ? values.filter(v => v.toLowerCase().includes(filterSearch.toLowerCase()))
       : values;
-    return (
-      <th {...thProps} style={{...thProps.style, position:'relative', userSelect:'none'}}>
-        <span style={{display:'inline-flex',alignItems:'center',gap:4,width:'100%'}}>
-          {/* Sort label — clicking sorts */}
-          <span onClick={()=>toggleSort(sortKeyVal)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,flex:1}}
-                title={isSortActive ? (sortDir==='asc'?'Sorted asc — flip':'Sorted desc — flip') : 'Click to sort'}>
-            {children}
-            <span style={{fontSize:9,opacity:sortOpacity,color:isSortActive?t.primary:t.textMuted,fontWeight:isSortActive?900:600}}>{sortArrow}</span>
-          </span>
-          {/* Filter button */}
-          <button className="col-filter-trigger"
-            onClick={(e)=>{e.stopPropagation(); setOpenFilter(o=>o===filterKey?null:filterKey); setFilterSearch('');}}
-            title={isFilterActive ? `Filtered: ${selected.size} selected` : 'Click to filter'}
-            style={{
-              border:'none',background:isFilterActive?t.primary:'transparent',
-              color:isFilterActive?'#fff':t.textMuted,cursor:'pointer',padding:'2px 5px',
-              borderRadius:4,fontSize:10,lineHeight:1,marginLeft:2,
-              fontWeight:isFilterActive?800:600,
-            }}>
-            {/* funnel icon */}
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{verticalAlign:'middle'}}>
-              <path d="M1.5 2h13l-5 7v5l-3-1.5V9z"/>
-            </svg>
-            {isFilterActive && <span style={{marginLeft:3}}>{selected.size}</span>}
-          </button>
-        </span>
+    const triggerRef = useRef(null);
+    const [dropPos, setDropPos] = useState(null);
+    // Compute dropdown position from trigger button rect (use position:fixed to escape table layout)
+    useEffect(()=>{
+      if (!isOpen || !triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+    },[isOpen]);
 
-        {/* Dropdown */}
-        {isOpen && <div className="col-filter-dropdown" onClick={e=>e.stopPropagation()}
+    return (
+      <th {...thProps} style={{...thProps.style, userSelect:'none'}}>
+        <div style={{display:'flex',alignItems:'center',gap:3,minWidth:0}}>
+          {/* Click name to sort */}
+          <span onClick={()=>toggleSort(sortKeyVal)}
+                style={{cursor:'pointer',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+                title={isSortActive?(sortDir==='asc'?'Sorted asc — click to flip':'Sorted desc — click to flip'):'Click to sort'}>
+            {children}
+            {sortArrow && <span style={{marginLeft:3,fontSize:9,color:t.primary,fontWeight:900}}>{sortArrow}</span>}
+          </span>
+          {/* Filter trigger button */}
+          <button ref={triggerRef} className="col-filter-trigger"
+            onClick={(e)=>{e.stopPropagation(); setOpenFilter(o=>o===filterKey?null:filterKey); setFilterSearch('');}}
+            title={isFilterActive ? `${selected.size} selected — click to edit` : 'Filter'}
+            style={{
+              flexShrink:0,border:'none',
+              background:isFilterActive?t.primary:'transparent',
+              color:isFilterActive?'#fff':t.textMuted,
+              cursor:'pointer',padding:'3px 4px',
+              borderRadius:4,fontSize:9,lineHeight:1,
+              display:'inline-flex',alignItems:'center',gap:2,
+            }}>
+            <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2h13l-5 7v5l-3-1.5V9z"/></svg>
+            {isFilterActive && <span style={{fontSize:9,fontWeight:800}}>{selected.size}</span>}
+          </button>
+        </div>
+
+        {isOpen && dropPos && <div className="col-filter-dropdown" onClick={e=>e.stopPropagation()}
           style={{
-            position:'absolute',top:'100%',right:0,marginTop:4,
+            position:'fixed',top:dropPos.top,left:dropPos.left,
             background:t.card,border:'1px solid '+t.cardBorder,borderRadius:8,
-            boxShadow:'0 4px 16px rgba(0,0,0,.18)',
-            width:240,maxHeight:380,zIndex:100,
+            boxShadow:'0 6px 20px rgba(0,0,0,.2)',
+            width:240,maxHeight:380,zIndex:1000,
             display:'flex',flexDirection:'column',
           }}>
-          {/* Search box */}
           <div style={{padding:8,borderBottom:'1px solid '+t.divider}}>
             <input value={filterSearch} onChange={e=>setFilterSearch(e.target.value)}
-              placeholder="Search..." autoFocus
-              style={{width:'100%',padding:'5px 8px',fontSize:11.5,border:'1px solid '+t.inputBorder,
+              placeholder="Search values..." autoFocus
+              style={{width:'100%',padding:'6px 9px',fontSize:11.5,border:'1px solid '+t.inputBorder,
                 background:t.tableBg,color:t.text,borderRadius:5,outline:'none',boxSizing:'border-box'}}/>
           </div>
-          {/* Select all / clear */}
           <div style={{padding:'6px 10px',borderBottom:'1px solid '+t.divider,
-            display:'flex',gap:8,fontSize:11}}>
-            <button onClick={()=>{
-              setColFilters(prev=>({...prev,[filterKey]:new Set(filteredValues)}));
-            }} style={{background:'transparent',border:'none',color:t.primary,cursor:'pointer',fontSize:11,fontWeight:600,padding:0}}>Select all</button>
+            display:'flex',gap:10,fontSize:11,alignItems:'center'}}>
+            <button onClick={()=>setColFilters(prev=>({...prev,[filterKey]:new Set(filteredValues)}))}
+              style={{background:'transparent',border:'none',color:t.primary,cursor:'pointer',fontSize:11,fontWeight:600,padding:0}}>Select all</button>
             <span style={{color:t.textMuted}}>·</span>
             <button onClick={()=>clearColFilter(filterKey)}
               style={{background:'transparent',border:'none',color:t.primary,cursor:'pointer',fontSize:11,fontWeight:600,padding:0}}>Clear</button>
-            <span style={{marginLeft:'auto',color:t.textMuted,fontSize:10}}>{selected.size}/{values.length}</span>
+            <span style={{marginLeft:'auto',color:t.textMuted,fontSize:10,fontWeight:600}}>{selected.size}/{values.length}</span>
           </div>
-          {/* Value checkboxes */}
-          <div style={{flex:1,overflowY:'auto',padding:'4px 0'}}>
+          <div style={{flex:1,overflowY:'auto',padding:'4px 0',maxHeight:280}}>
             {filteredValues.length === 0 ? (
-              <div style={{padding:'12px',textAlign:'center',color:t.textMuted,fontSize:11}}>No values</div>
+              <div style={{padding:'14px',textAlign:'center',color:t.textMuted,fontSize:11}}>No values</div>
             ) : filteredValues.map(v => {
               const checked = selected.has(v);
-              return <label key={v} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 12px',cursor:'pointer',
+              return <label key={v} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',cursor:'pointer',
                 fontSize:11.5,color:t.text,fontWeight:400,
-                background:checked?t.primaryLight:'transparent'}}
-                onMouseEnter={e=>{if(!checked)e.currentTarget.style.background=t.tableHover;}}
-                onMouseLeave={e=>{if(!checked)e.currentTarget.style.background='transparent';}}>
+                background:checked?t.primaryLight:'transparent'}}>
                 <input type="checkbox" checked={checked} onChange={()=>toggleColFilter(filterKey, v)}
                   style={{margin:0,cursor:'pointer'}}/>
                 <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{v}</span>
