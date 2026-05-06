@@ -3234,7 +3234,7 @@ function ProductCRPage({t,sd,ed,store}){
     const q=search.toLowerCase();
     return data.filter(r=>
       r.asin?.toLowerCase().includes(q)||r.sku?.toLowerCase().includes(q)||
-      r.store?.toLowerCase().includes(q)||r.sellers?.toLowerCase().includes(q)||
+      r.store?.toLowerCase().includes(q)||(r.stores||[]).some(s=>s.toLowerCase().includes(q))||r.sellers?.toLowerCase().includes(q)||
       r.content1?.toLowerCase().includes(q)||r.content2?.toLowerCase().includes(q)||
       r.content3?.toLowerCase().includes(q)||r.image?.toLowerCase().includes(q)||
       r.productType?.toLowerCase().includes(q)||r.niche?.toLowerCase().includes(q)||
@@ -3328,40 +3328,76 @@ function ProductCRPage({t,sd,ed,store}){
     whiteSpace:'nowrap',letterSpacing:.4,...extra});
   const TD=(extra={})=>({padding:'9px 10px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
 
+  // ═══════════ COLUMN WIDTH CONFIG ═══════════
+  // Widths used by both <colgroup> (lock layout) and <th> (display).
+  // Order MUST match render order in InfoTH/InfoTD.
+  const COL_WIDTHS = {
+    date: 110,
+    asin: 130,
+    sku: 170,
+    stores: 130,        // bumped to fit multiple store badges
+    design: 60,
+    productType: 120,
+    niche: 130,
+    tier: 110,
+    sellers: 80,
+    content: 140,
+    image: 120,
+    content2: 120,
+    content3: 120,
+  };
+
+  // Build <colgroup> for given table config — guarantees fixed widths regardless of content/scroll.
+  const InfoColgroup = ({hasSku, hasDate, hasContent23, extraCols=[]})=>{
+    const cols = [];
+    if (hasDate) cols.push(COL_WIDTHS.date);
+    cols.push(COL_WIDTHS.asin);
+    if (hasSku) cols.push(COL_WIDTHS.sku);
+    cols.push(COL_WIDTHS.stores, COL_WIDTHS.design, COL_WIDTHS.productType, COL_WIDTHS.niche, COL_WIDTHS.tier, COL_WIDTHS.sellers, COL_WIDTHS.content, COL_WIDTHS.image);
+    if (hasContent23) cols.push(COL_WIDTHS.content2, COL_WIDTHS.content3);
+    const allCols = [...cols, ...extraCols];
+    return <colgroup>{allCols.map((w,i)=><col key={i} style={{width:w}}/>)}</colgroup>;
+  };
+
   const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
     const baseStick={position:'sticky',top:0,background:t.tableBg};
     const rs=rowSpan>1?{rowSpan}:{};
     return<>
-      {hasDate&&<th {...rs} className="sticky-col" style={TH({textAlign:'left',width:110,...baseStick,left:0,zIndex:7})}>Date</th>}
-      <th {...rs} className="sticky-col" style={TH({textAlign:'left',width:130,color:t.primary,...baseStick,left:hasDate?110:0,zIndex:7})}>ASIN</th>
-      {hasSku&&<th {...rs} style={TH({textAlign:'left',width:170,...baseStick,zIndex:5})}>SKU</th>}
-      <th {...rs} style={TH({textAlign:'left',width:90, ...baseStick,zIndex:5})}>Stores</th>
-      <th {...rs} style={TH({textAlign:'center',width:60,...baseStick,zIndex:5})}>Design</th>
-      <th {...rs} style={TH({textAlign:'left',width:120,...baseStick,zIndex:5})}>Product Type</th>
-      <th {...rs} style={TH({textAlign:'left',width:130,...baseStick,zIndex:5})}>Niche/Theme</th>
-      <th {...rs} style={TH({textAlign:'left',width:110,...baseStick,zIndex:5})}>Tier</th>
-      <th {...rs} style={TH({textAlign:'left',width:80, ...baseStick,zIndex:5})}>Sellers</th>
-      <th {...rs} style={TH({textAlign:'left',width:140,color:t.primary,...baseStick,zIndex:5})}>Content</th>
-      <th {...rs} style={TH({textAlign:'left',width:120,color:t.purple||'#7C3AED',...baseStick,zIndex:5})}>Image</th>
+      {hasDate&&<th {...rs} className="sticky-col" style={TH({textAlign:'left',...baseStick,left:0,zIndex:7})}>Date</th>}
+      <th {...rs} className="sticky-col" style={TH({textAlign:'left',color:t.primary,...baseStick,left:hasDate?COL_WIDTHS.date:0,zIndex:7})}>ASIN</th>
+      {hasSku&&<th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>SKU</th>}
+      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Stores</th>
+      <th {...rs} style={TH({textAlign:'center',...baseStick,zIndex:5})}>Design</th>
+      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Product Type</th>
+      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Niche/Theme</th>
+      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Tier</th>
+      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Sellers</th>
+      <th {...rs} style={TH({textAlign:'left',color:t.primary,...baseStick,zIndex:5})}>Content</th>
+      <th {...rs} style={TH({textAlign:'left',color:t.purple||'#7C3AED',...baseStick,zIndex:5})}>Image</th>
       {hasContent23&&<>
-        <th {...rs} style={TH({textAlign:'left',width:120,color:t.primary,...baseStick,zIndex:5})}>Content 2</th>
-        <th {...rs} style={TH({textAlign:'left',width:120,color:t.primary,...baseStick,zIndex:5})}>Content 3</th>
+        <th {...rs} style={TH({textAlign:'left',color:t.primary,...baseStick,zIndex:5})}>Content 2</th>
+        <th {...rs} style={TH({textAlign:'left',color:t.primary,...baseStick,zIndex:5})}>Content 3</th>
       </>}
     </>;
   };
 
+  // Render store badges (multi-store: r.stores array; single-store: r.store fallback)
+  const StoreBadges = ({r})=>{
+    const list = (r.stores && r.stores.length) ? r.stores : (r.store ? [r.store] : []);
+    if (!list.length) return <span style={{color:t.textMuted}}>—</span>;
+    return <div style={{display:'flex',flexWrap:'wrap',gap:3}}>{list.map((s,i)=>(
+      <span key={i} style={{padding:'2px 8px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{s}</span>
+    ))}</div>;
+  };
+
   const InfoTD=({r,hasSku,hasDate,dateVal,isNew,hasContent23})=>{
     const bTop=isNew?'2px solid '+t.primary+'55':'none';
-    // Frozen cells need solid bg. Use t.card (matches row default).
-    // The row's :hover bg is handled by the row-level hover effect, but sticky cells override
-    // it because they have explicit background. We solve by making sticky cells use
-    // 'inherit' — they pick up tr background.
     const stickyBase={position:'sticky',background:t.card,zIndex:2};
     return<>
       {hasDate&&<td className="sticky-col" style={TD({fontWeight:600,color:t.text,borderTop:bTop,whiteSpace:'nowrap',fontSize:11,left:0,...stickyBase})}>{dateVal}</td>}
-      <td className="sticky-col" style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,left:hasDate?110:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
-      {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
-      <td style={TD({borderTop:bTop})}><span style={{padding:'2px 8px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600}}>{r.store||'—'}</span></td>
+      <td className="sticky-col" style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,left:hasDate?COL_WIDTHS.date:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
+      {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
+      <td style={TD({borderTop:bTop})}><StoreBadges r={r}/></td>
       <td style={TD({textAlign:'center',borderTop:bTop,padding:'6px 10px'})}><DesignImg r={r}/></td>
       <td style={TD({borderTop:bTop})}>{r.productType?<span style={{padding:'2px 8px',borderRadius:10,background:'#FEF3CD',color:'#856404',fontSize:10,fontWeight:600}}>{r.productType}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
       <td style={TD({borderTop:bTop})}>{r.niche?<span style={{padding:'2px 8px',borderRadius:10,background:'#E0F2FE',color:'#0369A1',fontSize:10,fontWeight:600}}>{r.niche}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
@@ -3374,6 +3410,14 @@ function ProductCRPage({t,sd,ed,store}){
         <td style={TD({borderTop:bTop})}><ContentBadges vals={[r.content3]}/></td>
       </>}
     </>;
+  };
+
+  // Average row — spans info columns then shows avg metric per period.
+  // Uses colSpan to skip info cells, then renders averaged metric cells.
+  const avgOf = (arr) => {
+    const valid = arr.filter(v => v != null && !isNaN(v));
+    if (!valid.length) return null;
+    return valid.reduce((s,v)=>s+v,0) / valid.length;
   };
 
   const PctCell=({v,cf,bg,extraStyle={}})=>(
@@ -3462,17 +3506,30 @@ function ProductCRPage({t,sd,ed,store}){
     {/* ── DAILY VIEW ── */}
     {!loading&&period==='daily'&&flatDaily.length>0&&(()=>{
       const v = virtualSlice(flatDaily);
-      const COLS = 5 + (hasAnyContent23?13:11); // info cols + 5 metric cols (CR, CTR Ads, Stock, Avail)
+      const COLS = 4 + (hasAnyContent23?13:11);
+      // Average row: across visible (filtered) entries
+      const avgCR     = avgOf(flatDaily.map(r=>r._cr));
+      const avgAdsCtr = avgOf(flatDaily.map(r=>r._adsCtr));
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:'100%'}}>
-          <thead><tr>
-            <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
-            <th style={TH({textAlign:'center',width:90,borderLeft:"2px solid "+t.primary+"44",background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</th>
-            <th style={TH({textAlign:'center',width:95,background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CTR Ads</th>
-            <th style={TH({textAlign:'right',width:75,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
-            <th style={TH({textAlign:'right',width:70,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
-          </tr></thead>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <InfoColgroup hasDate hasSku={false} hasContent23={hasAnyContent23} extraCols={[90,95,75,70]}/>
+          <thead>
+            <tr>
+              <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
+              <th style={TH({textAlign:'center',borderLeft:"2px solid "+t.primary+"44",background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</th>
+              <th style={TH({textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CTR Ads</th>
+              <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
+              <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
+            </tr>
+            {/* Average row — sticky just below header */}
+            <tr className="avg-row">
+              <td colSpan={(hasAnyContent23?13:11)} style={{padding:'8px 12px',background:t.primaryLight+'88',borderBottom:'2px solid '+t.primary+'66',fontSize:11,fontWeight:800,color:t.primary,letterSpacing:.4,textTransform:'uppercase',position:'sticky',top:36,zIndex:6}}>AVERAGE ({flatDaily.length})</td>
+              <td style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',borderLeft:'2px solid '+t.primary+'44',fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36,zIndex:5}}>{avgCR!=null?avgCR.toFixed(2)+'%':'—'}</td>
+              <td style={{...TD(),textAlign:'center',background:t.orange+'33',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.orange,position:'sticky',top:36,zIndex:5}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
+              <td colSpan={2} style={{background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',position:'sticky',top:36,zIndex:5}}/>
+            </tr>
+          </thead>
           <tbody>
             {v.topPad>0 && <tr style={{height:v.topPad}}><td colSpan={COLS}/></tr>}
             {v.rows.map((r,localI)=>{
@@ -3493,7 +3550,7 @@ function ProductCRPage({t,sd,ed,store}){
       </div>
       <TableFooter t={t} count={flatDaily.length} label="entries" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
-        {label:'CR = unitSessionPercentage (daily)'},{label:'CTR Ads = from advertising report'}
+        {label:'AVG row reflects filtered data'},
       ]}/>
     </div>;
     })()}
@@ -3503,24 +3560,42 @@ function ProductCRPage({t,sd,ed,store}){
       const v = virtualSlice(filtered);
       const INFO_COLS = hasAnyContent23 ? 13 : 11;
       const COLS = INFO_COLS + periodLabels.length * 3;
+      // Compute average per period across filtered ASINs
+      const periodAvg = periodLabels.map(w=>({
+        cr:     avgOf(filtered.map(r=>r.periods[w]?.cr)),
+        ctr:    avgOf(filtered.map(r=>r.periods[w]?.ctr)),
+        adsCtr: avgOf(filtered.map(r=>r.periods[w]?.adsCtr)),
+      }));
+      // Per-week column widths for colgroup: [CR, CTR, AdsCTR]
+      const periodColWidths = periodLabels.flatMap(()=>[70,70,85]);
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
         <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
               <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
               {periodLabels.map(w=>(
-                <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',width:225,fontWeight:800,position:'sticky',top:0,zIndex:5})}>
+                <th key={w} colSpan={3} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',fontWeight:800,position:'sticky',top:0,zIndex:5})}>
                   Report {w} {year}
                 </th>
               ))}
             </tr>
             <tr>
               {periodLabels.map(w=>[
-                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',width:70,position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
-                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',width:70,background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
-                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',width:85,background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
+                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
+                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
+                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
               ])}
+            </tr>
+            {/* Average row */}
+            <tr className="avg-row">
+              <td colSpan={INFO_COLS} style={{padding:'8px 12px',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontSize:11,fontWeight:800,color:t.primary,letterSpacing:.4,textTransform:'uppercase',position:'sticky',top:36+ROW2_TOP-36+36,zIndex:6,left:0}}>AVERAGE ({filtered.length} ASIN)</td>
+              {periodLabels.map((w,i)=>{const a=periodAvg[i];return[
+                <td key={w+'-avg-cr'}  style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',borderLeft:'1px solid '+t.divider,fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-ctr'} style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-ads'} style={{...TD(),textAlign:'center',background:t.orange+'33',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.orange,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.adsCtr!=null?a.adsCtr.toFixed(2)+'%':'—'}</td>,
+              ];})}
             </tr>
           </thead>
           <tbody>
@@ -3542,7 +3617,7 @@ function ProductCRPage({t,sd,ed,store}){
       </div>
       <TableFooter t={t} count={filtered.length} label="ASINs" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
-        {label:'3 metrics/week: CR · CTR (organic search) · Ads CTR (sponsored)'}
+        {label:'AVG row reflects current filters'},
       ]}/>
     </div>;
     })()}
@@ -3552,24 +3627,39 @@ function ProductCRPage({t,sd,ed,store}){
       const v = virtualSlice(filtered);
       const INFO_COLS = hasAnyContent23 ? 13 : 11;
       const COLS = INFO_COLS + 1 + periodLabels.length * 2; // +1 for Stock col
+      const periodAvg = periodLabels.map(m=>({
+        cr:  avgOf(filtered.map(r=>r.periods[m]?.cr)),
+        ctr: avgOf(filtered.map(r=>r.periods[m]?.ctr)),
+      }));
+      const periodColWidths = [75, ...periodLabels.flatMap(()=>[70,70])];
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
         <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
               <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
-              <th rowSpan={2} style={TH({textAlign:'right',width:75,position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
+              <th rowSpan={2} style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
               {periodLabels.map(m=>(
-                <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',width:140,fontWeight:800,position:'sticky',top:0,zIndex:5})}>
+                <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',fontWeight:800,position:'sticky',top:0,zIndex:5})}>
                   {m}
                 </th>
               ))}
             </tr>
             <tr>
               {periodLabels.map(m=>[
-                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',width:70,position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
-                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',width:70,background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
+                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
+                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
               ])}
+            </tr>
+            {/* Average row */}
+            <tr className="avg-row">
+              <td colSpan={INFO_COLS} style={{padding:'8px 12px',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontSize:11,fontWeight:800,color:t.primary,letterSpacing:.4,textTransform:'uppercase'}}>AVERAGE ({filtered.length} ASIN)</td>
+              <td style={{...TD(),textAlign:'right',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.primary}}>—</td>
+              {periodLabels.map((m,i)=>{const a=periodAvg[i];return[
+                <td key={m+'-avg-cr'}  style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',borderLeft:'1px solid '+t.divider,fontWeight:800,fontSize:11,color:t.primary}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
+                <td key={m+'-avg-ctr'} style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.primary}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
+              ];})}
             </tr>
           </thead>
           <tbody>
@@ -3591,7 +3681,7 @@ function ProductCRPage({t,sd,ed,store}){
       </div>
       <TableFooter t={t} count={filtered.length} label="ASINs" items={[
         {label:'CR ≥ 15%', color:t.green},{label:'CR < 8%', color:t.orange},
-        {label:'CR = unitSessionPercentage · CTR = organic search CTR'}
+        {label:'AVG row reflects current filters'},
       ]}/>
     </div>;
     })()}
