@@ -3269,9 +3269,16 @@ function ProductCRPage({t,sd,ed,store}){
       return vals.reduce((s,v)=>s+v,0) / vals.length;
     };
     const getVal = (r, key) => {
+      // Per-period sort: "cr:T1", "ctr:W05", "adsCtr:T3" → look up that exact period
+      if (key.includes(':')) {
+        const [metric, periodLbl] = key.split(':');
+        const v = r.periods?.[periodLbl]?.[metric];
+        return (v != null && !isNaN(v)) ? v : -1;
+      }
       switch(key) {
         case 'asin':        return (r.asin || '').toLowerCase();
         case 'sku':         return (r.sku || '').toLowerCase();
+        case 'date':        return (r.asin || '').toLowerCase(); // Date column, no actual date field on row
         case 'sellers':     return (r.sellers || '').toLowerCase();
         case 'productType': return (r.productType || '').toLowerCase();
         case 'niche':       return (r.niche || '').toLowerCase();
@@ -3390,7 +3397,7 @@ function ProductCRPage({t,sd,ed,store}){
   // Widths used by both <colgroup> (lock layout) and <th> (display).
   // Order MUST match render order in InfoTH/InfoTD.
   const COL_WIDTHS = {
-    date: 110,
+    date: 130,
     asin: 130,
     sku: 170,
     stores: 130,        // bumped to fit multiple store badges
@@ -3429,19 +3436,38 @@ function ProductCRPage({t,sd,ed,store}){
     return total;
   };
 
+  // Sortable header helper — wraps content with click handler + sort indicator arrow
+  // Used inside InfoTH and metric headers for click-to-sort behavior.
+  const SortableTH = ({sortKeyVal, children, ...thProps}) => {
+    const isActive = sortKey === sortKeyVal;
+    const arrow = isActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    const arrowOpacity = isActive ? 1 : 0.25;
+    return (
+      <th {...thProps}
+          onClick={()=>toggleSort(sortKeyVal)}
+          style={{...thProps.style, cursor:'pointer', userSelect:'none'}}
+          title={isActive ? (sortDir==='asc'?'Sorted ascending — click to flip':'Sorted descending — click to flip') : 'Click to sort'}>
+        <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
+          {children}
+          <span style={{fontSize:9,opacity:arrowOpacity,color:isActive?t.primary:t.textMuted,fontWeight:isActive?900:600}}>{arrow}</span>
+        </span>
+      </th>
+    );
+  };
+
   const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
     const baseStick={position:'sticky',top:0,background:t.tableBg};
     const rs=rowSpan>1?{rowSpan}:{};
     return<>
-      {hasDate&&<th {...rs} className="sticky-col" style={TH({textAlign:'left',...baseStick,left:0,zIndex:7})}>Date</th>}
-      <th {...rs} className="sticky-col" style={TH({textAlign:'left',color:t.primary,...baseStick,left:hasDate?COL_WIDTHS.date:0,zIndex:7})}>ASIN</th>
-      {hasSku&&<th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>SKU</th>}
+      {hasDate&&<SortableTH sortKeyVal="date" {...rs} className="sticky-col" style={TH({textAlign:'left',...baseStick,left:0,zIndex:7})}>Date</SortableTH>}
+      <SortableTH sortKeyVal="asin" {...rs} className="sticky-col" style={TH({textAlign:'left',color:t.primary,...baseStick,left:hasDate?COL_WIDTHS.date:0,zIndex:7})}>ASIN</SortableTH>
+      {hasSku&&<SortableTH sortKeyVal="sku" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>SKU</SortableTH>}
       <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Stores</th>
       <th {...rs} style={TH({textAlign:'center',...baseStick,zIndex:5})}>Design</th>
-      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Product Type</th>
-      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Niche/Theme</th>
-      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Tier</th>
-      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Sellers</th>
+      <SortableTH sortKeyVal="productType" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Product Type</SortableTH>
+      <SortableTH sortKeyVal="niche" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Niche/Theme</SortableTH>
+      <SortableTH sortKeyVal="tier" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Tier</SortableTH>
+      <SortableTH sortKeyVal="sellers" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Sellers</SortableTH>
       <th {...rs} style={TH({textAlign:'left',color:t.primary,...baseStick,zIndex:5})}>Content</th>
       <th {...rs} style={TH({textAlign:'left',color:t.purple||'#7C3AED',...baseStick,zIndex:5})}>Image</th>
       {hasContent23&&<>
@@ -3639,9 +3665,9 @@ function ProductCRPage({t,sd,ed,store}){
           <thead>
             <tr>
               <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
-              <th style={TH({textAlign:'center',borderLeft:"2px solid "+t.primary+"44",background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</th>
-              <th style={TH({textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CTR Ads</th>
-              <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
+              <SortableTH sortKeyVal="cr"     style={TH({textAlign:'center',borderLeft:"2px solid "+t.primary+"44",background:HDR_BLUE_BG,color:t.primary,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CR%</SortableTH>
+              <SortableTH sortKeyVal="adsCtr" style={TH({textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:0,zIndex:5})}>CTR Ads</SortableTH>
+              <SortableTH sortKeyVal="stock"  style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</SortableTH>
               <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
             </tr>
             {/* Average row — Date+ASIN sticky-left (carry label), other info cells sticky-top only */}
@@ -3722,9 +3748,9 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
             <tr>
               {periodLabels.map(w=>[
-                <th key={w+'-cr'}  style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
-                <th key={w+'-ctr'} style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
-                <th key={w+'-ads'} style={TH({fontSize:10.5,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
+                <SortableTH key={w+'-cr'}  sortKeyVal={`cr:${w}`}     style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</SortableTH>,
+                <SortableTH key={w+'-ctr'} sortKeyVal={`ctr:${w}`}    style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</SortableTH>,
+                <SortableTH key={w+'-ads'} sortKeyVal={`adsCtr:${w}`} style={TH({fontSize:10.5,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</SortableTH>,
               ])}
             </tr>
             {/* Average row — only ASIN col sticky-left to carry label, other info empty + sticky-top */}
@@ -3792,7 +3818,7 @@ function ProductCRPage({t,sd,ed,store}){
           <thead>
             <tr>
               <InfoTH hasDate={false} hasSku hasContent23={hasAnyContent23} rowSpan={2}/>
-              <th rowSpan={2} style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
+              <SortableTH sortKeyVal="stock" rowSpan={2} style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</SortableTH>
               {periodLabels.map(m=>(
                 <th key={m} colSpan={2} style={TH({borderLeft:'1px solid '+t.divider,color:t.primary,background:HDR_BLUE_BG,textAlign:'center',fontWeight:800,position:'sticky',top:0,zIndex:5})}>
                   {m}
@@ -3801,8 +3827,8 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
             <tr>
               {periodLabels.map(m=>[
-                <th key={m+'-cr'}  style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
-                <th key={m+'-ctr'} style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
+                <SortableTH key={m+'-cr'}  sortKeyVal={`cr:${m}`}  style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</SortableTH>,
+                <SortableTH key={m+'-ctr'} sortKeyVal={`ctr:${m}`} style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</SortableTH>,
               ])}
             </tr>
             {/* Average row — only ASIN col sticky-left to carry label */}
