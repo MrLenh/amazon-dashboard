@@ -3571,12 +3571,13 @@ function ProductCRPage({t,sd,ed,store}){
           </button>
         </div>
 
-        {isOpen && dropPos && <div className="col-filter-dropdown" onClick={e=>e.stopPropagation()}
+        {isOpen && dropPos && ReactDOM.createPortal(
+          <div className="col-filter-dropdown" onClick={e=>e.stopPropagation()}
           style={{
             position:'fixed',top:dropPos.top,left:dropPos.left,
             background:t.card,border:'1px solid '+t.cardBorder,borderRadius:8,
-            boxShadow:'0 6px 20px rgba(0,0,0,.2)',
-            width:240,maxHeight:380,zIndex:1000,
+            boxShadow:'0 6px 20px rgba(0,0,0,.25)',
+            width:240,maxHeight:380,zIndex:99999,
             display:'flex',flexDirection:'column',
           }}>
           <div style={{padding:8,borderBottom:'1px solid '+t.divider}}>
@@ -3608,7 +3609,7 @@ function ProductCRPage({t,sd,ed,store}){
               </label>;
             })}
           </div>
-        </div>}
+        </div>, document.body)}
       </th>
     );
   };
