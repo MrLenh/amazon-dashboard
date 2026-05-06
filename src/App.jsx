@@ -3208,13 +3208,19 @@ function ProductCRPage({t,sd,ed,store}){
   const[loading,setLoading]=useState(false);
   const[error,setError]=useState(null);
   const[search,setSearch]=useState('');
+  // Sort state — applies to filtered data after search
+  const[sortKey,setSortKey]=useState('asin');     // 'asin' | 'sku' | 'cr' | 'ctr' | 'adsCtr' | 'stock' | 'tier' | 'sellers' | 'productType' | 'niche'
+  const[sortDir,setSortDir]=useState('asc');      // 'asc' | 'desc'
+  // Toggle: clicking same key flips dir, clicking new key resets to asc
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
 
   // ═══════════ VIRTUAL SCROLLING STATE ═══════════
-  // Render only rows currently visible in viewport. Massive speedup with 1500+ ASINs.
-  // Each table row is ~44px tall. With 600px viewport we render ~14 rows + 10 buffer = 24 rows total.
-  const ROW_HEIGHT = 44;
+  const ROW_HEIGHT = 48;
   const VIEWPORT_HEIGHT = 600;
-  const BUFFER = 10; // extra rows above/below viewport for smooth scrolling
+  const BUFFER = 10;
   const [scrollTop, setScrollTop] = useState(0);
   const scrollContainerRef = useRef(null);
   // Reset scroll on period/filter change
@@ -3242,17 +3248,54 @@ function ProductCRPage({t,sd,ed,store}){
 
   const filtered=useMemo(()=>{
     if(!data)return[];
-    if(!search)return data;
-    const q=search.toLowerCase();
-    return data.filter(r=>
-      r.asin?.toLowerCase().includes(q)||r.sku?.toLowerCase().includes(q)||
-      r.store?.toLowerCase().includes(q)||(r.stores||[]).some(s=>s.toLowerCase().includes(q))||r.sellers?.toLowerCase().includes(q)||
-      r.content1?.toLowerCase().includes(q)||r.content2?.toLowerCase().includes(q)||
-      r.content3?.toLowerCase().includes(q)||r.image?.toLowerCase().includes(q)||
-      r.productType?.toLowerCase().includes(q)||r.niche?.toLowerCase().includes(q)||
-      r.tier?.toLowerCase().includes(q)
-    );
-  },[data,search]);
+    let result = data;
+    // Search filter
+    if (search) {
+      const q=search.toLowerCase();
+      result = data.filter(r=>
+        r.asin?.toLowerCase().includes(q)||r.sku?.toLowerCase().includes(q)||
+        r.store?.toLowerCase().includes(q)||(r.stores||[]).some(s=>s.toLowerCase().includes(q))||r.sellers?.toLowerCase().includes(q)||
+        r.content1?.toLowerCase().includes(q)||r.content2?.toLowerCase().includes(q)||
+        r.content3?.toLowerCase().includes(q)||r.image?.toLowerCase().includes(q)||
+        r.productType?.toLowerCase().includes(q)||r.niche?.toLowerCase().includes(q)||
+        r.tier?.toLowerCase().includes(q)
+      );
+    }
+    // Sort — for metric keys (cr/ctr/adsCtr), aggregate average across all periods of each row
+    const aggMetric = (r, key) => {
+      if (!r.periods) return null;
+      const vals = Object.values(r.periods).map(p => p?.[key]).filter(v => v != null && !isNaN(v));
+      if (!vals.length) return null;
+      return vals.reduce((s,v)=>s+v,0) / vals.length;
+    };
+    const getVal = (r, key) => {
+      switch(key) {
+        case 'asin':        return (r.asin || '').toLowerCase();
+        case 'sku':         return (r.sku || '').toLowerCase();
+        case 'sellers':     return (r.sellers || '').toLowerCase();
+        case 'productType': return (r.productType || '').toLowerCase();
+        case 'niche':       return (r.niche || '').toLowerCase();
+        case 'tier':        return (r.tier || '').toLowerCase();
+        case 'stock':       return parseInt(r.stock) || 0;
+        case 'cr':          return aggMetric(r, 'cr')      ?? -1;
+        case 'ctr':         return aggMetric(r, 'ctr')     ?? -1;
+        case 'adsCtr':      return aggMetric(r, 'adsCtr')  ?? -1;
+        default:            return (r.asin || '').toLowerCase();
+      }
+    };
+    const sorted = [...result].sort((a,b)=>{
+      const va = getVal(a, sortKey);
+      const vb = getVal(b, sortKey);
+      // Numeric vs string
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return sortDir === 'asc' ? va - vb : vb - va;
+      }
+      // String comparison
+      const cmp = String(va).localeCompare(String(vb));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  },[data,search,sortKey,sortDir]);
 
   // Daily flat rows
   const flatDaily=useMemo(()=>{
@@ -3313,8 +3356,8 @@ function ProductCRPage({t,sd,ed,store}){
     const all=[]; vals.forEach(v=>splitNames(v).forEach(n=>all.push(n)));
     if(!all.length)return<span style={{color:t.textMuted}}>—</span>;
     return<div style={{display:'flex',flexWrap:'wrap',gap:3}}>{all.map((c,i)=>(
-      <span key={i} style={{display:'inline-block',padding:'1px 7px',
-        borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+      <span key={i} style={{display:'inline-block',padding:'2px 8px',
+        borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>
         {c}
       </span>
     ))}</div>;
@@ -3324,8 +3367,8 @@ function ProductCRPage({t,sd,ed,store}){
     const all=splitNames(v);
     if(!all.length)return<span style={{color:t.textMuted}}>—</span>;
     return<div style={{display:'flex',flexWrap:'wrap',gap:3}}>{all.map((c,i)=>(
-      <span key={i} style={{padding:'1px 7px',borderRadius:10,
-        background:(t.purple||'#7C3AED')+'22',color:t.purple||'#7C3AED',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{c}</span>
+      <span key={i} style={{padding:'2px 8px',borderRadius:10,
+        background:(t.purple||'#7C3AED')+'22',color:t.purple||'#7C3AED',fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>{c}</span>
     ))}</div>;
   };
 
@@ -3338,10 +3381,10 @@ function ProductCRPage({t,sd,ed,store}){
     </div>
   );
 
-  const TH=(extra={})=>({padding:'0 10px',height:36,boxSizing:'border-box',lineHeight:'18px',fontSize:10,fontWeight:700,color:t.textMuted,
+  const TH=(extra={})=>({padding:'0 10px',height:38,boxSizing:'border-box',lineHeight:'18px',fontSize:11,fontWeight:700,color:t.textMuted,
     textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,
     whiteSpace:'nowrap',letterSpacing:.4,...extra});
-  const TD=(extra={})=>({padding:'9px 10px',fontSize:12,borderBottom:'1px solid '+t.divider,...extra});
+  const TD=(extra={})=>({padding:'9px 10px',fontSize:12.5,borderBottom:'1px solid '+t.divider,...extra});
 
   // ═══════════ COLUMN WIDTH CONFIG ═══════════
   // Widths used by both <colgroup> (lock layout) and <th> (display).
@@ -3413,7 +3456,7 @@ function ProductCRPage({t,sd,ed,store}){
     const list = (r.stores && r.stores.length) ? r.stores : (r.store ? [r.store] : []);
     if (!list.length) return <span style={{color:t.textMuted}}>—</span>;
     return <div style={{display:'flex',flexWrap:'wrap',gap:3}}>{list.map((s,i)=>(
-      <span key={i} style={{padding:'2px 8px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{s}</span>
+      <span key={i} style={{padding:'3px 9px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>{s}</span>
     ))}</div>;
   };
 
@@ -3421,15 +3464,15 @@ function ProductCRPage({t,sd,ed,store}){
     const bTop=isNew?'2px solid '+t.primary+'55':'none';
     const stickyBase={position:'sticky',background:t.card,zIndex:2};
     return<>
-      {hasDate&&<td className="sticky-col" style={TD({fontWeight:600,color:t.text,borderTop:bTop,whiteSpace:'nowrap',fontSize:11,left:0,...stickyBase})}>{dateVal}</td>}
-      <td className="sticky-col" style={TD({fontWeight:600,color:t.primary,fontFamily:'monospace',fontSize:11,borderTop:bTop,left:hasDate?COL_WIDTHS.date:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
-      {hasSku&&<td style={TD({color:t.textSec,fontSize:11,borderTop:bTop,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
+      {hasDate&&<td className="sticky-col" style={TD({fontWeight:600,color:t.text,borderTop:bTop,whiteSpace:'nowrap',fontSize:12,left:0,...stickyBase})}>{dateVal}</td>}
+      <td className="sticky-col" style={TD({fontWeight:700,color:t.primary,fontFamily:"ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Monaco, Consolas, monospace",fontSize:12.5,letterSpacing:.2,borderTop:bTop,left:hasDate?COL_WIDTHS.date:0,whiteSpace:'nowrap',...stickyBase})}>{r.asin}</td>
+      {hasSku&&<td style={TD({color:t.textSec,fontSize:12,borderTop:bTop,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{r.sku||'—'}</td>}
       <td style={TD({borderTop:bTop})}><StoreBadges r={r}/></td>
       <td style={TD({textAlign:'center',borderTop:bTop,padding:'6px 10px'})}><DesignImg r={r}/></td>
-      <td style={TD({borderTop:bTop})}>{r.productType?<span style={{padding:'2px 8px',borderRadius:10,background:'#FEF3CD',color:'#856404',fontSize:10,fontWeight:600}}>{r.productType}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-      <td style={TD({borderTop:bTop})}>{r.niche?<span style={{padding:'2px 8px',borderRadius:10,background:'#E0F2FE',color:'#0369A1',fontSize:10,fontWeight:600}}>{r.niche}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-      <td style={TD({borderTop:bTop,fontSize:11})}>{r.tier?<span style={{padding:'2px 8px',borderRadius:10,background:'#FEE2E2',color:'#B91C1C',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{r.tier}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
-      <td style={TD({fontWeight:600,borderTop:bTop,fontSize:11})}>{r.sellers||'—'}</td>
+      <td style={TD({borderTop:bTop})}>{r.productType?<span style={{padding:'3px 9px',borderRadius:10,background:'#FEF3CD',color:'#856404',fontSize:11,fontWeight:600}}>{r.productType}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+      <td style={TD({borderTop:bTop})}>{r.niche?<span style={{padding:'3px 9px',borderRadius:10,background:'#E0F2FE',color:'#0369A1',fontSize:11,fontWeight:600}}>{r.niche}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+      <td style={TD({borderTop:bTop,fontSize:12})}>{r.tier?<span style={{padding:'3px 9px',borderRadius:10,background:'#FEE2E2',color:'#B91C1C',fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>{r.tier}</span>:<span style={{color:t.textMuted}}>—</span>}</td>
+      <td style={TD({fontWeight:600,borderTop:bTop,fontSize:12})}>{r.sellers||'—'}</td>
       <td style={TD({borderTop:bTop})}><ContentBadges vals={[r.content1]}/></td>
       <td style={TD({borderTop:bTop})}><ImageBadge v={r.image}/></td>
       {hasContent23&&<>
@@ -3449,7 +3492,7 @@ function ProductCRPage({t,sd,ed,store}){
 
   const PctCell=({v,cf,bg,extraStyle={}})=>(
     <td style={{...TD(),textAlign:'center',background:bg?bg(v):'transparent',...extraStyle}}>
-      <span style={{fontSize:11,fontWeight:v!=null?700:400,color:v!=null?cf(v):t.textMuted}}>
+      <span style={{fontSize:12.5,fontWeight:v!=null?700:400,color:v!=null?cf(v):t.textMuted}}>
         {v!=null?v.toFixed(2)+'%':'—'}
       </span>
     </td>
@@ -3471,7 +3514,7 @@ function ProductCRPage({t,sd,ed,store}){
       .cr-table {
         table-layout: fixed !important;
       }
-      .cr-table tbody tr { height: 44px; }
+      .cr-table tbody tr { height: 48px; }
       .cr-table tbody td {
         overflow: hidden;
         text-overflow: ellipsis;
@@ -3485,8 +3528,8 @@ function ProductCRPage({t,sd,ed,store}){
         border-bottom: 2px solid ${t.primary} !important;
         font-weight: 800 !important;
         color: ${t.primary} !important;
-        font-size: 11.5px !important;
-        padding: 9px 8px !important;
+        font-size: 12.5px !important;
+        padding: 10px 8px !important;
       }
       .cr-table .avg-row td.avg-orange {
         background: ${t.mode==='dark' ? '#3D2914' : '#FFEDD5'} !important;
@@ -3505,10 +3548,43 @@ function ProductCRPage({t,sd,ed,store}){
           {filtered.length} ASIN{filtered.length===1?'':'s'}
         </span>}
       </div>
-      <input value={search} onChange={e=>setSearch(e.target.value)}
-        placeholder="Search ASIN / SKU / member / type / tier..."
-        style={{padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,
-          background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:260,maxWidth:340}}/>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        {/* Sort by */}
+        <select value={sortKey} onChange={e=>setSortKey(e.target.value)}
+          style={{padding:'7px 28px 7px 10px',borderRadius:8,border:'1px solid '+t.inputBorder,
+            background:t.card,color:t.text,fontSize:11.5,outline:'none',cursor:'pointer',
+            backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='${encodeURIComponent(t.textMuted)}' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E")`,
+            backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center',appearance:'none',WebkitAppearance:'none'}}>
+          <option value="asin">Sort: ASIN</option>
+          <option value="sku">Sort: SKU</option>
+          <option value="cr">Sort: CR%</option>
+          <option value="ctr">Sort: CTR%</option>
+          <option value="adsCtr">Sort: Ads CTR</option>
+          <option value="stock">Sort: Stock</option>
+          <option value="tier">Sort: Tier</option>
+          <option value="sellers">Sort: Sellers</option>
+          <option value="productType">Sort: Product Type</option>
+          <option value="niche">Sort: Niche</option>
+        </select>
+        {/* Sort direction toggle */}
+        {(()=>{
+          const isNumeric = ['cr','ctr','adsCtr','stock'].includes(sortKey);
+          const ascLabel = isNumeric ? '↑ Low→High' : '↑ A→Z';
+          const descLabel = isNumeric ? '↓ High→Low' : '↓ Z→A';
+          return <button onClick={()=>setSortDir(d=>d==='asc'?'desc':'asc')}
+            title={sortDir==='asc'?ascLabel:descLabel}
+            style={{padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,
+              background:t.card,color:t.primary,fontSize:11.5,fontWeight:700,cursor:'pointer',
+              minWidth:90,whiteSpace:'nowrap'}}>
+            {sortDir==='asc'?ascLabel:descLabel}
+          </button>;
+        })()}
+        {/* Search */}
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="Search ASIN / SKU / member / type / tier..."
+          style={{padding:'7px 12px',borderRadius:8,border:'1px solid '+t.inputBorder,
+            background:t.card,color:t.text,fontSize:12,outline:'none',minWidth:260,maxWidth:340}}/>
+      </div>
     </div>
 
     {/* Filter bar */}
@@ -3552,13 +3628,13 @@ function ProductCRPage({t,sd,ed,store}){
     {!loading&&period==='daily'&&flatDaily.length>0&&(()=>{
       const v = virtualSlice(flatDaily);
       const COLS = 4 + (hasAnyContent23?12:10);
-      const dailyExtraCols = [90,95,75,70];
+      const dailyExtraCols = [95,100,80,75];
       const tableWidth = computeTableWidth({hasDate:true, hasSku:false, hasContent23:hasAnyContent23, extraCols:dailyExtraCols});
       const avgCR     = avgOf(flatDaily.map(r=>r._cr));
       const avgAdsCtr = avgOf(flatDaily.map(r=>r._adsCtr));
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:13,width:tableWidth+'px'}}>
           <InfoColgroup hasDate hasSku={false} hasContent23={hasAnyContent23} extraCols={dailyExtraCols}/>
           <thead>
             <tr>
@@ -3570,8 +3646,8 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
             {/* Average row — Date+ASIN sticky-left (carry label), other info cells sticky-top only */}
             <tr className="avg-row">
-              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'center',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_DAILY,left:0,zIndex:8}}>AVG</td>
-              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,fontSize:10,position:'sticky',top:AVG_TOP_DAILY,left:COL_WIDTHS.date,zIndex:8}}>{flatDaily.length} entries</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'center',letterSpacing:.5,textTransform:'uppercase',fontSize:11.5,position:'sticky',top:AVG_TOP_DAILY,left:0,zIndex:8}}>AVG</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,fontSize:11.5,position:'sticky',top:AVG_TOP_DAILY,left:COL_WIDTHS.date,zIndex:8}}>{flatDaily.length} entries</td>
               {/* Empty cells for the rest of info cols — only sticky-top */}
               <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Stores*/}
               <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Design*/}
@@ -3629,11 +3705,11 @@ function ProductCRPage({t,sd,ed,store}){
         adsCtr: avgOf(filtered.map(r=>r.periods[w]?.adsCtr)),
       }));
       // Per-week column widths for colgroup: [CR, CTR, AdsCTR]
-      const periodColWidths = periodLabels.flatMap(()=>[70,70,85]);
+      const periodColWidths = periodLabels.flatMap(()=>[75,75,90]);
       const tableWidth = computeTableWidth({hasDate:false, hasSku:true, hasContent23:hasAnyContent23, extraCols:periodColWidths});
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:13,width:tableWidth+'px'}}>
           <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
@@ -3646,14 +3722,14 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
             <tr>
               {periodLabels.map(w=>[
-                <th key={w+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
-                <th key={w+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
-                <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
+                <th key={w+'-cr'}  style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR</th>,
+                <th key={w+'-ctr'} style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR</th>,
+                <th key={w+'-ads'} style={TH({fontSize:10.5,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
               ])}
             </tr>
             {/* Average row — only ASIN col sticky-left to carry label, other info empty + sticky-top */}
             <tr className="avg-row">
-              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:11.5,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*SKU*/}
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Stores*/}
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Design*/}
@@ -3707,11 +3783,11 @@ function ProductCRPage({t,sd,ed,store}){
         cr:  avgOf(filtered.map(r=>r.periods[m]?.cr)),
         ctr: avgOf(filtered.map(r=>r.periods[m]?.ctr)),
       }));
-      const periodColWidths = [75, ...periodLabels.flatMap(()=>[70,70])];
+      const periodColWidths = [80, ...periodLabels.flatMap(()=>[75,75])];
       const tableWidth = computeTableWidth({hasDate:false, hasSku:true, hasContent23:hasAnyContent23, extraCols:periodColWidths});
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:13,width:tableWidth+'px'}}>
           <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
@@ -3725,13 +3801,13 @@ function ProductCRPage({t,sd,ed,store}){
             </tr>
             <tr>
               {periodLabels.map(m=>[
-                <th key={m+'-cr'}  style={TH({fontSize:9,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
-                <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
+                <th key={m+'-cr'}  style={TH({fontSize:10.5,borderLeft:'1px solid '+t.divider,background:HDR_BLUE_BG,color:t.primary,fontWeight:800,textAlign:'center',position:'sticky',top:ROW2_TOP,zIndex:4})}>CR%</th>,
+                <th key={m+'-ctr'} style={TH({fontSize:10.5,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
               ])}
             </tr>
             {/* Average row — only ASIN col sticky-left to carry label */}
             <tr className="avg-row">
-              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:11.5,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*SKU*/}
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Stores*/}
               <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Design*/}
