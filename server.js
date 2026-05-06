@@ -2830,10 +2830,14 @@ app.get('/api/product/cr-performance', async (req, res) => {
     }
 
     const asinSet    = [...new Set(analyticsRows.map(r => r.asin))];
-    const asinAccMap = {};
+    // Collect ALL accountIds per ASIN (an ASIN can exist in multiple stores)
+    const asinAccsMap = {}; // asin -> [accountIds]
     asinAccRows.forEach(r => {
-      if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId;
+      if (!asinAccsMap[r.asin]) asinAccsMap[r.asin] = [];
+      if (!asinAccsMap[r.asin].includes(r.accountId)) asinAccsMap[r.asin].push(r.accountId);
     });
+    const asinAccMap = {}; // asin -> first accountId (kept for backward compat)
+    asinAccRows.forEach(r => { if (!asinAccMap[r.asin]) asinAccMap[r.asin] = r.accountId; });
     const ph = asinSet.map(() => '?').join(',');
 
     // ═══ PARALLELIZE: Q2 (master) + Q2b (tier) + Q7 (image) + Q3 (niche) + Q4 (stock) + Q5 (avail) + Q6 (adsCtr) ═══
@@ -3037,6 +3041,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
         asin,
         sku:         st.sku  || '',
         store:       shopMap[asinAccMap[asin]] || '',
+        stores:      (asinAccsMap[asin] || []).map(aid => shopMap[aid]).filter(Boolean),
         sellers:     m.seller     || '',
         content1:    m.content1   || '',
         content2:    m.content2   || '',
