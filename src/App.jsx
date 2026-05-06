@@ -3217,6 +3217,38 @@ function ProductCRPage({t,sd,ed,store}){
     else { setSortKey(key); setSortDir('asc'); }
   };
 
+  // ═══════════ COLUMN FILTERS (Excel-style) ═══════════
+  // Map: column key → Set of selected values. Empty Set or missing key = no filter (show all).
+  // Columns supported: stores, productType, niche, tier, sellers
+  const [colFilters, setColFilters] = useState({});  // { stores: Set, productType: Set, ... }
+  const [openFilter, setOpenFilter] = useState(null); // which column's dropdown is open
+  const [filterSearch, setFilterSearch] = useState(''); // search inside dropdown
+  // Toggle a value in column filter
+  const toggleColFilter = (col, val) => {
+    setColFilters(prev => {
+      const cur = new Set(prev[col] || []);
+      if (cur.has(val)) cur.delete(val);
+      else cur.add(val);
+      return {...prev, [col]: cur};
+    });
+  };
+  const clearColFilter = (col) => {
+    setColFilters(prev => { const n={...prev}; delete n[col]; return n; });
+  };
+  const hasColFilter = (col) => colFilters[col] && colFilters[col].size > 0;
+  // Close dropdown on outside click
+  useEffect(()=>{
+    if (!openFilter) return;
+    const handler = (e) => {
+      if (!e.target.closest('.col-filter-dropdown') && !e.target.closest('.col-filter-trigger')) {
+        setOpenFilter(null);
+        setFilterSearch('');
+      }
+    };
+    document.addEventListener('click', handler);
+    return ()=>document.removeEventListener('click', handler);
+  },[openFilter]);
+
   // ═══════════ VIRTUAL SCROLLING STATE ═══════════
   const ROW_HEIGHT = 48;
   const VIEWPORT_HEIGHT = 600;
@@ -3261,6 +3293,28 @@ function ProductCRPage({t,sd,ed,store}){
         r.tier?.toLowerCase().includes(q)
       );
     }
+    // Column filters (Excel-style) — row passes if ALL active column filters match.
+    const activeFilters = Object.entries(colFilters).filter(([,s])=>s && s.size>0);
+    if (activeFilters.length > 0) {
+      result = result.filter(r => {
+        for (const [col, set] of activeFilters) {
+          if (col === 'stores') {
+            // multi-value: row matches if ANY of its stores is in the filter
+            const list = (r.stores && r.stores.length) ? r.stores : (r.store ? [r.store] : []);
+            if (!list.some(s => set.has(s))) return false;
+          } else if (col === 'sellers') {
+            // sellers might be comma-separated string
+            const list = (r.sellers||'').split(/[,/;]/).map(s=>s.trim()).filter(Boolean);
+            if (!list.some(s => set.has(s))) return false;
+          } else {
+            // single value match
+            const v = r[col] || '(blank)';
+            if (!set.has(v)) return false;
+          }
+        }
+        return true;
+      });
+    }
     // Sort — for metric keys (cr/ctr/adsCtr), aggregate average across all periods of each row
     const aggMetric = (r, key) => {
       if (!r.periods) return null;
@@ -3302,7 +3356,7 @@ function ProductCRPage({t,sd,ed,store}){
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  },[data,search,sortKey,sortDir]);
+  },[data,search,sortKey,sortDir,colFilters]);
 
   // Daily flat rows
   const flatDaily=useMemo(()=>{
@@ -3345,6 +3399,21 @@ function ProductCRPage({t,sd,ed,store}){
   // AVG row sits below row 2 of header (or below row 1 for daily which has only 1 header row)
   const AVG_TOP_DAILY = 36;          // below 1 header row
   const AVG_TOP_PIVOT = ROW2_TOP+36; // below 2 header rows (weekly/monthly)
+
+  // Compute unique values per column from data (for filter dropdowns)
+  const uniqueValues = useMemo(()=>{
+    if (!data) return {stores:[],productType:[],niche:[],tier:[],sellers:[]};
+    const u = { stores: new Set(), productType: new Set(), niche: new Set(), tier: new Set(), sellers: new Set() };
+    data.forEach(r => {
+      const list = (r.stores && r.stores.length) ? r.stores : (r.store ? [r.store] : []);
+      list.forEach(s => s && u.stores.add(s));
+      if (r.productType) u.productType.add(r.productType);
+      if (r.niche)       u.niche.add(r.niche);
+      if (r.tier)        u.tier.add(r.tier);
+      (r.sellers||'').split(/[,/;]/).map(s=>s.trim()).filter(Boolean).forEach(s => u.sellers.add(s));
+    });
+    return Object.fromEntries(Object.entries(u).map(([k,s])=>[k, [...s].sort((a,b)=>a.localeCompare(b))]));
+  },[data]);
 
   // Auto-detect if any row actually has content2 or content3 — skip those columns if all empty
   const hasAnyContent23=useMemo(()=>
@@ -3455,6 +3524,94 @@ function ProductCRPage({t,sd,ed,store}){
     );
   };
 
+  // FilterableTH: sort + Excel-style dropdown filter (checkboxes for unique values)
+  const FilterableTH = ({sortKeyVal, filterKey, children, ...thProps}) => {
+    const isSortActive = sortKey === sortKeyVal;
+    const sortArrow = isSortActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    const sortOpacity = isSortActive ? 1 : 0.25;
+    const isFilterActive = hasColFilter(filterKey);
+    const isOpen = openFilter === filterKey;
+    const values = uniqueValues[filterKey] || [];
+    const selected = colFilters[filterKey] || new Set();
+    const filteredValues = filterSearch
+      ? values.filter(v => v.toLowerCase().includes(filterSearch.toLowerCase()))
+      : values;
+    return (
+      <th {...thProps} style={{...thProps.style, position:'relative', userSelect:'none'}}>
+        <span style={{display:'inline-flex',alignItems:'center',gap:4,width:'100%'}}>
+          {/* Sort label — clicking sorts */}
+          <span onClick={()=>toggleSort(sortKeyVal)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,flex:1}}
+                title={isSortActive ? (sortDir==='asc'?'Sorted asc — flip':'Sorted desc — flip') : 'Click to sort'}>
+            {children}
+            <span style={{fontSize:9,opacity:sortOpacity,color:isSortActive?t.primary:t.textMuted,fontWeight:isSortActive?900:600}}>{sortArrow}</span>
+          </span>
+          {/* Filter button */}
+          <button className="col-filter-trigger"
+            onClick={(e)=>{e.stopPropagation(); setOpenFilter(o=>o===filterKey?null:filterKey); setFilterSearch('');}}
+            title={isFilterActive ? `Filtered: ${selected.size} selected` : 'Click to filter'}
+            style={{
+              border:'none',background:isFilterActive?t.primary:'transparent',
+              color:isFilterActive?'#fff':t.textMuted,cursor:'pointer',padding:'2px 5px',
+              borderRadius:4,fontSize:10,lineHeight:1,marginLeft:2,
+              fontWeight:isFilterActive?800:600,
+            }}>
+            {/* funnel icon */}
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{verticalAlign:'middle'}}>
+              <path d="M1.5 2h13l-5 7v5l-3-1.5V9z"/>
+            </svg>
+            {isFilterActive && <span style={{marginLeft:3}}>{selected.size}</span>}
+          </button>
+        </span>
+
+        {/* Dropdown */}
+        {isOpen && <div className="col-filter-dropdown" onClick={e=>e.stopPropagation()}
+          style={{
+            position:'absolute',top:'100%',right:0,marginTop:4,
+            background:t.card,border:'1px solid '+t.cardBorder,borderRadius:8,
+            boxShadow:'0 4px 16px rgba(0,0,0,.18)',
+            width:240,maxHeight:380,zIndex:100,
+            display:'flex',flexDirection:'column',
+          }}>
+          {/* Search box */}
+          <div style={{padding:8,borderBottom:'1px solid '+t.divider}}>
+            <input value={filterSearch} onChange={e=>setFilterSearch(e.target.value)}
+              placeholder="Search..." autoFocus
+              style={{width:'100%',padding:'5px 8px',fontSize:11.5,border:'1px solid '+t.inputBorder,
+                background:t.tableBg,color:t.text,borderRadius:5,outline:'none',boxSizing:'border-box'}}/>
+          </div>
+          {/* Select all / clear */}
+          <div style={{padding:'6px 10px',borderBottom:'1px solid '+t.divider,
+            display:'flex',gap:8,fontSize:11}}>
+            <button onClick={()=>{
+              setColFilters(prev=>({...prev,[filterKey]:new Set(filteredValues)}));
+            }} style={{background:'transparent',border:'none',color:t.primary,cursor:'pointer',fontSize:11,fontWeight:600,padding:0}}>Select all</button>
+            <span style={{color:t.textMuted}}>·</span>
+            <button onClick={()=>clearColFilter(filterKey)}
+              style={{background:'transparent',border:'none',color:t.primary,cursor:'pointer',fontSize:11,fontWeight:600,padding:0}}>Clear</button>
+            <span style={{marginLeft:'auto',color:t.textMuted,fontSize:10}}>{selected.size}/{values.length}</span>
+          </div>
+          {/* Value checkboxes */}
+          <div style={{flex:1,overflowY:'auto',padding:'4px 0'}}>
+            {filteredValues.length === 0 ? (
+              <div style={{padding:'12px',textAlign:'center',color:t.textMuted,fontSize:11}}>No values</div>
+            ) : filteredValues.map(v => {
+              const checked = selected.has(v);
+              return <label key={v} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 12px',cursor:'pointer',
+                fontSize:11.5,color:t.text,fontWeight:400,
+                background:checked?t.primaryLight:'transparent'}}
+                onMouseEnter={e=>{if(!checked)e.currentTarget.style.background=t.tableHover;}}
+                onMouseLeave={e=>{if(!checked)e.currentTarget.style.background='transparent';}}>
+                <input type="checkbox" checked={checked} onChange={()=>toggleColFilter(filterKey, v)}
+                  style={{margin:0,cursor:'pointer'}}/>
+                <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{v}</span>
+              </label>;
+            })}
+          </div>
+        </div>}
+      </th>
+    );
+  };
+
   const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
     const baseStick={position:'sticky',top:0,background:t.tableBg};
     const rs=rowSpan>1?{rowSpan}:{};
@@ -3462,12 +3619,12 @@ function ProductCRPage({t,sd,ed,store}){
       {hasDate&&<SortableTH sortKeyVal="date" {...rs} className="sticky-col" style={TH({textAlign:'left',...baseStick,left:0,zIndex:7})}>Date</SortableTH>}
       <SortableTH sortKeyVal="asin" {...rs} className="sticky-col" style={TH({textAlign:'left',color:t.primary,...baseStick,left:hasDate?COL_WIDTHS.date:0,zIndex:7})}>ASIN</SortableTH>
       {hasSku&&<SortableTH sortKeyVal="sku" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>SKU</SortableTH>}
-      <th {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Stores</th>
+      <FilterableTH filterKey="stores" sortKeyVal="stores" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Stores</FilterableTH>
       <th {...rs} style={TH({textAlign:'center',...baseStick,zIndex:5})}>Design</th>
-      <SortableTH sortKeyVal="productType" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Product Type</SortableTH>
-      <SortableTH sortKeyVal="niche" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Niche/Theme</SortableTH>
-      <SortableTH sortKeyVal="tier" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Tier</SortableTH>
-      <SortableTH sortKeyVal="sellers" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Sellers</SortableTH>
+      <FilterableTH filterKey="productType" sortKeyVal="productType" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Product Type</FilterableTH>
+      <FilterableTH filterKey="niche" sortKeyVal="niche" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Niche/Theme</FilterableTH>
+      <FilterableTH filterKey="tier" sortKeyVal="tier" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Tier</FilterableTH>
+      <FilterableTH filterKey="sellers" sortKeyVal="sellers" {...rs} style={TH({textAlign:'left',...baseStick,zIndex:5})}>Sellers</FilterableTH>
       <th {...rs} style={TH({textAlign:'left',color:t.primary,...baseStick,zIndex:5})}>Content</th>
       <th {...rs} style={TH({textAlign:'left',color:t.purple||'#7C3AED',...baseStick,zIndex:5})}>Image</th>
       {hasContent23&&<>
@@ -3568,11 +3725,28 @@ function ProductCRPage({t,sd,ed,store}){
     `}</style>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:16,flexWrap:'wrap'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{fontSize:18,fontWeight:800,letterSpacing:-.3,color:t.text}}>Product CR Performance</div>
         {!loading&&filtered.length>0&&<span style={{fontSize:11,padding:'3px 10px',borderRadius:12,background:t.primaryLight,color:t.primary,fontWeight:600}}>
           {filtered.length} ASIN{filtered.length===1?'':'s'}
         </span>}
+        {/* Active column filters chips */}
+        {Object.entries(colFilters).filter(([,s])=>s&&s.size>0).map(([col,set])=>(
+          <span key={col} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,padding:'3px 8px 3px 10px',
+            borderRadius:12,background:t.primary,color:'#fff',fontWeight:600}}>
+            <span style={{textTransform:'capitalize'}}>{col==='productType'?'Type':col==='niche'?'Niche':col}: {set.size}</span>
+            <button onClick={()=>clearColFilter(col)}
+              style={{background:'rgba(255,255,255,.25)',border:'none',color:'#fff',cursor:'pointer',
+                padding:'1px 5px',borderRadius:8,fontSize:10,lineHeight:1,fontWeight:700}}>×</button>
+          </span>
+        ))}
+        {Object.values(colFilters).some(s=>s&&s.size>0)&&(
+          <button onClick={()=>setColFilters({})}
+            style={{background:'transparent',border:'1px solid '+t.cardBorder,color:t.textSec,
+              padding:'3px 10px',borderRadius:12,fontSize:11,cursor:'pointer',fontWeight:600}}>
+            Clear all filters
+          </button>
+        )}
       </div>
       <div style={{display:'flex',gap:8,alignItems:'center'}}>
         {/* Sort by */}
