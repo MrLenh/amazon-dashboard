@@ -333,6 +333,28 @@ function PlanKpi({title,actual,plan,t,highlight,tip,fmt}){const isN=typeof actua
 
 const Sec=({title,icon,t,action,children})=><div style={{marginTop:24,background:t.card,borderRadius:16,border:'1px solid '+t.cardBorder,padding:'20px 20px 16px',boxShadow:'0 1px 6px '+t.shadow}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:8}}>{icon&&<span style={{fontSize:17}}>{icon}</span>}<span style={{fontSize:15,fontWeight:700,color:t.text,letterSpacing:-.2}}>{title}</span></div>{action}</div>{children}</div>;
 const Cd=({children,t,style:s})=><div style={{background:'transparent',borderRadius:10,padding:0,...s}}>{children}</div>;
+
+// LazyMount: render placeholder until user scrolls near element, then mount actual content.
+// Uses IntersectionObserver with rootMargin so content mounts BEFORE entering viewport (no flash).
+// minHeight reserves layout space so scroll position doesn't jump when content mounts.
+function LazyMount({children, minHeight=400, rootMargin='200px'}){
+  const ref = useRef(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(()=>{
+    if (mounted || !ref.current) return;
+    const obs = new IntersectionObserver(entries=>{
+      if (entries[0].isIntersecting) {
+        setMounted(true);
+        obs.disconnect();
+      }
+    }, { rootMargin });
+    obs.observe(ref.current);
+    return ()=>obs.disconnect();
+  },[mounted, rootMargin]);
+  return <div ref={ref} style={{minHeight: mounted ? 'auto' : minHeight}}>
+    {mounted ? children : null}
+  </div>;
+}
 const CT=({active,payload,label,t:th})=>{if(!active||!payload?.length)return null;const t=th||TH.light;return<div style={{background:t.card,border:"1px solid "+t.cardBorder,borderRadius:10,padding:"10px 14px",boxShadow:"0 4px 20px "+t.shadow}}><div style={{fontSize:11,color:t.textSec,marginBottom:5,fontWeight:700}}>{label}</div>{payload.filter(p=>p.value!=null&&!isNaN(p.value)).map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,marginTop:3}}><div style={{width:8,height:8,borderRadius:4,background:p.color,flexShrink:0}}/><span style={{color:t.textSec}}>{p.name}:</span><span style={{fontWeight:700,color:p.color}}>{typeof p.value==="number"?(Math.abs(p.value)>=1?p.value.toLocaleString("en-US",{maximumFractionDigits:2}):p.value.toFixed(4)):p.value}</span></div>)}</div>};
 
 function APG({actual,plan,t,isMoney=true,suffix="",reverse=false}){if(actual==null)return<div><div style={{fontSize:14,fontWeight:700,color:t.textMuted}}>—</div><div style={{fontSize:11,color:t.textMuted}}>Plan: {isMoney?$(plan):N(plan)+suffix}</div></div>;const gap=typeof actual==="number"?actual-plan:null;const gc=gap!=null?(reverse?(gap<=0?t.green:t.red):(gap>=0?t.green:t.red)):t.textMuted;const fA=isMoney?$(actual):(typeof actual==="number"?actual.toLocaleString():actual)+suffix;const fP=isMoney?$(plan):(typeof plan==="number"?plan.toLocaleString():plan)+suffix;const fG=gap!=null?(isMoney?$(gap):(gap>=0?"+":"")+gap.toLocaleString()+suffix):"—";return<div style={{lineHeight:1.6}}><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fA}</div><div style={{fontSize:11.5,color:t.textSec}}>Plan: {fP}</div><div style={{fontSize:11.5,fontWeight:700,color:gc}}>{fG}</div></div>}
@@ -1450,7 +1472,8 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       </Cd>;
     })()}
 
-    {/* ⑤ SHOP SECTION */}
+    {/* ⑤ SHOP SECTION — lazy mount when user scrolls near */}
+    <LazyMount minHeight={420} rootMargin="300px">
     <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1.6fr 0.4fr',gap:14,marginBottom:16}}>
       <Cd t={t} style={{padding:0,overflow:'hidden'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:'1px solid '+t.divider}}>
@@ -1538,8 +1561,10 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
         </div>
       </Cd>
     </div>
+    </LazyMount>
 
-    {/* ⑥ ASIN PERFORMANCE */}
+    {/* ⑥ ASIN PERFORMANCE — lazy mount, this section is heaviest with 1500+ ASINs */}
+    <LazyMount minHeight={500} rootMargin="300px">
     <div ref={asinRef} style={{scrollMarginTop:12}}>
     <Cd t={t} style={{padding:0,overflow:'hidden',marginBottom:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:'1px solid '+t.divider,flexWrap:'wrap',gap:8}}>
@@ -1617,6 +1642,7 @@ function ExecPage({t,fAsin,fShop,fDaily,em,sd,ed,setSd,setEd,prevEm,prevPeriod,p
       <div style={{padding:'6px 12px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider}}>{groupedAsins.length} {groupBy==='ASIN'?`ASINs (${fAsin.length} total)`:'groups'}</div>
     </Cd>
     </div>
+    </LazyMount>
 
     {/* Recommendations */}
     <Cd t={t} style={{marginBottom:16}}>
@@ -3371,6 +3397,14 @@ function ProductCRPage({t,sd,ed,store}){
 
   return<div>
     <style>{`
+      .cr-table {
+        table-layout: fixed;  /* lock column widths so virtual scrolling doesn't reflow */
+      }
+      .cr-table tbody tr { height: 44px; }
+      .cr-table tbody td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       .cr-table tbody tr:hover td { background: ${t.tableHover} !important; }
       .cr-table .sticky-col { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); }
     `}</style>
