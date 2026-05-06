@@ -669,43 +669,96 @@ const getCacheTTL = (path, query) => {
 };
 const CACHE_MAX_SIZE = 500;                 // hard cap to prevent memory bloat
 
+// ═══════════ STALE-WHILE-REVALIDATE ═══════════
+// When cache age < TTL: serve cached data (HIT)
+// When TTL <= age < TTL*STALE_MULTIPLIER: serve cached data + refresh in background (STALE)
+// When age >= TTL*STALE_MULTIPLIER: cache fully expired, must wait for fresh
+const STALE_MULTIPLIER = 6;  // stale window = 6x TTL (e.g. 15min TTL → 90min stale serve)
+const REFRESH_TIMEOUT_MS = 60 * 1000; // unflag refreshing after 60s safety
+
+// Background cache refresh: makes internal HTTP request with X-Cache-Refresh header
+// to force middleware to fetch fresh data and update cache.
+const http = require('http');
+function refreshCacheBg(req, cached) {
+  const port = process.env.PORT || 3000;
+  const cleanup = () => { if (cached) cached.refreshing = false; };
+  const safetyTimer = setTimeout(cleanup, REFRESH_TIMEOUT_MS);
+  try {
+    const r = http.request({
+      host: 'localhost', port, path: req.originalUrl || req.url, method: 'GET',
+      headers: {
+        ...req.headers,
+        host: `localhost:${port}`,
+        'x-cache-refresh': '1',
+      },
+      timeout: REFRESH_TIMEOUT_MS,
+    }, (resp) => {
+      // drain body, we don't need it (cache is updated by middleware)
+      resp.on('data', () => {});
+      resp.on('end', () => { clearTimeout(safetyTimer); cleanup(); });
+    });
+    r.on('error', () => { clearTimeout(safetyTimer); cleanup(); });
+    r.on('timeout', () => { r.destroy(); clearTimeout(safetyTimer); cleanup(); });
+    r.end();
+  } catch(e) { clearTimeout(safetyTimer); cleanup(); }
+}
+
 app.use('/api', (req, res, next) => {
   if (req.method !== 'GET') return next();
   const ttl = getCacheTTL(req.path, req.query);
   if (ttl === 0) return next();
-  // Cache key = path + sorted query. Don't include user — same query returns same data
-  // for all users (data is org-wide). This dramatically improves cache hit rate.
   const sortedQuery = Object.keys(req.query).sort().map(k=>`${k}=${req.query[k]}`).join('&');
   const cacheKey = `${req.path}?${sortedQuery}`;
   const cached = responseCache.get(cacheKey);
-  if (cached && Date.now() - cached.t < ttl) {
-    res.set('X-Cache', 'HIT');
-    return res.json(cached.data);
+  const isRefreshRequest = req.headers['x-cache-refresh'] === '1';
+
+  // If this is a background refresh request → bypass cache check, go fetch fresh.
+  // The fresh response will be captured below and saved to cache.
+  if (!isRefreshRequest && cached) {
+    const age = Date.now() - cached.t;
+    if (age < ttl) {
+      // Fresh hit — serve immediately, no refresh needed
+      res.set('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+    if (age < ttl * STALE_MULTIPLIER) {
+      // Stale-while-revalidate: serve stale data NOW, refresh in background
+      res.set('X-Cache', 'STALE');
+      // Trigger BG refresh only if not already refreshing
+      if (!cached.refreshing) {
+        cached.refreshing = true;
+        // Schedule on next tick so response goes out first
+        setImmediate(() => refreshCacheBg(req, cached));
+      }
+      return res.json(cached.data);
+    }
+    // Else: too old, fall through and fetch fresh (user pays cost)
   }
-  // Wrap res.json to capture and cache
+
+  // Fetch fresh — wrap res.json to save result to cache
   const origJson = res.json.bind(res);
   res.json = (data) => {
     if (res.statusCode === 200 && data && !data.error) {
-      // Evict oldest if over cap
       if (responseCache.size >= CACHE_MAX_SIZE) {
         const firstKey = responseCache.keys().next().value;
         responseCache.delete(firstKey);
       }
-      responseCache.set(cacheKey, { t: Date.now(), data });
+      responseCache.set(cacheKey, { t: Date.now(), data, refreshing: false });
     }
-    res.set('X-Cache', 'MISS');
+    if (!isRefreshRequest) res.set('X-Cache', 'MISS');
     return origJson(data);
   };
   next();
 });
 
-// Periodically evict expired entries (runs every 2 min)
+// Periodically evict entries past full stale window (runs every 5 min)
 setInterval(() => {
   const now = Date.now();
+  const maxAge = CACHE_TTL_INVENTORY * STALE_MULTIPLIER; // longest possible
   for (const [k, v] of responseCache.entries()) {
-    if (now - v.t > CACHE_TTL_INVENTORY) responseCache.delete(k);
+    if (now - v.t > maxAge) responseCache.delete(k);
   }
-}, 2 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 // Manual cache clear endpoint (for testing/admin)
 app.post('/api/cache/clear', (req, res) => {
