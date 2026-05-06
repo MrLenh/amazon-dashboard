@@ -2889,6 +2889,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
   const[cmpGran,setCmpGran]=useState('week'); // 'day'|'week'|'month'
   const[cmpData,setCmpData]=useState(null);   // [{label, shops:{name:{rev,gp,units}}}]
   const[cmpLoading,setCmpLoading]=useState(false);
+  const[cmpEnabled,setCmpEnabled]=useState(false); // lazy: only fetch when user clicks "Load Comparison"
   const[cmpMetric,setCmpMetric]=useState('revenue'); // revenue|gp|units
 
   const buildPeriods=useCallback((gran)=>{
@@ -2917,6 +2918,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
   },[ed]);
 
   useEffect(()=>{
+    if (!cmpEnabled) return; // only fetch after user opts in
     setCmpLoading(true);setCmpData(null);
     const periods=buildPeriods(cmpGran);
     const params={store,seller};
@@ -2928,7 +2930,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
         });
         setCmpData(rows);setCmpLoading(false);
       }).catch(()=>setCmpLoading(false));
-  },[cmpGran,sd,ed,store,seller]);
+  },[cmpGran,sd,ed,store,seller,cmpEnabled]);
 
   const shopNames=useMemo(()=>[...new Set(fShopData.map(s=>s.s))],[fShopData]);
   const fmt=v=>cmpMetric==='units'?N(v):$(v);
@@ -2938,7 +2940,7 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
     <Sec title="Revenue Trend" icon="" t={t}><TrendChart data={fDaily} t={t} keys={[{dk:"revenue",n:"Revenue",c:t.primary,g:"url(#gRv)"}]}/></Sec>
     <Sec title="Shop Table (A / P / Gap)" icon="" t={t}><div style={{borderRadius:10,border:"1px solid "+t.cardBorder,background:t.card,overflow:"hidden"}}><div style={{overflowX:"auto",maxHeight:440,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}><thead><tr>{THDSHOP.map((h,i)=><th key={i} style={{position:"sticky",top:0,zIndex:2,padding:"10px 12px",textAlign:i===0?"left":i===7?"center":"right",color:h.includes("STOCK VALUE")?t.orange:h.includes("GP")?t.primary:t.textMuted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:"2px solid "+t.divider,background:h.includes("STOCK VALUE")?t.tableBg:h.includes("GP")?t.primaryLight:t.tableBg,whiteSpace:"nowrap"}}>{h}{h==="STOCK VALUE"&&<Tip text={TIPS.stockValue} t={t}/>}</th>)}</tr></thead><tbody>{fShopData.map((r,i)=><tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"10px 12px",fontWeight:700,borderBottom:"1px solid "+t.divider}}>{r.s}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,background:t.primaryGhost}}><APG actual={r.gp} plan={r.gpP||0} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.r} plan={r.rvP||0} t={t}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.ad} plan={r.adP||0} t={t} reverse/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><APG actual={r.u} plan={r.unP||0} t={t} isMoney={false}/></td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider,fontWeight:600}}>{N(r.f)}</td><td style={{padding:"10px 12px",textAlign:"right",color:mC(r.m,t),borderBottom:"1px solid "+t.divider,fontWeight:600}}>{r.m.toFixed(2)}%</td><td style={{padding:"10px 12px",borderBottom:"1px solid "+t.divider,textAlign:"center"}}>{r.m>10?<span style={{background:t.greenBg,color:t.green,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Good</span>:r.m>0?<span style={{background:t.orangeBg,color:t.orange,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Fair</span>:<span style={{background:t.redBg,color:t.red,padding:"2px 10px",borderRadius:10,fontSize:10,fontWeight:600}}>Poor</span>}</td><td style={{padding:"10px 12px",textAlign:"right",borderBottom:"1px solid "+t.divider}}><StockVal sv={r.sv} gp={r.gp} t={t}/></td></tr>)}</tbody></table></div><div style={{padding:"8px 14px",fontSize:10,color:t.textMuted,borderTop:"1px solid "+t.divider}}>Each cell: <strong style={{color:t.text}}>Actual</strong> / Plan / <span style={{color:t.green}}>Gap</span> · Stock Health: <span style={{color:t.green}}>●</span> &lt;1.5x · <span style={{color:t.orange}}>●</span> 1.5-3x · <span style={{color:t.red}}>●</span> &gt;3x GP</div></div></Sec>
 
-    {/* ── Comparison Table ── */}
+    {/* ── Comparison Table — lazy load to save DB queries ── */}
     <Sec title="Shop Performance Comparison" icon="" t={t}>
       <div style={{marginBottom:12,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         {['day','week','month'].map(g=><button key={g} onClick={()=>setCmpGran(g)} style={{padding:'5px 14px',borderRadius:8,border:'1px solid '+(cmpGran===g?t.primary:t.cardBorder),background:cmpGran===g?t.primaryLight:'transparent',color:cmpGran===g?t.primary:t.textSec,fontWeight:cmpGran===g?700:400,fontSize:12,cursor:'pointer',textTransform:'capitalize'}}>{g==='day'?'Last 7 Days':g==='week'?'Last 4 Weeks':'Last 3 Months'}</button>)}
@@ -2946,7 +2948,11 @@ function ShopPage({t,fShopData,fDaily,sd,ed,store,seller}){
           {['revenue','gp','units'].map(m=><button key={m} onClick={()=>setCmpMetric(m)} style={{padding:'4px 12px',borderRadius:7,border:'1px solid '+(cmpMetric===m?t.primary:t.cardBorder),background:cmpMetric===m?t.primaryLight:'transparent',color:cmpMetric===m?t.primary:t.textSec,fontSize:11,fontWeight:cmpMetric===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>{m==='gp'?'Net Profit':m}</button>)}
         </div>
       </div>
-      {cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
+      {!cmpEnabled?<div style={{padding:30,textAlign:'center'}}>
+        <button onClick={()=>setCmpEnabled(true)} style={{padding:'10px 28px',borderRadius:9,border:'1px solid '+t.primary,background:t.primaryLight,color:t.primary,fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Load Comparison Data</button>
+        <div style={{marginTop:10,fontSize:11,color:t.textMuted}}>Comparison loads multiple period queries — click to fetch when needed</div>
+      </div>
+      :cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
       :cmpData&&cmpData.length>0?<div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead><tr>
@@ -2990,6 +2996,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
   const[cmpData,setCmpData]=useState(null);
   const[cmpLoading,setCmpLoading]=useState(false);
   const[cmpMetric,setCmpMetric]=useState('revenue');
+  const[cmpEnabled,setCmpEnabled]=useState(false); // lazy load
 
   const buildPeriods=useCallback((gran)=>{
     const endD=new Date((ed||new Date().toISOString().slice(0,10))+'T00:00:00');
@@ -3016,6 +3023,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
   },[ed]);
 
   useEffect(()=>{
+    if (!cmpEnabled) return;
     setCmpLoading(true);setCmpData(null);
     const periods=buildPeriods(cmpGran);
     Promise.all(periods.map(p=>api('team',{start:p.s,end:p.e,store,seller}).catch(()=>[])))
@@ -3026,7 +3034,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
         });
         setCmpData(rows);setCmpLoading(false);
       }).catch(()=>setCmpLoading(false));
-  },[cmpGran,sd,ed,store,seller]);
+  },[cmpGran,sd,ed,store,seller,cmpEnabled]);
 
   const sellerNames=useMemo(()=>[...new Set(fSeller.map(s=>s.sl))],[fSeller]);
   const fmt=v=>cmpMetric==='units'?N(v):$(v);
@@ -3126,7 +3134,11 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
           {['revenue','gp','units'].map(m=><button key={m} onClick={()=>setCmpMetric(m)} style={{padding:'4px 12px',borderRadius:7,border:'1px solid '+(cmpMetric===m?t.primary:t.cardBorder),background:cmpMetric===m?t.primaryLight:'transparent',color:cmpMetric===m?t.primary:t.textSec,fontSize:11,fontWeight:cmpMetric===m?700:400,cursor:'pointer',textTransform:'capitalize'}}>{m==='gp'?'Net Profit':m}</button>)}
         </div>
       </div>
-      {cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
+      {!cmpEnabled?<div style={{padding:30,textAlign:'center'}}>
+        <button onClick={()=>setCmpEnabled(true)} style={{padding:'10px 28px',borderRadius:9,border:'1px solid '+t.primary,background:t.primaryLight,color:t.primary,fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Load Comparison Data</button>
+        <div style={{marginTop:10,fontSize:11,color:t.textMuted}}>Comparison loads multiple period queries — click to fetch when needed</div>
+      </div>
+      :cmpLoading?<div style={{padding:24,textAlign:'center',color:t.textMuted,fontSize:12}}>Loading…</div>
       :cmpData&&cmpData.length>0?<div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'separate',borderSpacing:0,fontSize:12.5}}>
           <thead><tr>
@@ -3556,12 +3568,28 @@ function ProductCRPage({t,sd,ed,store}){
               <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
               <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
             </tr>
-            {/* Average row — sticky below header AND label sticky to left */}
+            {/* Average row — Date+ASIN sticky-left (carry label), other info cells sticky-top only */}
             <tr className="avg-row">
-              <td colSpan={(hasAnyContent23?12:10)} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_DAILY,left:0,zIndex:7}}>AVG · {flatDaily.length} entries</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'center',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_DAILY,left:0,zIndex:8}}>AVG</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,fontSize:10,position:'sticky',top:AVG_TOP_DAILY,left:COL_WIDTHS.date,zIndex:8}}>{flatDaily.length} entries</td>
+              {/* Empty cells for the rest of info cols — only sticky-top */}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Stores*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Design*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*ProductType*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Niche*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Tier*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Sellers*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Content*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Image*/}
+              {hasAnyContent23 && <>
+                <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>
+                <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>
+              </>}
+              {/* Metric cells with values */}
               <td style={{textAlign:'center',borderLeft:'2px solid '+t.primary+'44',position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}>{avgCR!=null?avgCR.toFixed(2)+'%':'—'}</td>
               <td className="avg-orange" style={{textAlign:'center',position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
-              <td colSpan={2} style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Stock*/}
+              <td style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>{/*Avail*/}
             </tr>
           </thead>
           <tbody>
@@ -3623,9 +3651,22 @@ function ProductCRPage({t,sd,ed,store}){
                 <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
               ])}
             </tr>
-            {/* Average row — sticky below 2nd header row */}
+            {/* Average row — only ASIN col sticky-left to carry label, other info empty + sticky-top */}
             <tr className="avg-row">
-              <td colSpan={INFO_COLS} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:7}}>AVG · {filtered.length} ASINs</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*SKU*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Stores*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Design*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*ProductType*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Niche*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Tier*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Sellers*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Content*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Image*/}
+              {hasAnyContent23 && <>
+                <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>
+                <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>
+              </>}
               {periodLabels.map((w,i)=>{const a=periodAvg[i];return[
                 <td key={w+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider,position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
                 <td key={w+'-avg-ctr'} style={{textAlign:'center',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
@@ -3688,10 +3729,23 @@ function ProductCRPage({t,sd,ed,store}){
                 <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
               ])}
             </tr>
-            {/* Average row — sticky below 2nd header row */}
+            {/* Average row — only ASIN col sticky-left to carry label */}
             <tr className="avg-row">
-              <td colSpan={INFO_COLS} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:7}}>AVG · {filtered.length} ASINs</td>
-              <td style={{textAlign:'right',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>—</td>
+              <td className="avg-label sticky-col" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',fontSize:10,position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:8}}>AVG · {filtered.length} ASINs</td>
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*SKU*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Stores*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Design*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*ProductType*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Niche*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Tier*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Sellers*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Content*/}
+              <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>{/*Image*/}
+              {hasAnyContent23 && <>
+                <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>
+                <td style={{position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}/>
+              </>}
+              <td style={{textAlign:'right',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>—</td>{/*Stock*/}
               {periodLabels.map((m,i)=>{const a=periodAvg[i];return[
                 <td key={m+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider,position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
                 <td key={m+'-avg-ctr'} style={{textAlign:'center',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
