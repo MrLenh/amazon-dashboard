@@ -3280,6 +3280,9 @@ function ProductCRPage({t,sd,ed,store}){
   const HDR_ORANGE_BG = t.mode==='dark' ? '#3D2914' : '#FFEDD5';
   // Sticky row 2 top offset — measured from row 1 header height (padding 9px*2 + content ~16px ≈ 36px)
   const ROW2_TOP = 36;
+  // AVG row sits below row 2 of header (or below row 1 for daily which has only 1 header row)
+  const AVG_TOP_DAILY = 36;          // below 1 header row
+  const AVG_TOP_PIVOT = ROW2_TOP+36; // below 2 header rows (weekly/monthly)
 
   // Auto-detect if any row actually has content2 or content3 — skip those columns if all empty
   const hasAnyContent23=useMemo(()=>
@@ -3463,7 +3466,7 @@ function ProductCRPage({t,sd,ed,store}){
       }
       .cr-table tbody tr:hover td { background: ${t.tableHover} !important; }
       .cr-table .sticky-col { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); }
-      /* Average row — solid background, no transparency */
+      /* Average row — solid bg, no transparency, sticky below header */
       .cr-table .avg-row td {
         background: ${t.mode==='dark' ? '#1a1d2e' : '#EEF2FF'} !important;
         border-top: 2px solid ${t.primary} !important;
@@ -3476,6 +3479,10 @@ function ProductCRPage({t,sd,ed,store}){
       .cr-table .avg-row td.avg-orange {
         background: ${t.mode==='dark' ? '#3D2914' : '#FFEDD5'} !important;
         color: ${t.orange} !important;
+      }
+      /* The leftmost AVG label — sticky to left edge with shadow */
+      .cr-table .avg-row td.avg-label {
+        box-shadow: 2px 0 6px -2px rgba(0,0,0,0.15);
       }
     `}</style>
     {/* Header */}
@@ -3549,12 +3556,12 @@ function ProductCRPage({t,sd,ed,store}){
               <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Stock</th>
               <th style={TH({textAlign:'right',position:'sticky',top:0,zIndex:5,background:t.tableBg})}>Avail</th>
             </tr>
-            {/* Average row — clean design, all styling in CSS class */}
+            {/* Average row — sticky below header AND label sticky to left */}
             <tr className="avg-row">
-              <td colSpan={(hasAnyContent23?12:10)} style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase'}}>AVG · {flatDaily.length} entries</td>
-              <td style={{textAlign:'center',borderLeft:'2px solid '+t.primary+'44'}}>{avgCR!=null?avgCR.toFixed(2)+'%':'—'}</td>
-              <td className="avg-orange" style={{textAlign:'center'}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
-              <td colSpan={2}/>
+              <td colSpan={(hasAnyContent23?12:10)} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_DAILY,left:0,zIndex:7}}>AVG · {flatDaily.length} entries</td>
+              <td style={{textAlign:'center',borderLeft:'2px solid '+t.primary+'44',position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}>{avgCR!=null?avgCR.toFixed(2)+'%':'—'}</td>
+              <td className="avg-orange" style={{textAlign:'center',position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
+              <td colSpan={2} style={{position:'sticky',top:AVG_TOP_DAILY,zIndex:6}}/>
             </tr>
           </thead>
           <tbody>
@@ -3616,13 +3623,13 @@ function ProductCRPage({t,sd,ed,store}){
                 <th key={w+'-ads'} style={TH({fontSize:9,textAlign:'center',background:HDR_ORANGE_BG,color:t.orange,fontWeight:800,position:'sticky',top:ROW2_TOP,zIndex:4})}>Ads CTR</th>,
               ])}
             </tr>
-            {/* Average row */}
+            {/* Average row — sticky below 2nd header row */}
             <tr className="avg-row">
-              <td colSpan={INFO_COLS} style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase'}}>AVG · {filtered.length} ASINs</td>
+              <td colSpan={INFO_COLS} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:7}}>AVG · {filtered.length} ASINs</td>
               {periodLabels.map((w,i)=>{const a=periodAvg[i];return[
-                <td key={w+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
-                <td key={w+'-avg-ctr'} style={{textAlign:'center'}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
-                <td key={w+'-avg-ads'} className="avg-orange" style={{textAlign:'center'}}>{a.adsCtr!=null?a.adsCtr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider,position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-ctr'} style={{textAlign:'center',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-ads'} className="avg-orange" style={{textAlign:'center',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.adsCtr!=null?a.adsCtr.toFixed(2)+'%':'—'}</td>,
               ];})}
             </tr>
           </thead>
@@ -3681,13 +3688,13 @@ function ProductCRPage({t,sd,ed,store}){
                 <th key={m+'-ctr'} style={TH({fontSize:9,textAlign:'center',background:t.tableBg,position:'sticky',top:ROW2_TOP,zIndex:4})}>CTR%</th>,
               ])}
             </tr>
-            {/* Average row */}
+            {/* Average row — sticky below 2nd header row */}
             <tr className="avg-row">
-              <td colSpan={INFO_COLS} style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase'}}>AVG · {filtered.length} ASINs</td>
-              <td style={{textAlign:'right'}}>—</td>
+              <td colSpan={INFO_COLS} className="avg-label" style={{padding:'8px 14px',textAlign:'left',letterSpacing:.5,textTransform:'uppercase',position:'sticky',top:AVG_TOP_PIVOT,left:0,zIndex:7}}>AVG · {filtered.length} ASINs</td>
+              <td style={{textAlign:'right',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>—</td>
               {periodLabels.map((m,i)=>{const a=periodAvg[i];return[
-                <td key={m+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
-                <td key={m+'-avg-ctr'} style={{textAlign:'center'}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
+                <td key={m+'-avg-cr'}  style={{textAlign:'center',borderLeft:'1px solid '+t.divider,position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
+                <td key={m+'-avg-ctr'} style={{textAlign:'center',position:'sticky',top:AVG_TOP_PIVOT,zIndex:6}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
               ];})}
             </tr>
           </thead>
