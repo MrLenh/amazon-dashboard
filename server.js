@@ -635,18 +635,31 @@ app.use('/api', (req, res, next) => {
 // hit the same endpoint with the same filters within TTL.
 const responseCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;        // 5 minutes default
-const CACHE_TTL_INVENTORY = 10 * 60 * 1000; // inventory changes slow → 10 min
-const CACHE_TTL_LIVE = 60 * 1000;           // current-year data → 1 min (so new daily/weekly data appears soon)
-const CACHE_MAX_SIZE = 500;                 // hard cap to prevent memory bloat
+const CACHE_TTL_INVENTORY = 30 * 60 * 1000; // 30 min — inventory refreshes daily
+const CACHE_TTL_HEAVY = 15 * 60 * 1000;     // 15 min — heavy endpoints (cr, asins, shops, plan)
+const CACHE_TTL_LIVE = 5 * 60 * 1000;       // 5 min — even live data benefits from short cache
+
+const HEAVY_PATHS = [
+  '/inventory/storage-monthly',
+  '/inventory/by-asin',
+  '/inventory/by-shop',
+  '/inventory/stock-trend',
+  '/inventory/snapshot',
+  '/product/asins',
+  '/product/cr-performance',
+  '/shops',
+  '/asin-plan/data',
+  '/asin-plan/actuals',
+];
 
 const getCacheTTL = (path, query) => {
-  if (path.includes('/inventory/'))                      return CACHE_TTL_INVENTORY;
   if (path.includes('/auth/') || path === '/health')     return 0;
   if (path.startsWith('/debug/'))                        return 0;
-  // Current-year data needs shorter TTL to pick up newly-pulled rows
+  if (HEAVY_PATHS.some(p => path.includes(p)))           return CACHE_TTL_HEAVY;
+  if (path.includes('/inventory/'))                      return CACHE_TTL_INVENTORY;
+  // Current-year light endpoints
   const currentYear = new Date().getFullYear();
   if (query.year && parseInt(query.year) === currentYear) return CACHE_TTL_LIVE;
-  // Recent date ranges (within last 30 days) → shorter TTL too
   if (query.end) {
     const endTime = new Date(query.end).getTime();
     const daysAgo = (Date.now() - endTime) / 86400000;
@@ -654,6 +667,7 @@ const getCacheTTL = (path, query) => {
   }
   return CACHE_TTL_MS;
 };
+const CACHE_MAX_SIZE = 500;                 // hard cap to prevent memory bloat
 
 app.use('/api', (req, res, next) => {
   if (req.method !== 'GET') return next();
@@ -2925,7 +2939,7 @@ app.get('/api/product/cr-performance', async (req, res) => {
       try {
         const conn = await pool2.getConnection();
         try {
-          await conn.execute(`SET SESSION MAX_EXECUTION_TIME=15000`);
+          await conn.execute(`SET SESSION MAX_EXECUTION_TIME=20000`);
           let adsGrp;
           if (period === 'daily')       adsGrp = `DATE(r.date)`;
           else if (period === 'weekly') {
@@ -2933,17 +2947,21 @@ app.get('/api/product/cr-performance', async (req, res) => {
             adsGrp = `(FLOOR(DATEDIFF(r.date, ${AMZ_Y1_START}) / 7) + 1)`;
           }
           else                          adsGrp = `MONTH(r.date)`;
-          const asinPh = asinSet.map(() => '?').join(',');
+          // Don't pass IN(asinSet) — with 1500+ ASINs the placeholder list is too long
+          // and slows the query massively. Instead, filter by date range and keep all ASINs.
+          // Frontend matching by advertisedAsin handles filtering naturally.
+          const asinSetCheck = new Set(asinSet);
           const [adsRows] = await conn.execute(`
             SELECT r.advertisedAsin                                    AS asin,
               ${adsGrp}                                                AS periodGroup,
               ROUND(SUM(r.clicks) / NULLIF(SUM(r.impressions), 0) * 100, 4) AS adsCtr
             FROM report_sp_advertised_product r
             WHERE r.date BETWEEN ? AND ?
-              AND r.advertisedAsin IN (${asinPh})
+              AND r.advertisedAsin IS NOT NULL
             GROUP BY r.advertisedAsin, ${adsGrp}
-          `, [sd, ed, ...asinSet]);
+          `, [sd, ed]);
           adsRows.forEach(r => {
+            if (!asinSetCheck.has(r.asin)) return; // filter to ASINs we care about
             if (!adsCtrMap[r.asin]) adsCtrMap[r.asin] = {};
             adsCtrMap[r.asin][String(r.periodGroup)] = parseFloat(r.adsCtr) || null;
           });
