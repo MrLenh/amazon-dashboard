@@ -3356,7 +3356,19 @@ function ProductCRPage({t,sd,ed,store}){
     cols.push(COL_WIDTHS.stores, COL_WIDTHS.design, COL_WIDTHS.productType, COL_WIDTHS.niche, COL_WIDTHS.tier, COL_WIDTHS.sellers, COL_WIDTHS.content, COL_WIDTHS.image);
     if (hasContent23) cols.push(COL_WIDTHS.content2, COL_WIDTHS.content3);
     const allCols = [...cols, ...extraCols];
-    return <colgroup>{allCols.map((w,i)=><col key={i} style={{width:w}}/>)}</colgroup>;
+    return <colgroup>{allCols.map((w,i)=><col key={i} style={{width:w+'px',minWidth:w+'px',maxWidth:w+'px'}}/>)}</colgroup>;
+  };
+
+  // Compute total table width — needed for table-layout:fixed to work properly
+  const computeTableWidth = ({hasSku, hasDate, hasContent23, extraCols=[]})=>{
+    let total = 0;
+    if (hasDate) total += COL_WIDTHS.date;
+    total += COL_WIDTHS.asin;
+    if (hasSku) total += COL_WIDTHS.sku;
+    total += COL_WIDTHS.stores + COL_WIDTHS.design + COL_WIDTHS.productType + COL_WIDTHS.niche + COL_WIDTHS.tier + COL_WIDTHS.sellers + COL_WIDTHS.content + COL_WIDTHS.image;
+    if (hasContent23) total += COL_WIDTHS.content2 + COL_WIDTHS.content3;
+    extraCols.forEach(w => total += w);
+    return total;
   };
 
   const InfoTH=({hasSku,hasDate,hasContent23,rowSpan=1})=>{
@@ -3442,7 +3454,7 @@ function ProductCRPage({t,sd,ed,store}){
   return<div>
     <style>{`
       .cr-table {
-        table-layout: fixed;  /* lock column widths so virtual scrolling doesn't reflow */
+        table-layout: fixed !important;
       }
       .cr-table tbody tr { height: 44px; }
       .cr-table tbody td {
@@ -3451,6 +3463,19 @@ function ProductCRPage({t,sd,ed,store}){
       }
       .cr-table tbody tr:hover td { background: ${t.tableHover} !important; }
       .cr-table .sticky-col { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); }
+      /* Average row: solid background, no transparency */
+      .cr-table .avg-row td {
+        background: ${t.mode==='dark' ? '#1a1d2e' : '#EEF2FF'} !important;
+        border-top: 2px solid ${t.primary}66 !important;
+        border-bottom: 2px solid ${t.primary}66 !important;
+        font-weight: 800 !important;
+        color: ${t.primary} !important;
+        font-size: 11px !important;
+      }
+      .cr-table .avg-row td.avg-orange {
+        background: ${t.mode==='dark' ? '#3D2914' : '#FFEDD5'} !important;
+        color: ${t.orange} !important;
+      }
     `}</style>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:16,flexWrap:'wrap'}}>
@@ -3507,13 +3532,14 @@ function ProductCRPage({t,sd,ed,store}){
     {!loading&&period==='daily'&&flatDaily.length>0&&(()=>{
       const v = virtualSlice(flatDaily);
       const COLS = 4 + (hasAnyContent23?13:11);
-      // Average row: across visible (filtered) entries
+      const dailyExtraCols = [90,95,75,70];
+      const tableWidth = computeTableWidth({hasDate:true, hasSku:false, hasContent23:hasAnyContent23, extraCols:dailyExtraCols});
       const avgCR     = avgOf(flatDaily.map(r=>r._cr));
       const avgAdsCtr = avgOf(flatDaily.map(r=>r._adsCtr));
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
-          <InfoColgroup hasDate hasSku={false} hasContent23={hasAnyContent23} extraCols={[90,95,75,70]}/>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
+          <InfoColgroup hasDate hasSku={false} hasContent23={hasAnyContent23} extraCols={dailyExtraCols}/>
           <thead>
             <tr>
               <InfoTH hasDate hasSku={false} hasContent23={hasAnyContent23}/>
@@ -3526,7 +3552,7 @@ function ProductCRPage({t,sd,ed,store}){
             <tr className="avg-row">
               <td colSpan={(hasAnyContent23?13:11)} style={{padding:'8px 12px',background:t.primaryLight+'88',borderBottom:'2px solid '+t.primary+'66',fontSize:11,fontWeight:800,color:t.primary,letterSpacing:.4,textTransform:'uppercase',position:'sticky',top:36,zIndex:6}}>AVERAGE ({flatDaily.length})</td>
               <td style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',borderLeft:'2px solid '+t.primary+'44',fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36,zIndex:5}}>{avgCR!=null?avgCR.toFixed(2)+'%':'—'}</td>
-              <td style={{...TD(),textAlign:'center',background:t.orange+'33',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.orange,position:'sticky',top:36,zIndex:5}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
+              <td className="avg-orange" style={{...TD(),textAlign:'center',position:'sticky',top:36,zIndex:5}}>{avgAdsCtr!=null?avgAdsCtr.toFixed(2)+'%':'—'}</td>
               <td colSpan={2} style={{background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',position:'sticky',top:36,zIndex:5}}/>
             </tr>
           </thead>
@@ -3568,9 +3594,10 @@ function ProductCRPage({t,sd,ed,store}){
       }));
       // Per-week column widths for colgroup: [CR, CTR, AdsCTR]
       const periodColWidths = periodLabels.flatMap(()=>[70,70,85]);
+      const tableWidth = computeTableWidth({hasDate:false, hasSku:true, hasContent23:hasAnyContent23, extraCols:periodColWidths});
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
           <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
@@ -3594,7 +3621,7 @@ function ProductCRPage({t,sd,ed,store}){
               {periodLabels.map((w,i)=>{const a=periodAvg[i];return[
                 <td key={w+'-avg-cr'}  style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',borderLeft:'1px solid '+t.divider,fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.cr!=null?a.cr.toFixed(2)+'%':'—'}</td>,
                 <td key={w+'-avg-ctr'} style={{...TD(),textAlign:'center',background:t.primaryLight+'88',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.primary,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.ctr!=null?a.ctr.toFixed(2)+'%':'—'}</td>,
-                <td key={w+'-avg-ads'} style={{...TD(),textAlign:'center',background:t.orange+'33',borderTop:'2px solid '+t.primary+'66',borderBottom:'2px solid '+t.primary+'66',fontWeight:800,fontSize:11,color:t.orange,position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.adsCtr!=null?a.adsCtr.toFixed(2)+'%':'—'}</td>,
+                <td key={w+'-avg-ads'} className="avg-orange" style={{...TD(),textAlign:'center',position:'sticky',top:36+ROW2_TOP-36+36,zIndex:5}}>{a.adsCtr!=null?a.adsCtr.toFixed(2)+'%':'—'}</td>,
               ];})}
             </tr>
           </thead>
@@ -3632,9 +3659,10 @@ function ProductCRPage({t,sd,ed,store}){
         ctr: avgOf(filtered.map(r=>r.periods[m]?.ctr)),
       }));
       const periodColWidths = [75, ...periodLabels.flatMap(()=>[70,70])];
+      const tableWidth = computeTableWidth({hasDate:false, hasSku:true, hasContent23:hasAnyContent23, extraCols:periodColWidths});
       return <div style={{borderRadius:12,border:'1px solid '+t.cardBorder,background:t.card,overflow:'hidden'}}>
       <div ref={scrollContainerRef} onScroll={handleScroll} style={{overflowX:'auto',maxHeight:VIEWPORT_HEIGHT,overflowY:'auto'}}>
-        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+        <table className="cr-table" style={{borderCollapse:'separate',borderSpacing:0,fontSize:12,width:tableWidth+'px'}}>
           <InfoColgroup hasDate={false} hasSku hasContent23={hasAnyContent23} extraCols={periodColWidths}/>
           <thead>
             <tr>
@@ -5106,9 +5134,9 @@ function Dashboard({authUser,onLogout}){
     // so it needs asins + shops + team data too (not just exec/summary).
     const needExec   =currentPg==='exec';
     const needDaily  =currentPg==='daily'||currentPg==='exec';
-    const needProduct=currentPg==='prod'||currentPg==='exec';
-    const needShops  =currentPg==='shops'||currentPg==='exec';
-    const needTeam   =currentPg==='team'||currentPg==='exec';
+    const needProduct=currentPg==='prod'||currentPg==='exec'||currentPg==='analytics';
+    const needShops  =currentPg==='shops'||currentPg==='exec'||currentPg==='analytics';
+    const needTeam   =currentPg==='team'||currentPg==='exec'||currentPg==='analytics';
     const needInv    =currentPg==='inv';
 
     // Skip entirely if everything for this page is cached
@@ -5119,6 +5147,7 @@ function Dashboard({authUser,onLogout}){
       shops:['shops'],
       team:['team'],
       inv:['inv'],
+      analytics:['asins','shops','team'],
     };
     const requiredKeys=(pageKeys[currentPg]||[]).map(k=>k+':'+cacheKey);
     if(requiredKeys.length>0&&requiredKeys.every(k=>alreadyFetched.has(k))){
