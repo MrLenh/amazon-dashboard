@@ -3022,21 +3022,38 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
     return periods;
   },[ed]);
 
+  // Bug fix 1: reset teamMonth when plan data changes (e.g. filter change fetches new asinPlanBkData)
+  // Prevents stale month selection showing empty table when new data doesn't have that month
+  useEffect(()=>{ setTeamMonth("All"); },[asinPlanBkData]);
+
+  // Bug fix 2: buildPeriods only uses ed, remove sd from deps to avoid unnecessary refetches
+  // Bug fix 3: add cleanup to avoid setState on unmounted component
   useEffect(()=>{
     if (!cmpEnabled) return;
+    let cancelled=false;
     setCmpLoading(true);setCmpData(null);
     const periods=buildPeriods(cmpGran);
     Promise.all(periods.map(p=>api('team',{start:p.s,end:p.e,store,seller}).catch(()=>[])))
       .then(results=>{
-        const rows=periods.map((p,i)=>({label:p.label,sellers:{}}));
+        if(cancelled)return;
+        const rows=periods.map((p)=>({label:p.label,sellers:{}}));
         results.forEach((arr,pi)=>{
           (arr||[]).forEach(s=>{rows[pi].sellers[s.seller]={revenue:s.revenue||0,gp:s.netProfit||0,units:s.units||0};});
         });
         setCmpData(rows);setCmpLoading(false);
-      }).catch(()=>setCmpLoading(false));
-  },[cmpGran,sd,ed,store,seller,cmpEnabled]);
+      }).catch(()=>{if(!cancelled)setCmpLoading(false);});
+    return()=>{cancelled=true;};
+  },[cmpGran,ed,store,seller,cmpEnabled]);
 
   const sellerNames=useMemo(()=>[...new Set(fSeller.map(s=>s.sl))],[fSeller]);
+  // Bug fix 4: Seller Comparison table uses sellerNames from fSeller (current period only).
+  // Sellers active in past comparison periods but not in current period are invisible.
+  // Use union of all sellers across cmpData periods + fSeller to show complete picture.
+  const cmpSellerNames=useMemo(()=>{
+    const names=new Set(sellerNames);
+    if(cmpData){cmpData.forEach(p=>Object.keys(p.sellers).forEach(s=>s&&names.add(s)));}
+    return[...names].sort();
+  },[sellerNames,cmpData]);
   const fmt=v=>cmpMetric==='units'?N(v):$(v);
   const asinData=useMemo(()=>{
     const raw=asinPlanBkData||[];
@@ -3146,7 +3163,7 @@ function TeamPage({t,fSeller,fDaily,asinPlanBkData,onAsinClick,sd,ed,store,selle
             {cmpData.map((p,i)=><th key={i} title={p.tooltip} style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.primary,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.primaryLight,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap',cursor:p.tooltip?'help':'default'}}>{p.label}</th>)}
             <th style={{padding:'9px 12px',textAlign:'right',fontWeight:700,fontSize:11,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,position:'sticky',top:0,zIndex:2,whiteSpace:'nowrap'}}>Δ vs Prev</th>
           </tr></thead>
-          <tbody>{sellerNames.map(sl=>{
+          <tbody>{cmpSellerNames.map(sl=>{
             const vals=cmpData.map(p=>p.sellers[sl]?p.sellers[sl][cmpMetric]:0);
             const last=vals[vals.length-1]||0;
             const prev=vals[vals.length-2]||0;
