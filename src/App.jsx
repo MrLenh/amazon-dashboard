@@ -5491,7 +5491,7 @@ function Dashboard({authUser,onLogout}){
     // NOTE: 'exec' embeds Shop Performance and ASIN Performance sections,
     // so it needs asins + shops + team data too (not just exec/summary).
     const needExec   =currentPg==='exec';
-    const needDaily  =currentPg==='daily'||currentPg==='exec';
+    const needDaily  =currentPg==='daily'||currentPg==='exec'||currentPg==='team';
     const needProduct=currentPg==='prod'||currentPg==='exec'||currentPg==='analytics';
     const needShops  =currentPg==='shops'||currentPg==='exec'||currentPg==='analytics';
     const needTeam   =currentPg==='team'||currentPg==='exec'||currentPg==='analytics';
@@ -5503,7 +5503,7 @@ function Dashboard({authUser,onLogout}){
       daily:['exec'],
       prod:['asins'],
       shops:['shops'],
-      team:['team'],
+      team:['team','exec'],
       inv:['inv'],
       analytics:['asins','shops','team'],
     };
