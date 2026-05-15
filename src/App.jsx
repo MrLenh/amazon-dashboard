@@ -5730,7 +5730,7 @@ function Dashboard({authUser,onLogout}){
   const planParamsRef=useRef({planYear,store,seller,asinF});
   planParamsRef.current={planYear,store,seller,asinF};
   useEffect(()=>{
-    if(!live||dbConnecting||pg!=='plan')return;
+    if(!live||dbConnecting||(pg!=='plan'&&pg!=='team'))return;
     const timer=setTimeout(()=>setPlanTrigger(t=>t+1),400);
     return()=>clearTimeout(timer);
   },[planYear,store,seller,asinF,live,dbConnecting,pg]);
