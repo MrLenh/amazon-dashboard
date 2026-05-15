@@ -1031,7 +1031,8 @@ app.get('/api/product/asins', async (req, res) => {
     if (af && af !== 'All') { w += ' AND p.asin = ?'; params.push(af); }
     if (productType && productType !== 'All') { w += ' AND a.productType = ?'; params.push(productType); }
     if (niche && niche !== 'All') { w += ' AND a.seasonAndNiche = ?'; params.push(niche); }
-    const rows = await qc(`SELECT p.asin, p.accountId, p.seller,
+    const rows = await qc(`SELECT p.asin, p.accountId,
+      COALESCE(NULLIF(p.seller,''), a.seller, '') AS seller,
       MAX(a.productType) as productType, MAX(a.seasonAndNiche) as seasonAndNiche,
       SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
       SUM(${P_UNITS}) as units, AVG(COALESCE(p.realACOS,0)) as acos,
@@ -1041,7 +1042,7 @@ app.get('/api/product/asins', async (req, res) => {
       CASE WHEN SUM(${P_UNITS}) > 0 THEN SUM(${P_SALES}) / SUM(${P_UNITS}) ELSE 0 END as avgPrice
       FROM seller_board_product p
       LEFT JOIN asin a ON p.asin COLLATE utf8mb4_0900_ai_ci = a.asin
-      ${w} GROUP BY p.asin, p.accountId, p.seller ORDER BY revenue DESC`, params, 60000);
+      ${w} GROUP BY p.asin, p.accountId, COALESCE(NULLIF(p.seller,''), a.seller, '') ORDER BY revenue DESC`, params, 60000);
     // Fetch images + ads metrics from DB2 in parallel (non-blocking, fail gracefully)
     const asinList = rows.map(r => r.asin);
     const [imgMap, adsMap] = await Promise.all([
