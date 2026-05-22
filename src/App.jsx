@@ -1887,16 +1887,13 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
               {thSort('reserved','Reserved')}
               {thSort('unfulfillable','Unfulfill.')}
               {thSort('daysLeft','Days Left')}
-              {thSort('age0_90','0-90d')}
-              {thSort('age91_180','91-180d')}
-              {thSort('age181_270','181-270d')}
-              {thSort('age271_365','271-365d')}
-              {thSort('age365plus','365d+')}
+              {thSort('age0_90','Inv. Age')}
+              <th style={{padding:'9px 10px',fontSize:10,fontWeight:700,color:t.textMuted,textTransform:'uppercase',borderBottom:'2px solid '+t.divider,background:t.tableBg,whiteSpace:'nowrap',cursor:'default'}}>Sellers · Content · Image</th>
               {thSort('storageFee','Storage Fee')}
               {thSort('longTermFee','LT Fee')}
               {thSort('stockValue','Stock Value')}
             </tr></thead>
-            <tbody>{filteredAsin.length===0?<tr><td colSpan={17} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
+            <tbody>{filteredAsin.length===0?<tr><td colSpan={15} style={{padding:30,textAlign:'center',color:t.textMuted,fontSize:12}}>{asinRows.length===0?'Loading inventory data…':'No results for "'+asinSearch+'"'}</td></tr>:filteredAsin.map((r,i)=>{
               const oos=r.oos45;
               return<tr key={i} onMouseEnter={e=>e.currentTarget.style.background=t.tableHover} onMouseLeave={e=>e.currentTarget.style.background='transparent'} style={{background:oos?t.redBg+'55':'transparent'}}>
                 <td style={{padding:'4px 6px',borderBottom:'1px solid '+t.divider,width:40,height:42,verticalAlign:'middle',lineHeight:0}}>
@@ -1918,12 +1915,24 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                 <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.reserved>0?N(r.reserved):<span style={{color:t.textMuted}}>—</span>}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.unfulfillable>0?t.red:t.textMuted}}>{r.unfulfillable>0?N(r.unfulfillable):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,borderBottom:'1px solid '+t.divider,color:r.daysLeft>0&&r.daysLeft<=14?t.red:r.daysLeft<=45?t.orange:t.text}}>{r.daysLeft>0?r.daysLeft+'d':'—'}</td>
-                {/* Stock age columns */}
-                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:t.green,fontSize:11}}>{r.age0_90>0?N(r.age0_90):<span style={{color:t.textMuted}}>—</span>}</td>
-                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age91_180>0?t.orange:t.textMuted,fontSize:11}}>{r.age91_180>0?N(r.age91_180):'—'}</td>
-                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age181_270>0?t.orange:t.textMuted,fontSize:11}}>{r.age181_270>0?N(r.age181_270):'—'}</td>
-                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age271_365>0?t.red:t.textMuted,fontSize:11}}>{r.age271_365>0?N(r.age271_365):'—'}</td>
-                <td style={{padding:'8px 10px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.age365plus>0?t.red:t.textMuted,fontSize:11,fontWeight:r.age365plus>0?700:400}}>{r.age365plus>0?N(r.age365plus):'—'}</td>
+                {/* Inventory Age — 4 ranges in one cell */}
+                <td style={{padding:'6px 10px',borderBottom:'1px solid '+t.divider,verticalAlign:'middle',minWidth:130}}>
+                  {(r.age0_90>0||r.age91_180>0||r.age181_365>0||r.age366plus>0)?<div style={{display:'flex',flexDirection:'column',gap:2}}>
+                    {r.age0_90>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>0-90d</span><span style={{fontWeight:600,color:t.green}}>{N(r.age0_90)}</span></div>}
+                    {r.age91_180>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>91-180d</span><span style={{fontWeight:600,color:t.orange}}>{N(r.age91_180)}</span></div>}
+                    {r.age181_365>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>181-365d</span><span style={{fontWeight:600,color:t.orange}}>{N(r.age181_365)}</span></div>}
+                    {r.age366plus>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>366d+</span><span style={{fontWeight:700,color:t.red}}>{N(r.age366plus)}</span></div>}
+                  </div>:<span style={{color:t.textMuted,fontSize:11}}>—</span>}
+                </td>
+                {/* Sellers · Content · Image (from asin master, same as ProductCR) */}
+                <td style={{padding:'6px 10px',borderBottom:'1px solid '+t.divider,verticalAlign:'middle',minWidth:150}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                    {r.sellers?<div style={{fontSize:11,fontWeight:600,color:t.text}}>{r.sellers}</div>:null}
+                    {r.content1?(()=>{const vs=(r.content1||'').split(/[,/;]/).map(s=>s.trim()).filter(Boolean);return vs.length?<div style={{display:'flex',flexWrap:'wrap',gap:2}}>{vs.map((c,i)=><span key={i} style={{padding:'1px 7px',borderRadius:10,background:t.primaryLight,color:t.primary,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{c}</span>)}</div>:null;})():null}
+                    {r.image?(()=>{const vs=(r.image||'').split(/[,/;]/).map(s=>s.trim()).filter(Boolean);return vs.length?<div style={{display:'flex',flexWrap:'wrap',gap:2}}>{vs.map((c,i)=><span key={i} style={{padding:'1px 7px',borderRadius:10,background:(t.purple||'#7C3AED')+'22',color:t.purple||'#7C3AED',fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>{c}</span>)}</div>:null;})():null}
+                    {!r.sellers&&!r.content1&&!r.image&&<span style={{color:t.textMuted,fontSize:11}}>—</span>}
+                  </div>
+                </td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.storageFee>200?t.red:r.storageFee>50?t.orange:t.text}}>{r.storageFee>0?$2(r.storageFee):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.longTermFee>0?t.red:t.textMuted,fontWeight:r.longTermFee>0?700:400}}>{r.longTermFee>0?$2(r.longTermFee):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider}}>{r.stockValue>0?$2(r.stockValue):'—'}</td>
@@ -1932,7 +1941,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
           </table>
         </div>
         <div style={{padding:'6px 14px',fontSize:10,color:t.textMuted,borderTop:'1px solid '+t.divider,background:t.tableBg}}>
-          {filteredAsin.length} of {asinRows.length} ASINs · <span style={{color:t.green}}>■</span> 0-90d <span style={{color:t.orange}}>■</span> 91-270d <span style={{color:t.red}}>■</span> 271d+ · <span style={{color:t.red}}>⚠ OOS ≤45d</span> · LT Fee = Long-term storage fee · Click headers to sort
+          {filteredAsin.length} of {asinRows.length} ASINs · <span style={{color:t.green}}>■</span> 0-90d <span style={{color:t.orange}}>■</span> 91-365d <span style={{color:t.red}}>■</span> 366d+ · <span style={{color:t.red}}>⚠ OOS ≤45d</span> · LT Fee = Long-term storage fee · Click headers to sort
         </div>
       </Cd>
     </Sec>
