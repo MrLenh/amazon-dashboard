@@ -1523,30 +1523,67 @@ app.get('/api/inventory/by-asin', async (req, res) => {
     sellerRows.forEach(r => { if(!sellerMap[r.asin]) sellerMap[r.asin] = r.seller; });
 
     // Fetch images from DB2 (non-blocking, fails gracefully)
-    const imgMap = await getImageMap(stockRows.map(r => r.asin));
+    const asinList = stockRows.map(r => r.asin);
+    const imgMap = await getImageMap(asinList);
+
+    // Fetch sellers/content/image from asin master table
+    let asinMasterMap = {};
+    if (asinList.length > 0) {
+      try {
+        const ph2 = asinList.map(() => '?').join(',');
+        const asinCols = await getColumnsCache('asin');
+        const has2 = asinCols.includes('contenters2');
+        const has3 = asinCols.includes('contenters3');
+        const masterRows = await q(`
+          SELECT a.asin, a.seller,
+            a.contenters AS content1,
+            ${has2 ? 'a.contenters2' : 'NULL'} AS content2,
+            ${has3 ? 'a.contenters3' : 'NULL'} AS content3,
+            a.imagers AS image
+          FROM asin a WHERE a.asin IN (${ph2})
+        `, asinList, 15000);
+        masterRows.forEach(r => { asinMasterMap[r.asin] = r; });
+      } catch(e) { console.warn('[inventory/by-asin] asin master:', e.message); }
+    }
 
     const result = stockRows.map(r => {
       const plan = planMap[r.asin+'_'+r.accountId] || {};
+      const master = asinMasterMap[r.asin] || {};
       const fba = parseInt(r.fba)||0;
       const available = parseInt(plan.available) ?? fba;
       const reserved = parseInt(plan.planReserved) || parseInt(r.reserved)||0;
       const inbound = parseInt(plan.inbound)||0;
       const storageFee = parseFloat(plan.storageFee)||0;
       const daysLeft = parseInt(r.daysLeft) || Math.round(parseFloat(plan.daysOfSupply)||0);
-      const aged = (parseInt(plan.age91_180)||0)+(parseInt(plan.age181_270)||0)+(parseInt(plan.age271_365)||0)+(parseInt(plan.age365plus)||0);
+      const age0_90   = parseInt(plan.age0_90)||0;
+      const age91_180 = parseInt(plan.age91_180)||0;
+      const age181_270= parseInt(plan.age181_270)||0;
+      const age271_365= parseInt(plan.age271_365)||0;
+      const age365plus= parseInt(plan.age365plus)||0;
+      // Merged ranges for display: 181-365 = 181-270 + 271-365; 366+ = 365plus
+      const age181_365= age181_270 + age271_365;
+      const age366plus= age365plus;
+      const aged = age91_180 + age181_365 + age366plus;
       return {
         asin: r.asin, name: (r.name||'').substring(0,60), sku: r.sku||'',
         shop: shopMap[r.accountId]||`Account ${r.accountId}`,
-        seller: sellerMap[r.asin]||'', accountId: r.accountId,
+        seller: sellerMap[r.asin] || master.seller || '', accountId: r.accountId,
         imageUrl: imgMap[r.asin] || null,
+        // Sellers/Content/Image from asin master (same as ProductCR page)
+        sellers:  master.seller   || '',
+        content1: master.content1 || '',
+        content2: master.content2 || '',
+        content3: master.content3 || '',
+        image:    master.image    || '',
         fba, available, reserved, inbound,
         stockValue: parseFloat(r.stockValue)||0,
         velocity: Math.round((parseFloat(r.velocity)||0)*100)/100,
         daysLeft, storageFee, longTermFee: 0,
         unfulfillable: parseInt(plan.unfulfillable)||0,
-        age0_90: parseInt(plan.age0_90)||0, age91_180: parseInt(plan.age91_180)||0,
-        age181_270: parseInt(plan.age181_270)||0, age271_365: parseInt(plan.age271_365)||0,
-        age365plus: parseInt(plan.age365plus)||0, aged,
+        // Raw age columns (kept for backward compat)
+        age0_90, age91_180, age181_270, age271_365, age365plus,
+        // Merged 4-range columns for new display
+        age181_365, age366plus, aged,
         oos45: daysLeft > 0 && daysLeft <= 45,
       };
     });
