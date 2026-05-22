@@ -1906,7 +1906,7 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                     {oos&&<span title="OOS risk <45 days" style={{color:t.red,fontSize:10,fontWeight:700}}>⚠</span>}
                     <AsinLink asin={r.asin} onClick={onAsinClick||(()=>{})} t={t}/>
                   </div>
-                  {r.name&&<div style={{fontSize:10,color:t.textMuted,marginTop:1,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>}
+                  {r.name&&<div style={{fontSize:10,color:t.textMuted,marginTop:2,maxWidth:200,lineHeight:1.4,wordBreak:'break-word'}}>{r.name}</div>}
                   {r.sku&&<div style={{fontSize:9,color:t.textMuted}}>{r.sku}</div>}
                 </td>
                 <td style={{padding:'8px 12px',fontSize:12,color:t.textSec,borderBottom:'1px solid '+t.divider,whiteSpace:'nowrap'}}>{r.shop}</td>
@@ -1917,14 +1917,14 @@ function InvPage({t,mob,invData,invShop,invTrend,invFeeMonthly,invAsin,onAsinCli
                 <td style={{padding:'8px 12px',textAlign:'right',color:t.orange,borderBottom:'1px solid '+t.divider}}>{r.reserved>0?N(r.reserved):<span style={{color:t.textMuted}}>—</span>}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',borderBottom:'1px solid '+t.divider,color:r.unfulfillable>0?t.red:t.textMuted}}>{r.unfulfillable>0?N(r.unfulfillable):'—'}</td>
                 <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,borderBottom:'1px solid '+t.divider,color:r.daysLeft>0&&r.daysLeft<=14?t.red:r.daysLeft<=45?t.orange:t.text}}>{r.daysLeft>0?r.daysLeft+'d':'—'}</td>
-                {/* Inventory Age — 4 ranges in one cell */}
+                {/* Inventory Age — always show all 4 ranges */}
                 <td style={{padding:'6px 10px',borderBottom:'1px solid '+t.divider,verticalAlign:'middle',minWidth:130}}>
-                  {(r.age0_90>0||r.age91_180>0||r.age181_365>0||r.age366plus>0)?<div style={{display:'flex',flexDirection:'column',gap:2}}>
-                    {r.age0_90>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>0-90d</span><span style={{fontWeight:600,color:t.green}}>{N(r.age0_90)}</span></div>}
-                    {r.age91_180>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>91-180d</span><span style={{fontWeight:600,color:t.orange}}>{N(r.age91_180)}</span></div>}
-                    {r.age181_365>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>181-365d</span><span style={{fontWeight:600,color:t.orange}}>{N(r.age181_365)}</span></div>}
-                    {r.age366plus>0&&<div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>366d+</span><span style={{fontWeight:700,color:t.red}}>{N(r.age366plus)}</span></div>}
-                  </div>:<span style={{color:t.textMuted,fontSize:11}}>—</span>}
+                  <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                    <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>0–90d</span><span style={{fontWeight:600,color:r.age0_90>0?t.green:t.textMuted}}>{N(r.age0_90)}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>91–180d</span><span style={{fontWeight:600,color:r.age91_180>0?t.orange:t.textMuted}}>{N(r.age91_180)}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>181–365d</span><span style={{fontWeight:600,color:r.age181_365>0?t.orange:t.textMuted}}>{N(r.age181_365)}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}><span style={{color:t.textMuted,whiteSpace:'nowrap'}}>366d+</span><span style={{fontWeight:r.age366plus>0?700:400,color:r.age366plus>0?t.red:t.textMuted}}>{N(r.age366plus)}</span></div>
+                  </div>
                 </td>
                 {/* Seller */}
                 <td style={{padding:'8px 10px',borderBottom:'1px solid '+t.divider,verticalAlign:'middle',minWidth:80,fontSize:12,fontWeight:600,color:t.text}}>{r.sellers||<span style={{color:t.textMuted}}>—</span>}</td>
