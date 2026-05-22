@@ -1565,7 +1565,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
       const age366plus= age365plus;
       const aged = age91_180 + age181_365 + age366plus;
       return {
-        asin: r.asin, name: (r.name||'').substring(0,60), sku: r.sku||'',
+        asin: r.asin, name: (r.name||'').substring(0,120), sku: r.sku||'',
         shop: shopMap[r.accountId]||`Account ${r.accountId}`,
         seller: sellerMap[r.asin] || master.seller || '', accountId: r.accountId,
         imageUrl: imgMap[r.asin] || null,
