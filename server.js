@@ -21,13 +21,13 @@ const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('he
 const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 if (!process.env.JWT_SECRET) console.warn('⚠️ JWT_SECRET not set — using random (tokens invalidate on restart). Set JWT_SECRET in Railway env vars.');
 
-// VISIBLE_SHOPS — optional env var to restrict which shops are shown in this deployment.
+// VISIBLE_SHOPS — restrict which shops are shown in this deployment.
 // Set on Railway as: VISIBLE_SHOPS=Teezwonder,Oassie,Wrapix
-// Leave unset (or empty) to show all shops (default behaviour, no change).
+// Leave unset to show all shops (default).
 const VISIBLE_SHOPS = process.env.VISIBLE_SHOPS
   ? process.env.VISIBLE_SHOPS.split(',').map(s => s.trim()).filter(Boolean)
-  : null; // null = no restriction
-if (VISIBLE_SHOPS) console.log(`🔒 VISIBLE_SHOPS restriction active: [${VISIBLE_SHOPS.join(', ')}]`);
+  : null;
+if (VISIBLE_SHOPS) console.log(`🔒 VISIBLE_SHOPS active: [${VISIBLE_SHOPS.join(', ')}]`);
 
 // Password hashing (Node built-in crypto, zero dependencies)
 function hashPassword(password, salt) {
@@ -277,7 +277,6 @@ async function getShopMap() {
   const rows = await q('SELECT id, shop FROM accounts WHERE deleted_at IS NULL');
   _shopMapCache = {};
   rows.forEach(r => {
-    // If VISIBLE_SHOPS is set, only include shops in the list
     if (VISIBLE_SHOPS && !VISIBLE_SHOPS.includes(r.shop)) return;
     _shopMapCache[r.id] = r.shop;
   });
@@ -291,11 +290,21 @@ async function getShopReverseMap() {
 // storeToAccIds: accepts "All", "Shop1", or "Shop1,Shop2,Shop3"
 // Returns null (= no filter) or array of integers
 async function storeToAccIds(storeParam) {
-  if (!storeParam || storeParam === 'All') return null;
   const rm = await getShopReverseMap();
-  const names = storeParam.split(',').map(s=>s.trim()).filter(Boolean);
-  const ids = names.map(n=>rm[n]).filter(Boolean);
-  return ids.length ? ids : null;
+  // If user selects a specific shop, filter to that shop only
+  if (storeParam && storeParam !== 'All') {
+    const names = storeParam.split(',').map(s=>s.trim()).filter(Boolean);
+    const ids = names.map(n=>rm[n]).filter(Boolean);
+    return ids.length ? ids : null;
+  }
+  // User selected "All" — if VISIBLE_SHOPS is set, restrict to those shops only
+  // This ensures queries never return data from shops outside the visible list
+  if (VISIBLE_SHOPS) {
+    const ids = VISIBLE_SHOPS.map(n=>rm[n]).filter(Boolean);
+    return ids.length ? ids : null;
+  }
+  // No restriction — return null to fetch all shops
+  return null;
 }
 // Legacy single-id helper (still used in some endpoints)
 async function storeToAccId(storeParam) {
@@ -885,9 +894,7 @@ app.get('/api/date-range', async (req, res) => {
 app.get('/api/filters', async (req, res) => {
   try {
     const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
-    const visibleShops = VISIBLE_SHOPS
-      ? shops.filter(s => VISIBLE_SHOPS.includes(s.name))
-      : shops;
+    const visibleShops = VISIBLE_SHOPS ? shops.filter(s => VISIBLE_SHOPS.includes(s.name)) : shops;
     const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
     const asinShops = await q("SELECT DISTINCT p.asin, p.accountId FROM seller_board_product p WHERE p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)");
     const sm = {}; visibleShops.forEach(s => { sm[s.id] = s.name; });
