@@ -21,6 +21,14 @@ const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('he
 const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 if (!process.env.JWT_SECRET) console.warn('⚠️ JWT_SECRET not set — using random (tokens invalidate on restart). Set JWT_SECRET in Railway env vars.');
 
+// VISIBLE_SHOPS — optional env var to restrict which shops are shown in this deployment.
+// Set on Railway as: VISIBLE_SHOPS=Teezwonder,Oassie,Wrapix
+// Leave unset (or empty) to show all shops (default behaviour, no change).
+const VISIBLE_SHOPS = process.env.VISIBLE_SHOPS
+  ? process.env.VISIBLE_SHOPS.split(',').map(s => s.trim()).filter(Boolean)
+  : null; // null = no restriction
+if (VISIBLE_SHOPS) console.log(`🔒 VISIBLE_SHOPS restriction active: [${VISIBLE_SHOPS.join(', ')}]`);
+
 // Password hashing (Node built-in crypto, zero dependencies)
 function hashPassword(password, salt) {
   if (!salt) salt = crypto.randomBytes(16).toString('hex');
@@ -267,7 +275,12 @@ let _shopMapTs = 0;
 async function getShopMap() {
   if (_shopMapCache && Date.now() - _shopMapTs < 5*60*1000) return _shopMapCache;
   const rows = await q('SELECT id, shop FROM accounts WHERE deleted_at IS NULL');
-  _shopMapCache = {}; rows.forEach(r => { _shopMapCache[r.id] = r.shop; });
+  _shopMapCache = {};
+  rows.forEach(r => {
+    // If VISIBLE_SHOPS is set, only include shops in the list
+    if (VISIBLE_SHOPS && !VISIBLE_SHOPS.includes(r.shop)) return;
+    _shopMapCache[r.id] = r.shop;
+  });
   _shopMapTs = Date.now();
   return _shopMapCache;
 }
@@ -872,13 +885,16 @@ app.get('/api/date-range', async (req, res) => {
 app.get('/api/filters', async (req, res) => {
   try {
     const shops = await q('SELECT id, shop as name FROM accounts WHERE deleted_at IS NULL ORDER BY shop');
+    const visibleShops = VISIBLE_SHOPS
+      ? shops.filter(s => VISIBLE_SHOPS.includes(s.name))
+      : shops;
     const sellers = await q('SELECT DISTINCT seller FROM asin WHERE seller IS NOT NULL AND LENGTH(seller) > 0 ORDER BY seller');
     const asinShops = await q("SELECT DISTINCT p.asin, p.accountId FROM seller_board_product p WHERE p.date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)");
-    const sm = {}; shops.forEach(s => { sm[s.id] = s.name; });
+    const sm = {}; visibleShops.forEach(s => { sm[s.id] = s.name; });
     const asm = {};
     asinShops.forEach(r => { if (!asm[r.asin]) asm[r.asin] = []; const sn = sm[r.accountId]; if (sn && !asm[r.asin].includes(sn)) asm[r.asin].push(sn); });
     const asins = await q("SELECT DISTINCT a.asin, a.seller FROM asin a WHERE a.asin REGEXP '^(AU-)?B0[A-Za-z0-9]{8}$' ORDER BY a.asin");
-    res.json({ shops: shops.map(s=>({id:s.id,name:s.name})), sellers: sellers.map(s=>s.seller), asins: asins.map(a=>({asin:a.asin,seller:a.seller,shops:asm[a.asin]||[]})) });
+    res.json({ shops: visibleShops.map(s=>({id:s.id,name:s.name})), sellers: sellers.map(s=>s.seller), asins: asins.map(a=>({asin:a.asin,seller:a.seller,shops:asm[a.asin]||[]})) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
