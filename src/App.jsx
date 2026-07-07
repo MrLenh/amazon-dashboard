@@ -5570,22 +5570,22 @@ function Dashboard({authUser,onLogout}){
         calls.push(['prev',api("exec/summary",{...p,start:ps.toISOString().slice(0,10),end:pe.toISOString().slice(0,10)}).catch(()=>null)]);
       }
       if(needProduct && !alreadyFetched.has('asins:'+cacheKey)){
-        calls.push(['asins',api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+        calls.push(['asins',api("product/asins",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'ASIN: '+e.message);return null;})]);
       }
       if(needShops && !alreadyFetched.has('shops:'+cacheKey)){
-        calls.push(['shops',api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(()=>[])]);
+        calls.push(['shops',api("shops",{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Shops: '+e.message);return null;})]);
       }
       if(needTeam && !alreadyFetched.has('team:'+cacheKey)){
-        calls.push(['team',api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return[];})]);
+        calls.push(['team',api("team",{start:_sd,end:_ed,seller:_sl,store:_st,asin:_af}).catch(e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Team: '+e.message);return null;})]);
       }
       const results=await Promise.all(calls.map(([,p])=>p));
       if(cancelled)return;
       results.forEach((data,i)=>{
         const[name]=calls[i];
         if(name==='prev'&&data!==null){setPrevEm(data&&data.sales?data:null);alreadyFetched.add('prev:'+cacheKey);}
-        if(name==='asins'){setFAsin(arr(data).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));alreadyFetched.add('asins:'+cacheKey);}
-        if(name==='shops'){setFShopData(arr(data).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));alreadyFetched.add('shops:'+cacheKey);}
-        if(name==='team'){setFSeller(arr(data).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));alreadyFetched.add('team:'+cacheKey);}
+        if(name==='asins'&&data!==null){setFAsin(arr(data).map(r=>({a:r.asin,b:r.shop||r.brand||"",st:r.shop||r.brand||"",sl:r.seller||"",pt:r.productType||"",ni:r.niche||"",r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,cr:Math.round((parseFloat(r.cr)||0)*100)/100,ac:Math.round((parseFloat(r.acos)||0)*100)/100,ro:parseFloat(r.acos)>0?(100/parseFloat(r.acos)):0,ses:parseInt(r.sessions)||0,bb:Math.round((parseFloat(r.buyBox)||0)*100)/100,adv:parseFloat(r.advCost)||0,tacos:parseFloat(r.tacos)||0,sf:parseFloat(r.storageFee)||0,ap:parseFloat(r.avgPrice)||0,img:r.imageUrl||null,ctr:r.ctr!=null?parseFloat(r.ctr):null,cpc:r.cpc!=null?parseFloat(r.cpc):null,imp:parseInt(r.impressions)||0,clk:parseInt(r.clicks)||0})));alreadyFetched.add('asins:'+cacheKey);}
+        if(name==='shops'&&data!==null){setFShopData(arr(data).map(r=>({s:r.shop,r:parseFloat(r.revenue)||0,gp:parseFloat(r.grossProfit)||parseFloat(r.netProfit)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,f:parseInt(r.fbaStock)||0,o:parseInt(r.orders)||0,u:parseInt(r.units)||0,ad:parseFloat(r.ads)||0,sv:parseFloat(r.stockValue)||0,ses:parseInt(r.sessions)||0,cr:parseFloat(r.cr)||0,gpP:parseFloat(r.gpPlan)||0,rvP:parseFloat(r.rvPlan)||0,adP:parseFloat(r.adPlan)||0,unP:parseFloat(r.unPlan)||0})));alreadyFetched.add('shops:'+cacheKey);}
+        if(name==='team'&&data!==null){setFSeller(arr(data).map(r=>({sl:r.seller,r:parseFloat(r.revenue)||0,n:parseFloat(r.netProfit)||0,m:parseFloat(r.margin)||0,u:parseInt(r.units)||0,as:parseInt(r.asinCount)||0})));alreadyFetched.add('team:'+cacheKey);}
       });
       // Exec-only: detail + shop-extended + daily-LY (deferred, non-blocking)
       if(needExec){
@@ -5889,7 +5889,7 @@ function Dashboard({authUser,onLogout}){
       <div style={{flex:1,overflow:"auto",padding:mob?12:20}}>
         {filterError&&<div style={{padding:"10px 16px",marginBottom:12,background:"#FEF3CD",border:"1px solid #F0D060",borderRadius:8,fontSize:11,color:"#856404"}}>Filter issue: {filterError} — <a href={window.location.origin+"/api/debug/filters"} target="_blank" rel="noopener" style={{color:"#0066CC",textDecoration:"underline"}}>View debug info</a></div>}
         {pg==="exec"&&<ExecPage t={t} onAsinClick={setStockAsin}
-          fAsin={filteredFAsin} fShop={fShopRev} fDaily={fDaily}
+          fAsin={fAsin} fShop={fShopRev} fDaily={fDaily}
           em={{...em,...execDetail}} sd={sd} ed={ed} setSd={setSd} setEd={setEd}
           prevEm={prevEm} prevPeriod={prevPeriod} pctChg={pctChg} mob={mob}
           splyEm={splyEm} dailyLY={dailyLY} shopExt={shopExt}
