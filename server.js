@@ -2205,7 +2205,7 @@ app.get('/api/plan/actuals', async (req, res) => {
         { const _ac=accIdClause('s',accId); ucw+=_ac.w; ucp.push(..._ac.p); }
         if(af && af!=='All'){ucw+=' AND s.asin=?';ucp.push(af);}
         else if(seller && seller!=='All'){
-          ucw+=' AND s.asin IN (SELECT asin FROM asin WHERE seller=?)';ucp.push(seller);
+          ucw+=' AND s.asin COLLATE utf8mb4_0900_ai_ci IN (SELECT asin FROM asin WHERE seller=?)';ucp.push(seller);
         }
         return q(`SELECT s.asin, SUM(COALESCE(s.stockValue,0)) as sv, SUM(s.FBAStock) as fba
           FROM seller_board_stock s ${ucw} GROUP BY s.asin`,ucp,10000);
