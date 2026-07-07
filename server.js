@@ -1488,13 +1488,14 @@ app.get('/api/inventory/by-asin', async (req, res) => {
 
     // Seller pre-filter
     let sellerAsinWhere = '';
+    let sellerAsinParams = [];
     if (seller && seller !== 'All') {
       try {
         const slP2 = [seller, ...accP];
         const slAsins = await q(`SELECT DISTINCT asin FROM seller_board_product WHERE seller = ? ${accW}`, slP2, 15000);
         if (slAsins.length > 0) {
-          const asinList = slAsins.map(r => `'${r.asin.replace(/'/g,"''")}'`).join(',');
-          sellerAsinWhere = ` AND s.asin IN (${asinList})`;
+          sellerAsinParams = slAsins.map(r => r.asin);
+          sellerAsinWhere = ` AND s.asin IN (${sellerAsinParams.map(()=>'?').join(',')})`;
         } else {
           return res.json([]);
         }
@@ -1534,7 +1535,7 @@ app.get('/api/inventory/by-asin', async (req, res) => {
       GROUP BY p.asin, p.seller`;
 
     const [stockRows, planRows, sellerRows] = await Promise.all([
-      q(stockSQL, accP, 60000).catch(()=>[]),
+      q(stockSQL, [...accP, ...sellerAsinParams], 60000).catch(()=>[]),
       q(planSQL, accP, 60000).catch(()=>[]),
       q(sellerSQL, accP, 20000).catch(()=>[]),
     ]);
@@ -1872,7 +1873,7 @@ app.get('/api/debug/db2', async (req, res) => {
 });
 
 app.get('/api/debug/plan', async (req, res) => {
-  const yr = req.query.year || new Date().getFullYear();
+  const yr = parseInt(req.query.year) || new Date().getFullYear();
   const R = { year: yr, steps: {} };
   try {
     R.steps.cols = (await q('SHOW COLUMNS FROM asin_plan')).map(c=>c.Field);
@@ -1881,9 +1882,9 @@ app.get('/api/debug/plan', async (req, res) => {
     R.steps.yearValues = await q('SELECT DISTINCT `year` FROM asin_plan LIMIT 10').catch(()=>'no year col');
     R.steps.totalRows = (await q('SELECT COUNT(*) as cnt FROM asin_plan'))[0]?.cnt;
     // Test sales query
-    try { const sr = await q(`SELECT COUNT(*) as cnt FROM seller_board_sales WHERE date BETWEEN '${yr}-01-01' AND '${yr}-12-31'`); R.steps.salesRows = sr[0]?.cnt; } catch(e) { R.steps.salesRows = e.message; }
+    try { const sr = await q(`SELECT COUNT(*) as cnt FROM seller_board_sales WHERE date BETWEEN ? AND ?`, [`${yr}-01-01`, `${yr}-12-31`]); R.steps.salesRows = sr[0]?.cnt; } catch(e) { R.steps.salesRows = e.message; }
     // Test product query
-    try { const pr = await q(`SELECT COUNT(*) as cnt FROM seller_board_product WHERE date BETWEEN '${yr}-01-01' AND '${yr}-12-31'`); R.steps.productRows = pr[0]?.cnt; } catch(e) { R.steps.productRows = e.message; }
+    try { const pr = await q(`SELECT COUNT(*) as cnt FROM seller_board_product WHERE date BETWEEN ? AND ?`, [`${yr}-01-01`, `${yr}-12-31`]); R.steps.productRows = pr[0]?.cnt; } catch(e) { R.steps.productRows = e.message; }
     // Test analytics query
     try { const ar = await q(`SELECT COUNT(*) as cnt FROM analytics_search_catalog_performance WHERE YEAR(startDate) = ?`, [yr]); R.steps.analyticsRows = ar[0]?.cnt; } catch(e) { R.steps.analyticsRows = e.message; }
   } catch(e) { R.error = e.message; }
@@ -2065,7 +2066,7 @@ app.get('/api/plan/data', async (req, res) => {
       if (accIds2 && accIds2.length) {
         // Pre-fetch ASINs for this store (faster than subquery)
         const ph2 = accIds2.map(()=>'?').join(',');
-        const storeAsins = (await q(`SELECT DISTINCT asin FROM seller_board_product WHERE accountId IN (${ph2}) AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) LIMIT 2000`, accIds2, 15000).catch(()=>[])).map(r=>r.asin);
+        const storeAsins = (await q(`SELECT DISTINCT asin FROM seller_board_product WHERE accountId IN (${ph2}) AND date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)`, accIds2, 15000).catch(()=>[])).map(r=>r.asin);
         if (storeAsins.length) {
           const placeholders = storeAsins.map(()=>'?').join(',');
           where += ` AND ap.asin IN (${placeholders})`;
@@ -2300,12 +2301,12 @@ app.get('/api/ops/daily', async (req, res) => {
       const f = pWhere(s, e, accId, seller, af);
       rows = await q(`SELECT p.date, SUM(${P_SALES}) as revenue, SUM(COALESCE(p.netProfit,0)) as netProfit,
         SUM(${P_UNITS}) as units, 0 as orders, SUM(${P_ADS}) as adSpend
-        FROM seller_board_product p ${f.w} GROUP BY p.date ORDER BY p.date DESC LIMIT 60`, f.p);
+        FROM seller_board_product p ${f.w} GROUP BY p.date ORDER BY p.date DESC`, f.p);
     } else {
       const f = scWhere(s, e, accId);
       rows = await q(`SELECT sc.date, SUM(${SC_SALES}) as revenue, SUM(COALESCE(sc.netProfit,0)) as netProfit,
         SUM(${SC_UNITS}) as units, SUM(COALESCE(sc.orders,0)) as orders, SUM(${SC_ADS}) as adSpend
-        FROM ${salesFrom()} ${f.w} GROUP BY sc.date ORDER BY sc.date DESC LIMIT 60`, f.p);
+        FROM ${salesFrom()} ${f.w} GROUP BY sc.date ORDER BY sc.date DESC`, f.p);
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
