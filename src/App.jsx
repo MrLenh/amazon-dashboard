@@ -5592,24 +5592,34 @@ function Dashboard({authUser,onLogout}){
         const lyS=new Date(_sd+'T00:00:00');lyS.setFullYear(lyS.getFullYear()-1);
         const lyE=new Date(_ed+'T00:00:00');lyE.setFullYear(lyE.getFullYear()-1);
         if(!alreadyFetched.has('detail:'+cacheKey)){
-          api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d){setExecDetail(d);alreadyFetched.add('detail:'+cacheKey);}}).catch(()=>{});
+          api('exec/detail',{start:_sd,end:_ed,store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&d){setExecDetail(d);alreadyFetched.add('detail:'+cacheKey);}}).catch(e=>{if(!cancelled)setFilterError(prev=>(prev?prev+' | ':'')+'Detail: '+e.message);});
         }
         if(!alreadyFetched.has('shopext:'+cacheKey)){
-          api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d)){setShopExt(d);alreadyFetched.add('shopext:'+cacheKey);}}).catch(()=>{});
+          api('exec/shop-extended',{start:_sd,end:_ed,store:_st,seller:_sl}).then(d=>{if(!cancelled&&Array.isArray(d)){setShopExt(d);alreadyFetched.add('shopext:'+cacheKey);}}).catch(e=>{if(!cancelled)setFilterError(prev=>(prev?prev+' | ':'')+'Shop extended: '+e.message);});
         }
         if(!alreadyFetched.has('ly:'+cacheKey)){
-          api('exec/daily',{start:lyS.toISOString().slice(0,10),end:lyE.toISOString().slice(0,10),store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d)){setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}));alreadyFetched.add('ly:'+cacheKey);}}).catch(()=>{});
+          api('exec/daily',{start:lyS.toISOString().slice(0,10),end:lyE.toISOString().slice(0,10),store:_st,seller:_sl,asin:_af}).then(d=>{if(!cancelled&&Array.isArray(d)){setDailyLY(d.map(r=>{const ds=String(r.date).slice(0,10);const dt=new Date(ds+'T12:00:00');const label=isNaN(dt)?ds:MS[dt.getMonth()]+' '+dt.getDate();return{date:r.date,label,revenue:parseFloat(r.revenue)||0}}));alreadyFetched.add('ly:'+cacheKey);}}).catch(e=>{if(!cancelled)setFilterError(prev=>(prev?prev+' | ':'')+'Last year: '+e.message);});
         }
       }
     }catch(e){console.error("Fetch error:",e)}
     // Inventory: only when on inv page, only once per filter
     if(!cancelled && needInv && !alreadyFetched.has('inv:'+cacheKey)){
-      api("inventory/snapshot",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvData(d||{})}).catch(()=>{});
-      api("inventory/by-shop",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvShop((d||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})))}).catch(()=>{});
-      api("inventory/stock-trend",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvTrend((d||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}))}).catch(()=>{});
-      api("inventory/storage-monthly",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvFeeMonthly(d||[])}).catch(()=>{});
-      api("inventory/by-asin",{store:_st,seller:_sl}).then(d=>{if(!cancelled)setInvAsin(d||[])}).catch(()=>{});
-      alreadyFetched.add('inv:'+cacheKey);
+      const invErr=e=>{setFilterError(prev=>(prev?prev+' | ':'')+'Inventory: '+e.message);return null;};
+      const[snap,shop,trend,fee,asin]=await Promise.all([
+        api("inventory/snapshot",{store:_st,seller:_sl}).catch(invErr),
+        api("inventory/by-shop",{store:_st,seller:_sl}).catch(invErr),
+        api("inventory/stock-trend",{store:_st,seller:_sl}).catch(invErr),
+        api("inventory/storage-monthly",{store:_st,seller:_sl}).catch(invErr),
+        api("inventory/by-asin",{store:_st,seller:_sl}).catch(invErr),
+      ]);
+      if(!cancelled){
+        if(snap!==null)setInvData(snap||{});
+        if(shop!==null)setInvShop((shop||[]).map(r=>({s:r.shop,fba:r.fbaStock||0,avail:r.available||0,inb:r.inbound||0,res:r.reserved||0,crit:r.criticalSkus||0,st:r.sellThrough||0,doh:r.daysOfSupply||0})));
+        if(trend!==null)setInvTrend((trend||[]).map(r=>{const dt=new Date(r.date);return{d:MS[dt.getMonth()]+" "+dt.getDate(),v:parseInt(r.available)||0,fba:parseInt(r.fbaStock)||0}}));
+        if(fee!==null)setInvFeeMonthly(fee||[]);
+        if(asin!==null)setInvAsin(asin||[]);
+        if(snap!==null&&shop!==null&&trend!==null&&fee!==null&&asin!==null)alreadyFetched.add('inv:'+cacheKey);
+      }
     }
     if(!cancelled)setLoading(false);})();
     return()=>{cancelled=true};
