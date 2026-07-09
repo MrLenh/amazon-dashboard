@@ -4963,6 +4963,11 @@ const NAV_SECTIONS=[
 const NAV=NAV_SECTIONS.flatMap(s=>s.items);
 const NavIco=({d,size=18,color})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={d}/></svg>;
 
+// ═══════════ URL ROUTING (page id ↔ URL path, no router lib needed) ═══════════
+const PAGE_PATHS={exec:"/",inv:"/inventory",plan:"/asin-plan",prod:"/asin-performance",shops:"/shop-performance",team:"/team-performance",cr:"/product-cr",daily:"/daily-ops",analytics:"/analytics"};
+const PATH_PAGES=Object.fromEntries(Object.entries(PAGE_PATHS).map(([k,v])=>[v,k]));
+const pageFromPath=path=>PATH_PAGES[path]||"exec";
+
 /* ═══════════ INVITE ACCEPT PAGE ═══════════ */
 function InviteAcceptPage({ token, onDone }) {
   const sysDark = window.matchMedia?.('(prefers-color-scheme:dark)').matches;
@@ -5356,8 +5361,20 @@ export default function App(){
 function Dashboard({authUser,onLogout}){
   const[showAdmin,setShowAdmin]=useState(false);
   const{mob,tab}=useResp();
-  const[pg,setPg]=useState("exec");const[sb,setSb]=useState(true);const[isDark,setDark]=useState(false);
+  const[pg,setPg]=useState(()=>pageFromPath(window.location.pathname));const[sb,setSb]=useState(true);const[isDark,setDark]=useState(false);
   const t=isDark?TH.dark:TH.light;const cn=NAV.find(n=>n.id===pg);
+
+  // Keep the URL in sync with the current page (no router lib — plain History API)
+  useEffect(()=>{
+    const path=PAGE_PATHS[pg]||"/";
+    if(window.location.pathname!==path)window.history.pushState({pg},"",path);
+  },[pg]);
+  // Handle browser back/forward buttons
+  useEffect(()=>{
+    const onPop=()=>setPg(pageFromPath(window.location.pathname));
+    window.addEventListener("popstate",onPop);
+    return()=>window.removeEventListener("popstate",onPop);
+  },[]);
 
   const[live,setLive]=useState(false);
   const[dbRange,setDbRange]=useState(null);const[dbConnecting,setDbConnecting]=useState(true);
